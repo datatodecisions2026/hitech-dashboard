@@ -246,6 +246,16 @@ Fonts available via CSS variables:
 
 ---
 
+## Full Platform API Reference
+
+The main portal (`https://hitech-portal.vercel.app`) has 20+ additional API routes covering reports, employees, equipment, history, projects, and sections. Since this dashboard has the same `SUPABASE_SERVICE_ROLE_KEY`, the preferred approach is to **add new `src/app/api/` routes that query Supabase directly** rather than proxying to the portal.
+
+Full documentation of every portal route, its request/response shape, and the underlying Supabase table is in:
+
+**[`docs/platform-api.md`](./docs/platform-api.md)**
+
+---
+
 ## Environment Variables
 
 | Variable | Used by |
