@@ -73,8 +73,8 @@ export async function GET(req: NextRequest) {
         'activity_status, reporter_name, start_chainage_lat, start_chainage_long, ' +
         'end_chainage_lat, end_chainage_long'
       )
-    if (filterCategory) q = (q as any).eq('activity_category', filterCategory)
-    if (filterProject)  q = (q as any).eq('project_name',      filterProject)
+    if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
+    if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
     if (filterDateFrom) q = (q as any).gte('date_of_activity', filterDateFrom)
     if (filterDateTo)   q = (q as any).lte('date_of_activity', filterDateTo)
     return q
@@ -86,20 +86,27 @@ export async function GET(req: NextRequest) {
       // All report rows (paginated, filtered)
       fetchAll(buildLiteQuery()),
 
-      // Recent 12 reports
-      supabase
-        .from('hitech_report_hitechreport')
-        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity')
-        .order('date_of_activity', { ascending: false })
-        .order('id', { ascending: false })
-        .limit(12),
+      // Recent 12 reports — same filters as main query
+      (() => {
+        let q = supabase
+          .from('hitech_report_hitechreport')
+          .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity')
+          .order('date_of_activity', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(12)
+        if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
+        if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
+        if (filterDateFrom) q = (q as any).gte('date_of_activity', filterDateFrom)
+        if (filterDateTo)   q = (q as any).lte('date_of_activity', filterDateTo)
+        return q
+      })(),
 
       // Media
       supabase
         .from('hitech_report_hitechphoto')
-        .select('file, media_type')
+        .select('file, media_type, report_id')
         .order('id', { ascending: false })
-        .limit(200),
+        .limit(600),
 
       // Total photo count
       supabase
@@ -127,10 +134,10 @@ export async function GET(req: NextRequest) {
         .from('hitech_report_hitechsupervisor')
         .select('supervisor_name, party, report_id'),
 
-      // Filter dropdown options (unfiltered — always show all options)
-      supabase
+      // Filter dropdown options (unfiltered — always show all options, paginated to get every row)
+      fetchAll(supabase
         .from('hitech_report_hitechreport')
-        .select('activity_category, project_name'),
+        .select('activity_category, project_name')),
     ])
 
   // ── Aggregate report data ─────────────────────────────────────────────────
@@ -154,12 +161,17 @@ export async function GET(req: NextRequest) {
   const byWeather  = groupCount(all.map(r => (r as any).weather            as string)).slice(0, 6)
   const byDay      = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
 
-  // ── HR / Machine charts ───────────────────────────────────────────────────
-  const byMachine    = groupCount((machines.data    ?? []).map(m => (m as any).machine_name   as string)).slice(0, 15)
-  const byEmployee   = groupCount((employees.data   ?? []).map(e => (e as any).employee_name  as string)).slice(0, 15)
-  const byEngineer   = groupCount((engineers.data   ?? []).map(e => (e as any).engineer_name  as string)).slice(0, 15)
-  const bySupervisor = groupCount((supervisors.data ?? []).map(s => (s as any).supervisor_name as string)).slice(0, 15)
-  const byOwnership  = groupCount((machines.data    ?? []).map(m => (m as any).ownership      as string))
+  // ── HR / Machine charts — filter by the same report IDs as the main query ──
+  const filteredIds = new Set(all.map(r => (r as any).id as number))
+  const inFilter = (row: unknown) => !filterProject && !filterCategory && !filterDateFrom && !filterDateTo
+    ? true
+    : filteredIds.has((row as any).report_id as number)
+
+  const byMachine    = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).machine_name   as string)).slice(0, 15)
+  const byEmployee   = groupCount((employees.data   ?? []).filter(inFilter).map(e => (e as any).employee_name  as string)).slice(0, 15)
+  const byEngineer   = groupCount((engineers.data   ?? []).filter(inFilter).map(e => (e as any).engineer_name  as string)).slice(0, 15)
+  const bySupervisor = groupCount((supervisors.data ?? []).filter(inFilter).map(s => (s as any).supervisor_name as string)).slice(0, 15)
+  const byOwnership  = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).ownership      as string))
 
   // ── Map points ────────────────────────────────────────────────────────────
   const mapPoints = all
@@ -189,21 +201,36 @@ export async function GET(req: NextRequest) {
     .map(([date, { count, projs }]) => ({ date, count, projects: [...projs] }))
 
   // ── Filter dropdown options ───────────────────────────────────────────────
-  const allRows       = filterOptions.data ?? []
+  const allRows       = filterOptions ?? []
   const categories    = [...new Set(allRows.map(r => toTitleCase((r as any).activity_category)).filter(Boolean))].sort()
   const projects      = [...new Set(allRows.map(r => toTitleCase((r as any).project_name)).filter(Boolean))].sort()
 
   // ── Media ─────────────────────────────────────────────────────────────────
+  const reportProjectMap: Record<number, string> = {}
+  for (const r of all) {
+    const id = (r as any).id as number
+    const proj = toTitleCase((r as any).project_name as string)
+    if (id && proj) reportProjectMap[id] = proj
+  }
+
   const mediaItems = (media.data ?? [])
     .filter(p => p.file)
-    .map(p => ({ file: p.file as string, media_type: (p.media_type || 'image') as string }))
+    .map(p => ({
+      file: p.file as string,
+      media_type: (p.media_type || 'image') as string,
+      project_name: reportProjectMap[(p as any).report_id as number] || '',
+    }))
+    // When a project filter is active, only return photos whose report belongs to that project
+    .filter(p => !filterProject || p.project_name !== '')
 
   return NextResponse.json({
     summary: {
       totalReports,
       reportsThisMonth,
       activeProjects,
-      totalPhotos: totalMediaResult.count ?? 0,
+      totalPhotos: filterProject
+        ? mediaItems.filter(p => p.media_type !== 'video').length
+        : (totalMediaResult.count ?? 0),
       uniqueReporters,
     },
     byCategory,

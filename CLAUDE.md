@@ -266,3 +266,54 @@ Full documentation of every portal route, its request/response shape, and the un
 | `SESSION_SECRET` | Server only (iron-session) |
 
 Copy `.env.local.example` to `.env.local` and fill in values to run locally.
+
+---
+
+## Changelog
+
+> Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-05-15 — Project-filtered media gallery
+
+**Files changed:** `src/app/api/dashboard/route.ts`, `src/app/dashboard/page.tsx`
+
+**What changed:**
+- `GET /api/dashboard` now returns `project_name` on each `mediaItem`. The photo query was updated to fetch `report_id`, which is then joined against the fetched reports to attach the project name. Limit increased from 200 → 600.
+- `MediaItem` type now includes `project_name: string`.
+- `MediaGallery` component now accepts a `projects` prop (string list from `filterOptions.projects`). It renders a project picker dropdown at the top. No project selected = empty state prompt. Selecting a project filters and lazily loads only that project's media.
+- Images now use `loading="lazy"` and `decoding="async"` — no more firing 200+ network requests on page load.
+- Video thumbnails use `preload="none"` and show a play button overlay.
+
+**Why:** All site photos were loading simultaneously on page load regardless of project, causing hundreds of parallel network requests and a blank-then-pop-in UI. Photos are per-project so filtering by project makes the gallery meaningful and performant.
+
+### 2026-05-15 — Media gallery driven by global filter bar
+
+**Files changed:** `src/app/api/dashboard/route.ts`, `src/app/dashboard/page.tsx`
+
+**What changed:**
+- Removed the local project picker that was inside `MediaGallery`. The gallery is now controlled entirely by the **Project** dropdown in the top filter bar — selecting a project there triggers a refetch and populates the gallery. No project selected = empty state prompt.
+- `MediaGallery` props changed: `projects` removed, `activeProject: string` added (receives `data.activeFilters.filterProject`).
+- API: when `filterProject` is active, `mediaItems` is additionally filtered to only include photos whose `report_id` maps to a report in the filtered set — ensures cross-project photos never leak through.
+
+**Why:** The top filter bar was already wired to refetch all dashboard data. Having a second independent project picker inside the gallery was redundant and confusing. One filter controls everything.
+
+### 2026-05-15 — Fix filter not affecting charts/HR data
+
+**Files changed:** `src/app/api/dashboard/route.ts`
+
+**What changed:**
+- Switched `.eq()` to `.ilike()` for both `project_name` and `activity_category` filters in `buildLiteQuery()`. The filter dropdown shows title-cased values but the DB may store them in different case — `ilike` makes the match case-insensitive.
+- Applied the same `ilike` filters to the `recent` reports query (was previously unfiltered, so recent reports always showed across all projects).
+- HR/machine charts (`byMachine`, `byEmployee`, `byEngineer`, `bySupervisor`, `byOwnership`) now filter their rows by cross-referencing against the Set of report IDs returned by the main filtered query. Previously they showed all data regardless of active filters.
+
+**Why:** Filtering by project was returning 0 rows for the main query due to case mismatch, making all charts appear empty. The HR tables fetch all rows and join in memory, so they also needed to be narrowed to the same filtered report set.
+
+### 2026-05-15 — Fix KPI cards not reflecting filtered data
+
+**Files changed:** `src/app/dashboard/page.tsx`, `src/app/api/dashboard/route.ts`
+
+**What changed:**
+- `useCountUp` hook: changed `if (!target) return` to `if (target === 0) { setVal(0); return }`. Previously, when a filtered value was 0 the hook returned early without resetting `val`, leaving the card stuck at the old unfiltered number.
+- Site Photos KPI: when `filterProject` is active, `totalPhotos` is now computed from the already-filtered `mediaItems` array instead of the unfiltered `COUNT(*)` query on the whole photo table.
+
+**Why:** The four KPI cards (Reports This Month, Active Projects, Site Photos, Unique Reporters) were not updating when a project filter was applied — either because the value legitimately became 0 and the count-up hook refused to animate to 0, or because Site Photos was using a completely unfiltered DB count query.

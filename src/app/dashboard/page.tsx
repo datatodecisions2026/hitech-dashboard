@@ -34,7 +34,7 @@ const WEATHER_ICON: Record<string, string> = {
 }
 
 /* ── Types ─────────────────────────────────────────────────── */
-interface MediaItem { file: string; media_type: string }
+interface MediaItem { file: string; media_type: string; project_name: string }
 interface MapPoint {
   lat: number; lng: number
   lat2: number | null; lng2: number | null
@@ -67,7 +67,7 @@ interface DashData {
 function useCountUp(target: number, duration = 1100, delay = 0) {
   const [val, setVal] = useState(0)
   useEffect(() => {
-    if (!target) return
+    if (target === 0) { setVal(0); return }
     const start = Date.now() + delay
     const tick = () => {
       const elapsed = Math.max(0, Date.now() - start)
@@ -114,7 +114,7 @@ function DonutChart({ data }: { data: Array<{ name: string; count: number }> }) 
             <circle key={i} r={r} fill="none" stroke={seg.color} strokeWidth={isHov ? sw + 5 : sw}
               strokeDasharray={`${ready ? seg.len : 0} ${circ}`} strokeDashoffset={-(seg.offset)} strokeLinecap="butt"
               strokeOpacity={hov !== null && !isHov ? 0.28 : 1}
-              style={{ transition: `stroke-dasharray 0.7s cubic-bezier(0.4,0,0.2,1) ${i * 0.07}s, stroke-width 0.2s ease, stroke-opacity 0.2s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1)`, transform: isHov ? 'scale(1.06)' : 'scale(1)', transformOrigin: 'center', cursor: 'pointer' }}
+              style={{ transition: `stroke-dasharray 0.7s cubic-bezier(0.4,0,0.2,1) ${i * 0.07}s, stroke-width 0.2s ease, stroke-opacity 0.2s ease`, cursor: 'pointer' }}
               onMouseEnter={() => setHov(i)} />
           )
         })}
@@ -182,9 +182,11 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
           return (
             <g key={d.date} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} style={{ cursor: 'default' }}>
               <rect x={x} y={ready ? y : padT + chartH} width={barW} height={ready ? barH : 0} fill={isHov ? 'url(#barGradHov)' : 'url(#barGrad)'} rx={2} style={{ transition: `y 0.5s cubic-bezier(0.4,0,0.2,1) ${i * 0.01}s, height 0.5s cubic-bezier(0.4,0,0.2,1) ${i * 0.01}s` }} />
-              {isHov && d.count > 0 && (
-                <g><rect x={Math.min(x - 18, W - 80)} y={y - 26} width={60} height={18} rx={4} fill="rgba(20,16,10,0.95)" stroke="rgba(255,255,255,0.12)" strokeWidth={1} /><text x={Math.min(x - 18, W - 80) + 30} y={y - 13} textAnchor="middle" fill={D.text} fontSize="8.5" fontFamily="var(--font-mono)">{fmtDate(d.date)}: {d.count}</text></g>
-              )}
+              {isHov && d.count > 0 && (() => {
+                const tx = Math.min(Math.max(x - 18, padL), W - padR - 60)
+                const ty = Math.max(padT + 2, y - 26)
+                return <g><rect x={tx} y={ty} width={60} height={18} rx={4} fill="rgba(20,16,10,0.95)" stroke="rgba(255,255,255,0.12)" strokeWidth={1} /><text x={tx + 30} y={ty + 13} textAnchor="middle" fill={D.text} fontSize="8.5" fontFamily="var(--font-mono)">{fmtDate(d.date)}: {d.count}</text></g>
+              })()}
             </g>
           )
         })}
@@ -269,9 +271,8 @@ function KPICard({ label, value, sub, color = D.amber, icon, delay = 0 }: {
 }
 
 /* ── Media Gallery ─────────────────────────────────────────── */
-function MediaGallery({ items }: { items: MediaItem[] }) {
+function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProject: string }) {
   const [lightbox, setLightbox] = useState<MediaItem | null>(null)
-  const [loaded, setLoaded] = useState<Set<number>>(new Set())
   const [popup, setPopup] = useState<{ item: MediaItem; rect: DOMRect } | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -280,6 +281,8 @@ function MediaGallery({ items }: { items: MediaItem[] }) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  useEffect(() => { setLightbox(null); setPopup(null) }, [activeProject])
 
   function openPopup(item: MediaItem, el: HTMLElement) {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
@@ -290,11 +293,25 @@ function MediaGallery({ items }: { items: MediaItem[] }) {
     setPopup(null)
   }
 
-  if (!items.length) return <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '20px 0' }}>No media yet</div>
+  if (!activeProject) {
+    return (
+      <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center', letterSpacing: '0.05em' }}>
+        Select a project in the filter bar above to view site media
+      </div>
+    )
+  }
 
   const images = items.filter(m => m.media_type !== 'video')
   const videos = items.filter(m => m.media_type === 'video')
   const sorted = [...images, ...videos]
+
+  if (sorted.length === 0) {
+    return (
+      <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center' }}>
+        No media found for this project
+      </div>
+    )
+  }
 
   const popupStyle = (): React.CSSProperties => {
     if (!popup) return { display: 'none' }
@@ -309,31 +326,46 @@ function MediaGallery({ items }: { items: MediaItem[] }) {
 
   return (
     <>
+      <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: D.muted, marginBottom: 10 }}>
+        {images.length} photo{images.length !== 1 ? 's' : ''} · {videos.length} video{videos.length !== 1 ? 's' : ''}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
         {sorted.map((item, i) => {
           const isVideo = item.media_type === 'video'
           return (
-            <div key={i} onClick={() => setLightbox(item)} onMouseEnter={e => openPopup(item, e.currentTarget)} onMouseLeave={closePopup}
-              style={{ aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', position: 'relative', background: 'rgba(255,255,255,0.04)', border: `1px solid ${D.border}`, opacity: loaded.has(i) ? 1 : 0, transform: loaded.has(i) ? 'scale(1)' : 'scale(0.96)', transition: `opacity 0.4s ease ${Math.min(i, 20) * 0.03}s, transform 0.4s ease ${Math.min(i, 20) * 0.03}s` }}>
+            <div key={`${activeProject}-${i}`}
+              onClick={() => setLightbox(item)}
+              onMouseEnter={e => openPopup(item, e.currentTarget)}
+              onMouseLeave={closePopup}
+              style={{ aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', position: 'relative', background: 'rgba(255,255,255,0.04)', border: `1px solid ${D.sub}44` }}>
               {isVideo
-                ? <video src={item.file} muted playsInline preload="metadata" onLoadedMetadata={() => setLoaded(prev => new Set([...prev, i]))} onError={() => setLoaded(prev => new Set([...prev, i]))} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                ? <video src={item.file} muted playsInline preload="none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 // eslint-disable-next-line @next/next/no-img-element
-                : <img src={item.file} alt="" onLoad={() => setLoaded(prev => new Set([...prev, i]))} onError={() => setLoaded(prev => new Set([...prev, i]))} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                : <img src={item.file} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               }
+              {isVideo && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width={14} height={14} viewBox="0 0 24 24" fill={D.amber}><polygon points="5,3 19,12 5,21"/></svg>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
       </div>
+
       {popup && (
         <div style={popupStyle()}>
           {popup.item.media_type === 'video'
-            // eslint-disable-next-line @next/next/no-img-element
             ? <video key={popup.item.file} src={popup.item.file} autoPlay muted loop playsInline style={{ width: '100%', height: 210, objectFit: 'cover', display: 'block' }} />
             // eslint-disable-next-line @next/next/no-img-element
             : <img src={popup.item.file} alt="" style={{ width: '100%', height: 210, objectFit: 'cover', display: 'block' }} />
           }
         </div>
       )}
+
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, backdropFilter: 'blur(8px)', animation: 'fadeIn 0.2s ease' }}>
           {lightbox.media_type === 'video'
@@ -341,7 +373,7 @@ function MediaGallery({ items }: { items: MediaItem[] }) {
             // eslint-disable-next-line @next/next/no-img-element
             : <img src={lightbox.file} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 10, boxShadow: '0 32px 80px rgba(0,0,0,0.8)' }} />
           }
-          <button onClick={() => setLightbox(null)} style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,0.08)', border: `1px solid ${D.border}`, color: D.muted, width: 36, height: 36, borderRadius: 8, cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          <button onClick={() => setLightbox(null)} style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,0.08)', border: `1px solid ${D.sub}`, color: D.muted, width: 36, height: 36, borderRadius: 8, cursor: 'pointer', fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
       )}
     </>
@@ -418,13 +450,38 @@ function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
   )
 }
 
+/* ── Scroll reveal wrapper ─────────────────────────────────── */
+function RevealOnScroll({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect() } },
+      { threshold: 0.06 }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  return (
+    <div ref={ref} style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(28px)', transition: `opacity 0.55s ease ${delay}ms, transform 0.55s cubic-bezier(0.16,1,0.3,1) ${delay}ms`, ...st }}>
+      {children}
+    </div>
+  )
+}
+
 /* ── Panel wrapper ─────────────────────────────────────────── */
 function Panel({ children, title, action, style: st }: { children: React.ReactNode; title: string; action?: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ background: '#1e1e22', border: 'none', borderRadius: 12, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, boxShadow: `${SH_WELL}, 0 1px 0 rgba(255,255,255,0.04)`, ...st }}>
+    <div style={{ background: '#1e1e22', border: 'none', borderRadius: 12, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, boxShadow: `${SH_WELL}, 0 1px 0 rgba(255,255,255,0.04)`, animation: 'borderFlicker 14s ease-in-out infinite', ...st }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: D.amber, boxShadow: `1px 1px 3px rgba(0,0,0,0.7), -1px -1px 1px rgba(255,255,255,0.08), 0 0 6px ${D.amber}55` }} />
+          {/* Radar ping dot */}
+          <div style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'ping 2.8s ease-out infinite', opacity: 0.6 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 6px ${D.amber}88` }} />
+          </div>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: D.sub, background: '#1a1a1d', padding: '2px 8px', borderRadius: 4, boxShadow: 'inset 1px 1px 3px rgba(0,0,0,0.75), inset -1px -1px 1px rgba(255,255,255,0.03)' }}>{title}</span>
         </div>
         {action}
@@ -563,6 +620,46 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
   )
 }
 
+/* ── Dashboard skeleton ────────────────────────────────────── */
+function SkeletonBlock({ h, style: st }: { h: number; style?: React.CSSProperties }) {
+  return (
+    <div style={{ height: h, borderRadius: 12, background: '#1e1e22', position: 'relative', overflow: 'hidden', boxShadow: SH_WELL, ...st }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%)', animation: 'shimmerSlide 1.6s ease-in-out infinite' }} />
+    </div>
+  )
+}
+
+function DashboardSkeleton() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* KPI row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>
+        {[0,1,2,3,4].map(i => <SkeletonBlock key={i} h={100} style={{ animationDelay: `${i * 0.08}s` }} />)}
+      </div>
+      {/* Charts row 1 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+        <SkeletonBlock h={240} />
+        <SkeletonBlock h={240} style={{ animationDelay: '0.1s' }} />
+      </div>
+      {/* Charts row 2 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14 }}>
+        <SkeletonBlock h={200} style={{ animationDelay: '0.05s' }} />
+        <SkeletonBlock h={200} style={{ animationDelay: '0.15s' }} />
+      </div>
+      {/* HR row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <SkeletonBlock h={180} />
+        <SkeletonBlock h={180} style={{ animationDelay: '0.1s' }} />
+      </div>
+      {/* Calendar + map */}
+      <SkeletonBlock h={160} />
+      <SkeletonBlock h={300} style={{ animationDelay: '0.05s' }} />
+      {/* Recent reports */}
+      <SkeletonBlock h={220} />
+    </div>
+  )
+}
+
 /* ── Main page ─────────────────────────────────────────────── */
 export default function DashboardPage() {
   const router = useRouter()
@@ -598,30 +695,79 @@ export default function DashboardPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: D.bg, color: D.text, fontFamily: 'var(--font-dm-sans)', backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.005) 5px, rgba(255,255,255,0.005) 6px)' }}>
+    <div style={{ minHeight: '100vh', background: D.bg, color: D.text, fontFamily: 'var(--font-dm-sans)', backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.005) 5px, rgba(255,255,255,0.005) 6px)', position: 'relative' }}>
+
+      {/* ── Ambient background layer ── */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        {/* Drifting glow orbs */}
+        <div style={{ position: 'absolute', width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, rgba(212,160,64,0.028) 0%, transparent 68%)', top: '5%', left: '55%', animation: 'floatY 22s ease-in-out infinite' }} />
+        <div style={{ position: 'absolute', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(96,165,250,0.022) 0%, transparent 68%)', top: '45%', left: '10%', animation: 'floatY 28s ease-in-out infinite reverse' }} />
+        <div style={{ position: 'absolute', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(52,211,153,0.018) 0%, transparent 68%)', top: '72%', left: '78%', animation: 'floatY 19s ease-in-out infinite 6s' }} />
+        {/* Scan line */}
+        <div style={{ position: 'absolute', left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent 0%, rgba(212,160,64,0.03) 15%, rgba(212,160,64,0.10) 50%, rgba(212,160,64,0.03) 85%, transparent 100%)', animation: 'scanLine 14s linear infinite' }} />
+      </div>
 
       {/* Sub-header */}
-      <div style={{ position: 'sticky', top: 52, zIndex: 50, background: '#1c1c1f', boxShadow: '0 3px 12px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.04), inset 0 -1px 0 rgba(0,0,0,0.5)', padding: '0 32px', display: 'flex', alignItems: 'center', gap: 18, height: 44 }}>
+      <div style={{ position: 'sticky', top: 52, zIndex: 50, background: '#1c1c1f', boxShadow: '0 3px 12px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.04), inset 0 -1px 0 rgba(0,0,0,0.5)', padding: '0 32px', display: 'flex', alignItems: 'center', gap: 18, height: 44, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
           <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1.1rem', letterSpacing: '0.1em', color: D.amber }}>ANALYTICS</span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', letterSpacing: '0.12em', color: D.sub, textTransform: 'uppercase' }}>Site Command</span>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Live status dot */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ position: 'relative', width: 6, height: 6 }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.green, animation: 'ping 2.4s ease-out infinite', opacity: 0.5 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.green }} />
+          </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: D.green, letterSpacing: '0.12em' }}>LIVE</span>
+        </div>
+        {/* Scrolling ticker */}
+        {data && (
+          <div style={{ flex: 1, overflow: 'hidden', maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)' }}>
+            <div style={{ display: 'flex', gap: 48, whiteSpace: 'nowrap', animation: 'dataTickerScroll 32s linear infinite', width: 'max-content' }}>
+              {[
+                `${data.summary.totalReports.toLocaleString()} TOTAL REPORTS`,
+                `${data.summary.reportsThisMonth} THIS MONTH`,
+                `${data.summary.activeProjects} ACTIVE PROJECTS`,
+                `${data.summary.uniqueReporters} REPORTERS`,
+                `${data.summary.totalPhotos.toLocaleString()} PHOTOS`,
+                ...(data.activeFilters.filterProject ? [`FILTERED: ${data.activeFilters.filterProject.toUpperCase()}`] : []),
+                // duplicate for seamless loop
+                `${data.summary.totalReports.toLocaleString()} TOTAL REPORTS`,
+                `${data.summary.reportsThisMonth} THIS MONTH`,
+                `${data.summary.activeProjects} ACTIVE PROJECTS`,
+                `${data.summary.uniqueReporters} REPORTERS`,
+                `${data.summary.totalPhotos.toLocaleString()} PHOTOS`,
+                ...(data.activeFilters.filterProject ? [`FILTERED: ${data.activeFilters.filterProject.toUpperCase()}`] : []),
+              ].map((item, i) => (
+                <span key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: item.startsWith('FILTERED') ? D.amber : D.sub, letterSpacing: '0.1em' }}>
+                  {item.startsWith('FILTERED') ? '' : '◆ '}{item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
           {loading && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: D.amber, letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5 }}><div style={{ width: 5, height: 5, borderRadius: '50%', background: D.amber, animation: 'amberPulse 1.2s ease-in-out infinite' }} />LOADING</div>}
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: D.sub, letterSpacing: '0.06em' }}>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: '28px 32px 60px', maxWidth: 1440, margin: '0 auto' }}>
+      <div style={{ padding: '28px 32px 60px', maxWidth: 1440, margin: '0 auto', position: 'relative', zIndex: 1 }}>
 
         {error && <div style={{ background: 'rgba(227,28,61,0.08)', border: '1px solid rgba(227,28,61,0.25)', borderRadius: 10, padding: '14px 18px', color: '#f87171', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', marginBottom: 24 }}>{error}</div>}
 
-        {/* Filter bar */}
+        {/* Filter bar — always visible when data exists so users can change filters during load */}
         {data && <FilterBar data={data} onFilter={handleFilter} />}
 
-        {/* KPI Row */}
-        {data && (
+        {/* Skeleton while loading (initial load or filter refresh) */}
+        {loading && <DashboardSkeleton />}
+
+        {/* Content — only rendered when not loading */}
+        {!loading && data && (<>
+
+          {/* KPI Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 20 }}>
             <KPICard label="Total Activity Reports" value={data.summary.totalReports}     icon={<IconDoc />}      delay={0}   color={D.amber} />
             <KPICard label="Reports This Month"     value={data.summary.reportsThisMonth} icon={<IconCalendar />} delay={80}  color={D.blue} sub="MTD" />
@@ -629,93 +775,75 @@ export default function DashboardPage() {
             <KPICard label="Site Photos"            value={data.summary.totalPhotos}      icon={<IconImage />}    delay={240} color="#a78bfa" />
             <KPICard label="Unique Reporters"       value={data.summary.uniqueReporters}  icon={<IconPeople />}   delay={320} color={D.amber} />
           </div>
-        )}
 
-        {/* Charts Row 1 */}
-        {data && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14, marginBottom: 14 }}>
-            <Panel title="Activity by Category"><DonutChart data={data.byCategory} /></Panel>
-            <Panel title="Reports per Day — last 30 days"><TimelineChart data={data.byDay} /></Panel>
-          </div>
-        )}
+          {/* Charts Row 1 */}
+          <RevealOnScroll style={{ marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+              <Panel title="Activity by Category"><DonutChart data={data.byCategory} /></Panel>
+              <Panel title="Reports per Day — last 30 days"><TimelineChart data={data.byDay} /></Panel>
+            </div>
+          </RevealOnScroll>
 
-        {/* Charts Row 2 */}
-        {data && (
-          <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14, marginBottom: 14 }}>
-            <Panel title="Top Projects by Reports"><HBarChart data={data.byProject} /></Panel>
-            <Panel title="Weather Conditions"><WeatherBars data={data.byWeather} /></Panel>
-          </div>
-        )}
+          {/* Charts Row 2 */}
+          <RevealOnScroll delay={60} style={{ marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14 }}>
+              <Panel title="Top Projects by Reports"><HBarChart data={data.byProject} /></Panel>
+              <Panel title="Weather Conditions"><WeatherBars data={data.byWeather} /></Panel>
+            </div>
+          </RevealOnScroll>
 
-        {/* HR Charts Row */}
-        {data && (data.byMachine?.length > 0 || data.byEmployee?.length > 0) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            {data.byMachine?.length > 0 && (
-              <Panel title="Machines Used">
-                <HBarChart data={data.byMachine} color={D.amber} />
-              </Panel>
-            )}
-            {data.byEmployee?.length > 0 && (
-              <Panel title="Top Employees">
-                <HBarChart data={data.byEmployee} color={D.green} />
-              </Panel>
-            )}
-          </div>
-        )}
-
-        {data && (data.byEngineer?.length > 0 || data.bySupervisor?.length > 0) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            {data.byEngineer?.length > 0 && (
-              <Panel title="Engineers Activity">
-                <HBarChart data={data.byEngineer} color={D.blue} />
-              </Panel>
-            )}
-            {data.bySupervisor?.length > 0 && (
-              <Panel title="Supervisors Activity">
-                <HBarChart data={data.bySupervisor} color="#a78bfa" />
-              </Panel>
-            )}
-          </div>
-        )}
-
-        {/* Activity Calendar */}
-        {data && data.activityCalendar.length > 0 && (
-          <Panel title="Activity Calendar — full history" style={{ marginBottom: 14 }}>
-            <ActivityCalendar data={data.activityCalendar} />
-          </Panel>
-        )}
-
-        {/* Activity Map */}
-        {data && (
-          <Panel title="Activity Map — GPS coordinates by project" style={{ marginBottom: 14 }}>
-            <ActivityMap points={data.mapPoints} />
-          </Panel>
-        )}
-
-        {/* Media Gallery */}
-        {data && (
-          <Panel title={`Site Media — ${data.mediaItems.filter(m => m.media_type !== 'video').length} photos · ${data.mediaItems.filter(m => m.media_type === 'video').length} videos`} style={{ marginBottom: 14 }}>
-            <MediaGallery items={data.mediaItems} />
-          </Panel>
-        )}
-
-        {/* Recent Reports */}
-        {data && data.recentReports.length > 0 && (
-          <Panel title="Recent Activity Reports">
-            <ReportFeed reports={data.recentReports} />
-          </Panel>
-        )}
-
-        {/* Loading skeleton */}
-        {loading && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {[56, 280, 220].map((h, i) => (
-              <div key={i} style={{ height: h, borderRadius: 12, background: '#1e1e22', position: 'relative', overflow: 'hidden', boxShadow: SH_WELL }}>
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent)', animation: 'shimmerSlide 1.8s ease-in-out infinite' }} />
+          {/* HR Charts Row */}
+          {(data.byMachine?.length > 0 || data.byEmployee?.length > 0) && (
+            <RevealOnScroll delay={60} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                {data.byMachine?.length > 0 && <Panel title="Machines Used"><HBarChart data={data.byMachine} color={D.amber} /></Panel>}
+                {data.byEmployee?.length > 0 && <Panel title="Top Employees"><HBarChart data={data.byEmployee} color={D.green} /></Panel>}
               </div>
-            ))}
-          </div>
-        )}
+            </RevealOnScroll>
+          )}
+
+          {(data.byEngineer?.length > 0 || data.bySupervisor?.length > 0) && (
+            <RevealOnScroll delay={60} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                {data.byEngineer?.length > 0   && <Panel title="Engineers Activity"><HBarChart data={data.byEngineer} color={D.blue} /></Panel>}
+                {data.bySupervisor?.length > 0 && <Panel title="Supervisors Activity"><HBarChart data={data.bySupervisor} color="#a78bfa" /></Panel>}
+              </div>
+            </RevealOnScroll>
+          )}
+
+          {/* Activity Calendar */}
+          {data.activityCalendar.length > 0 && (
+            <RevealOnScroll style={{ marginBottom: 14 }}>
+              <Panel title="Activity Calendar — full history">
+                <ActivityCalendar data={data.activityCalendar} />
+              </Panel>
+            </RevealOnScroll>
+          )}
+
+          {/* Activity Map */}
+          <RevealOnScroll style={{ marginBottom: 14 }}>
+            <Panel title="Activity Map — GPS coordinates by project">
+              <ActivityMap points={data.mapPoints} />
+            </Panel>
+          </RevealOnScroll>
+
+          {/* Media Gallery */}
+          <RevealOnScroll style={{ marginBottom: 14 }}>
+            <Panel title={`Site Media — ${data.summary.totalPhotos.toLocaleString()} photos`}>
+              <MediaGallery items={data.mediaItems} activeProject={data.activeFilters.filterProject} />
+            </Panel>
+          </RevealOnScroll>
+
+          {/* Recent Reports */}
+          {data.recentReports.length > 0 && (
+            <RevealOnScroll>
+              <Panel title="Recent Activity Reports">
+                <ReportFeed reports={data.recentReports} />
+              </Panel>
+            </RevealOnScroll>
+          )}
+
+        </>)}
       </div>
 
       <style>{`
