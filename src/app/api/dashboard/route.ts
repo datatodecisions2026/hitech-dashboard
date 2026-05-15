@@ -24,9 +24,8 @@ function groupCount(vals: string[]): Array<{ name: string; count: number }> {
 }
 
 /** Fetch ALL rows from a table by paginating 1 000 rows at a time. */
-async function fetchAll<T = Record<string, unknown>>(
-  query: ReturnType<typeof supabase.from>
-): Promise<T[]> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAll<T = Record<string, unknown>>(query: any): Promise<T[]> {
   const all: T[] = []
   const PAGE = 1000
   let from = 0
