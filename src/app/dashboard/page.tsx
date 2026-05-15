@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 /* ── Design tokens ─────────────────────────────────────────── */
@@ -661,7 +661,7 @@ function DashboardSkeleton() {
 }
 
 /* ── Main page ─────────────────────────────────────────────── */
-export default function DashboardPage() {
+function DashboardPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [data, setData] = useState<DashData | null>(null)
@@ -854,5 +854,13 @@ export default function DashboardPage() {
         input[type='date']::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
       `}</style>
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#212124', padding: '96px 32px 60px' }}><DashboardSkeleton /></div>}>
+      <DashboardPageInner />
+    </Suspense>
   )
 }
