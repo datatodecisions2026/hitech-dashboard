@@ -252,7 +252,7 @@ The main portal (`https://hitech-portal.vercel.app`) has 20+ additional API rout
 
 Full documentation of every portal route, its request/response shape, and the underlying Supabase table is in:
 
-**[`docs/platform-api.md`](./docs/platform-api.md)**
+@docs/platform-api.md
 
 ---
 
