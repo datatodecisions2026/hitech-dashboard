@@ -1,5 +1,10 @@
 'use client'
 
+
+
+import dynamic from 'next/dynamic'
+const HitechMapComponent = dynamic(() => import('@/components/HitechMap'), { ssr: false })
+
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -203,20 +208,87 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
 /* ── Horizontal bar chart ──────────────────────────────────── */
 function HBarChart({ data, color = D.amber }: { data: Array<{ name: string; count: number }>; color?: string }) {
   const [ready, setReady] = useState(false)
+  const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
   const max = Math.max(...data.map(d => d.count), 1)
+  const total = data.reduce((s, d) => s + d.count, 0)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
-      {data.map((d, i) => (
-        <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ width: 160, fontSize: '0.72rem', color: D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
-          <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-            <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${(d.count / max) * 100}%` : '0%', background: `linear-gradient(90deg, ${color}, ${color}88)`, borderRadius: 4, transition: `width 0.7s cubic-bezier(0.4,0,0.2,1) ${i * 0.06}s` }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+      {data.map((d, i) => {
+        const pct = Math.round((d.count / total) * 100)
+        const barPct = (d.count / max) * 100
+        const isHov = hov === i
+        const isTop = i < 3
+
+        return (
+          <div
+            key={d.name}
+            onMouseEnter={() => setHov(i)}
+            onMouseLeave={() => setHov(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: hov !== null && !isHov ? 0.45 : 1, transition: 'opacity 0.2s ease' }}
+          >
+            {/* Rank */}
+            <div style={{
+              width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: isTop ? `${color}22` : 'transparent',
+              border: isTop ? `1px solid ${color}44` : '1px solid transparent',
+              fontSize: 9, fontFamily: 'var(--font-mono)',
+              color: isTop ? color : D.sub,
+              fontWeight: isTop ? 700 : 400,
+            }}>
+              {i + 1}
+            </div>
+
+            {/* Name */}
+            <span style={{
+              width: 140, fontSize: '0.7rem', color: isHov ? D.text : D.muted,
+              fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
+              overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0,
+              transition: 'color 0.2s',
+            }} title={d.name}>{d.name}</span>
+
+            {/* Bar track */}
+            <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.04)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+              {/* Bar fill */}
+              <div style={{
+                position: 'absolute', inset: 0, right: 'auto',
+                width: ready ? `${barPct}%` : '0%',
+                background: isTop
+                  ? `linear-gradient(90deg, ${color}, ${color}bb)`
+                  : `linear-gradient(90deg, ${color}88, ${color}44)`,
+                borderRadius: 6,
+                transition: `width 0.8s cubic-bezier(0.4,0,0.2,1) ${i * 0.04}s`,
+                boxShadow: isTop && isHov ? `0 0 8px ${color}66` : 'none',
+              }} />
+              {/* Shimmer on top items */}
+              {isTop && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%)',
+                  animation: 'shimmerSlide 2.5s ease-in-out infinite',
+                  animationDelay: `${i * 0.4}s`,
+                }} />
+              )}
+            </div>
+
+            {/* Count */}
+            <span style={{
+              width: 32, textAlign: 'right', fontSize: '0.7rem',
+              color: isHov ? color : D.text,
+              fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0,
+              transition: 'color 0.2s',
+            }}>{d.count}</span>
+
+            {/* Percentage */}
+            <span style={{
+              width: 30, textAlign: 'right', fontSize: '0.62rem',
+              color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0,
+            }}>{pct}%</span>
           </div>
-          <span style={{ width: 36, fontSize: '0.72rem', color: D.text, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{d.count}</span>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -273,8 +345,8 @@ function KPICard({ label, value, sub, color = D.amber, icon, delay = 0 }: {
 /* ── Media Gallery ─────────────────────────────────────────── */
 function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProject: string }) {
   const [lightbox, setLightbox] = useState<MediaItem | null>(null)
-  const [popup, setPopup] = useState<{ item: MediaItem; rect: DOMRect } | null>(null)
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 12
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
@@ -282,16 +354,8 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  useEffect(() => { setLightbox(null); setPopup(null) }, [activeProject])
-
-  function openPopup(item: MediaItem, el: HTMLElement) {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    hoverTimerRef.current = setTimeout(() => { setPopup({ item, rect: el.getBoundingClientRect() }) }, 80)
-  }
-  function closePopup() {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    setPopup(null)
-  }
+  // Reset page when project changes
+  useEffect(() => { setPage(0); setLightbox(null) }, [activeProject])
 
   if (!activeProject) {
     return (
@@ -304,6 +368,8 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
   const images = items.filter(m => m.media_type !== 'video')
   const videos = items.filter(m => m.media_type === 'video')
   const sorted = [...images, ...videos]
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
+  const pageItems = sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
 
   if (sorted.length === 0) {
     return (
@@ -313,32 +379,38 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
     )
   }
 
-  const popupStyle = (): React.CSSProperties => {
-    if (!popup) return { display: 'none' }
-    const { rect } = popup
-    const W = 280, H = 220
-    let left = rect.left + rect.width / 2 - W / 2
-    let top  = rect.top - H - 12
-    if (top < 8) top = rect.bottom + 12
-    left = Math.max(8, Math.min(left, window.innerWidth - W - 8))
-    return { position: 'fixed', zIndex: 9000, left, top, width: W, background: 'rgba(12,9,6,0.97)', border: `1px solid ${D.amber}55`, borderRadius: 10, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.8)', pointerEvents: 'none', animation: 'fadeIn 0.15s ease' }
-  }
-
   return (
     <>
-      <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: D.muted, marginBottom: 10 }}>
-        {images.length} photo{images.length !== 1 ? 's' : ''} · {videos.length} video{videos.length !== 1 ? 's' : ''}
+      {/* Counter */}
+      <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: D.muted, marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
+        <span>{images.length} photo{images.length !== 1 ? 's' : ''} · {videos.length} video{videos.length !== 1 ? 's' : ''}</span>
+        <span style={{ color: D.sub }}>Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
-        {sorted.map((item, i) => {
+      {/* Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        {pageItems.map((item, i) => {
           const isVideo = item.media_type === 'video'
           return (
-            <div key={`${activeProject}-${i}`}
+            <div
+              key={`${activeProject}-${page}-${i}`}
               onClick={() => setLightbox(item)}
-              onMouseEnter={e => openPopup(item, e.currentTarget)}
-              onMouseLeave={closePopup}
-              style={{ aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', position: 'relative', background: 'rgba(255,255,255,0.04)', border: `1px solid ${D.sub}44` }}>
+              style={{
+                aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden',
+                cursor: 'pointer', position: 'relative',
+                background: 'rgba(255,255,255,0.04)',
+                border: `1px solid ${D.sub}44`,
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.03)'
+                ;(e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px ${D.amber}44`
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)'
+                ;(e.currentTarget as HTMLDivElement).style.boxShadow = 'none'
+              }}
+            >
               {isVideo
                 ? <video src={item.file} muted playsInline preload="none" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 // eslint-disable-next-line @next/next/no-img-element
@@ -351,21 +423,51 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
                   </div>
                 </div>
               )}
+              {/* Index badge */}
+              <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', borderRadius: 4, padding: '2px 7px', fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>
+                {page * PAGE_SIZE + i + 1}
+              </div>
             </div>
           )
         })}
       </div>
 
-      {popup && (
-        <div style={popupStyle()}>
-          {popup.item.media_type === 'video'
-            ? <video key={popup.item.file} src={popup.item.file} autoPlay muted loop playsInline style={{ width: '100%', height: 210, objectFit: 'cover', display: 'block' }} />
-            // eslint-disable-next-line @next/next/no-img-element
-            : <img src={popup.item.file} alt="" style={{ width: '100%', height: 210, objectFit: 'cover', display: 'block' }} />
-          }
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+            style={{ background: page === 0 ? 'transparent' : D.panel, color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}`, borderRadius: 6, padding: '7px 18px', fontSize: 12, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, transition: 'all 0.2s', boxShadow: page === 0 ? 'none' : SH_RAISED }}
+          >‹ Prev</button>
+
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {Array.from({ length: totalPages }, (_, i) => i)
+              .filter(i => i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 2)
+              .map((i, idx, arr) => (
+                <>
+                  {idx > 0 && arr[idx - 1] !== i - 1 && (
+                    <span key={`ellipsis-${i}`} style={{ color: D.sub, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '0 4px' }}>…</span>
+                  )}
+                  <button
+                    key={i}
+                    onClick={() => setPage(i)}
+                    style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${i === page ? D.amber : D.sub}`, background: i === page ? D.amber : 'transparent', color: i === page ? '#000' : D.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: i === page ? 700 : 400, transition: 'all 0.2s', boxShadow: i === page ? SH_RAISED : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >{i + 1}</button>
+                </>
+              ))
+            }
+          </div>
+
+          <button
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page === totalPages - 1}
+            style={{ background: page === totalPages - 1 ? 'transparent' : D.panel, color: page === totalPages - 1 ? D.sub : D.amber, border: `1px solid ${page === totalPages - 1 ? D.sub : D.amber}`, borderRadius: 6, padding: '7px 18px', fontSize: 12, cursor: page === totalPages - 1 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, transition: 'all 0.2s', boxShadow: page === totalPages - 1 ? 'none' : SH_RAISED }}
+          >Next ›</button>
         </div>
       )}
 
+      {/* Lightbox */}
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, backdropFilter: 'blur(8px)', animation: 'fadeIn 0.2s ease' }}>
           {lightbox.media_type === 'video'
@@ -380,44 +482,6 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
   )
 }
 
-/* ── Activity map ──────────────────────────────────────────── */
-function ActivityMap({ points }: { points: MapPoint[] }) {
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; p: MapPoint } | null>(null)
-  if (!points.length) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, color: D.sub, fontFamily: 'var(--font-mono)', fontSize: '0.72rem', flexDirection: 'column', gap: 8 }}>No GPS coordinates recorded yet</div>
-
-  const projectNames = [...new Set(points.map(p => p.project))].sort()
-  const colorOf = (proj: string) => PROJECT_COLORS[projectNames.indexOf(proj) % PROJECT_COLORS.length]
-  const allLats = points.flatMap(p => [p.lat, ...(p.lat2 != null ? [p.lat2] : [])])
-  const allLngs = points.flatMap(p => [p.lng, ...(p.lng2 != null ? [p.lng2] : [])])
-  const minLat = Math.min(...allLats), maxLat = Math.max(...allLats)
-  const minLng = Math.min(...allLngs), maxLng = Math.max(...allLngs)
-  const latSpan = Math.max(maxLat - minLat, 0.001), lngSpan = Math.max(maxLng - minLng, 0.001)
-  const pad = 0.12
-  const bLat = [minLat - latSpan * pad, maxLat + latSpan * pad]
-  const bLng = [minLng - lngSpan * pad, maxLng + lngSpan * pad]
-  const VW = 700, VH = 280
-  const toX = (lng: number) => ((lng - bLng[0]) / (bLng[1] - bLng[0])) * VW
-  const toY = (lat: number) => VH - ((lat - bLat[0]) / (bLat[1] - bLat[0])) * VH
-  const latStep = (bLat[1] - bLat[0]) / 4, lngStep = (bLng[1] - bLng[0]) / 4
-  const latLines = Array.from({ length: 5 }, (_, i) => bLat[0] + i * latStep)
-  const lngLines = Array.from({ length: 5 }, (_, i) => bLng[0] + i * lngStep)
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display: 'block', borderRadius: 8, background: 'rgba(0,0,0,0.3)' }} onMouseLeave={() => setTooltip(null)}>
-        {latLines.map((lat, i) => <g key={`lat${i}`}><line x1={0} y1={toY(lat)} x2={VW} y2={toY(lat)} stroke="rgba(255,255,255,0.04)" strokeWidth={1} /><text x={4} y={toY(lat) - 3} fill="rgba(255,255,255,0.18)" fontSize="7" fontFamily="var(--font-mono)">{lat.toFixed(3)}°</text></g>)}
-        {lngLines.map((lng, i) => <g key={`lng${i}`}><line x1={toX(lng)} y1={0} x2={toX(lng)} y2={VH} stroke="rgba(255,255,255,0.04)" strokeWidth={1} /><text x={toX(lng) + 2} y={VH - 4} fill="rgba(255,255,255,0.18)" fontSize="7" fontFamily="var(--font-mono)">{lng.toFixed(3)}°</text></g>)}
-        {points.map((p, i) => { if (p.lat2 == null || p.lng2 == null) return null; return <line key={`seg${i}`} x1={toX(p.lng)} y1={toY(p.lat)} x2={toX(p.lng2)} y2={toY(p.lat2)} stroke={colorOf(p.project)} strokeWidth={2} strokeOpacity={0.35} strokeLinecap="round" /> })}
-        {points.map((p, i) => <circle key={`dot${i}`} cx={toX(p.lng)} cy={toY(p.lat)} r={5} fill={colorOf(p.project)} fillOpacity={0.85} stroke="rgba(0,0,0,0.5)" strokeWidth={1} style={{ cursor: 'pointer' }} onMouseEnter={() => setTooltip({ x: toX(p.lng), y: toY(p.lat), p })} />)}
-        {tooltip && (() => { const TW = 180, TH = 60; const tx = Math.min(tooltip.x + 10, VW - TW - 4); const ty = tooltip.y - TH - 10 < 0 ? tooltip.y + 10 : tooltip.y - TH - 10; return <g><rect x={tx} y={ty} width={TW} height={TH} rx={6} fill="rgba(12,9,6,0.96)" stroke={colorOf(tooltip.p.project)} strokeWidth={1} strokeOpacity={0.6} /><text x={tx + 10} y={ty + 18} fill={D.text} fontSize="9" fontFamily="var(--font-mono)" fontWeight="600">{tooltip.p.project}</text><text x={tx + 10} y={ty + 32} fill={D.muted} fontSize="8" fontFamily="var(--font-mono)">{tooltip.p.category}</text><text x={tx + 10} y={ty + 46} fill={D.sub} fontSize="7.5" fontFamily="var(--font-mono)">{tooltip.p.status || '—'} · {tooltip.p.lat.toFixed(4)}°, {tooltip.p.lng.toFixed(4)}°</text></g> })()}
-      </svg>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', marginTop: 12 }}>
-        {projectNames.map(proj => <div key={proj} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: '50%', background: colorOf(proj) }} /><span style={{ fontSize: '0.65rem', color: D.muted, fontFamily: 'var(--font-mono)' }}>{proj}</span></div>)}
-      </div>
-      <div style={{ marginTop: 8, fontSize: '0.6rem', color: D.sub, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>{points.length} activity points · lines show start → end chainage of each report</div>
-    </div>
-  )
-}
 
 /* ── Report feed ───────────────────────────────────────────── */
 function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
@@ -821,9 +885,10 @@ function DashboardPageInner() {
           )}
 
           {/* Activity Map */}
+          {/* Activity Map — Mapbox */}
           <RevealOnScroll style={{ marginBottom: 14 }}>
             <Panel title="Activity Map — GPS coordinates by project">
-              <ActivityMap points={data.mapPoints} />
+              <HitechMapComponent project={data.activeFilters.filterProject || 'Coastal Road'} />
             </Panel>
           </RevealOnScroll>
 
