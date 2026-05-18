@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir *)",
+      "Bash(npx tsc *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "mcp__plugin_vercel_vercel__deploy_to_vercel",
+      "Bash(git push *)",
+      "Skill(vercel:deploy)",
+      "Bash(vercel *)"
+    ]
+  }
+}
