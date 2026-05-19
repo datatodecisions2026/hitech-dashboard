@@ -41,8 +41,8 @@ const statusColor = (s: string) => STATUS_COLORS[s] || '#848080'
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface Station {
-  label:      number   // numeric chainage e.g. 31001
-  chainage:   string   // formatted e.g. "31+001"
+  label:      number
+  chainage:   string
   latitude:   number
   longitude:  number
   project_id: number
@@ -75,11 +75,13 @@ interface MapData {
 
 /* ── Props ─────────────────────────────────────────────────── */
 interface Props {
-  project: string  // e.g. "Coastal Road"
+  project: string
+  chFrom?: string   // chainage filter from — zooms map when both set
+  chTo?:   string   // chainage filter to
 }
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function HitechMap({ project }: Props) {
+export default function HitechMap({ project, chFrom, chTo }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<any>(null)
   const [mapData,   setMapData]   = useState<MapData | null>(null)
@@ -114,8 +116,8 @@ export default function HitechMap({ project }: Props) {
         attributionControl: false,
       })
 
-      map.addControl(new mapboxgl.NavigationControl(),             'top-right')
-      map.addControl(new mapboxgl.ScaleControl({ unit: 'metric' }),'bottom-right')
+      map.addControl(new mapboxgl.NavigationControl(),              'top-right')
+      map.addControl(new mapboxgl.ScaleControl({ unit: 'metric' }), 'bottom-right')
       map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left')
 
       map.on('load', () => {
@@ -138,22 +140,18 @@ export default function HitechMap({ project }: Props) {
     if (!mapLoaded || !mapRef.current || !mapData) return
     const map = mapRef.current
 
-    /* Station road line ───────────────────────────────────── */
+    /* Station road line */
     const sortedStations = [...mapData.stations].sort((a, b) => a.label - b.label)
-
     const stationLineGJ: GeoJSON.FeatureCollection = {
       type: 'FeatureCollection',
       features: [{
-        type:       'Feature',
-        geometry:   {
-          type:        'LineString',
-          coordinates: sortedStations.map(s => [s.longitude, s.latitude]),
-        },
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: sortedStations.map(s => [s.longitude, s.latitude]) },
         properties: {},
       }],
     }
 
-    /* Chainage tick marks every 1 km ──────────────────────── */
+    /* Chainage tick marks every 1 km */
     const ticksGJ: GeoJSON.FeatureCollection = {
       type: 'FeatureCollection',
       features: mapData.stations
@@ -165,14 +163,13 @@ export default function HitechMap({ project }: Props) {
         })),
     }
 
-    /* Build lookup: label → station ───────────────────────── */
+    /* Build lookup: label → station */
     const stMap = new Map(mapData.stations.map(s => [s.label, s]))
 
-    /* Report segments + points ────────────────────────────── */
+    /* Report segments + points */
     const allFeatures: GeoJSON.Feature[] = mapData.reports
       .filter(r => r.start_chainage != null || r.start_chainage_lat != null)
       .map(r => {
-        // Prefer GPS coords; fall back to chainage lookup
         const startLng = r.start_chainage_long
           ? parseFloat(r.start_chainage_long)
           : stMap.get(Math.round(r.start_chainage ?? r.start_chainage_val ?? 0))?.longitude
@@ -189,25 +186,18 @@ export default function HitechMap({ project }: Props) {
         if (!startLng || !startLat || isNaN(startLng) || isNaN(startLat)) return null
 
         const samePoint = !endLng || !endLat || (startLng === endLng && startLat === endLat)
-
         const props = {
-          id:       r.id,
-          category: r.activity_category,
-          type:     r.activity_type,
-          status:   r.activity_status,
-          reporter: r.reporter_name,
-          date:     r.date_of_activity,
-          section:  r.section_name,
-          start_ch: r.start_chainage,
-          end_ch:   r.end_chainage,
-          catColor:    catColor(r.activity_category),
+          id: r.id, category: r.activity_category, type: r.activity_type,
+          status: r.activity_status, reporter: r.reporter_name,
+          date: r.date_of_activity, section: r.section_name,
+          start_ch: r.start_chainage, end_ch: r.end_chainage,
+          catColor: catColor(r.activity_category),
           statusColor: statusColor(r.activity_status),
         }
-
         return {
           type: 'Feature' as const,
           geometry: samePoint
-            ? { type: 'Point'      as const, coordinates: [startLng, startLat] }
+            ? { type: 'Point' as const,      coordinates: [startLng, startLat] }
             : { type: 'LineString' as const, coordinates: [[startLng, startLat], [endLng!, endLat!]] },
           properties: props,
         }
@@ -217,7 +207,7 @@ export default function HitechMap({ project }: Props) {
     const linesGJ:  GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: allFeatures.filter(f => f.geometry.type === 'LineString') }
     const pointsGJ: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: allFeatures.filter(f => f.geometry.type === 'Point') }
 
-    /* Add / update sources ────────────────────────────────── */
+    /* Add / update sources */
     const upsertSource = (id: string, data: GeoJSON.FeatureCollection) => {
       if (map.getSource(id)) (map.getSource(id) as any).setData(data)
       else map.addSource(id, { type: 'geojson', data })
@@ -227,24 +217,19 @@ export default function HitechMap({ project }: Props) {
     upsertSource('report-lines',  linesGJ)
     upsertSource('report-points', pointsGJ)
 
-    /* Layers ─────────────────────────────────────────────── */
+    /* Layers */
     const colorExpr = colorBy === 'category' ? ['get', 'catColor'] : ['get', 'statusColor']
 
-    // Road reference line
     if (!map.getLayer('station-line-layer')) {
       map.addLayer({ id: 'station-line-layer', type: 'line', source: 'station-line',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint:  { 'line-color': '#ffffff', 'line-width': 1.5, 'line-opacity': 0.2, 'line-dasharray': [4, 3] } })
     }
-
-    // Chainage tick labels
     if (!map.getLayer('station-ticks-layer')) {
       map.addLayer({ id: 'station-ticks-layer', type: 'symbol', source: 'station-ticks',
         layout: { 'text-field': ['get', 'chainage'], 'text-size': 10, 'text-offset': [0, -1.2], 'text-anchor': 'bottom' },
         paint:  { 'text-color': '#d4a040', 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.5 } })
     }
-
-    // Activity segment lines
     if (!map.getLayer('report-lines-layer')) {
       map.addLayer({ id: 'report-lines-layer', type: 'line', source: 'report-lines',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
@@ -252,8 +237,6 @@ export default function HitechMap({ project }: Props) {
     } else {
       map.setPaintProperty('report-lines-layer', 'line-color', colorExpr)
     }
-
-    // Activity point dots
     if (!map.getLayer('report-points-layer')) {
       map.addLayer({ id: 'report-points-layer', type: 'circle', source: 'report-points',
         paint: { 'circle-color': colorExpr as any, 'circle-radius': 7,
@@ -262,11 +245,9 @@ export default function HitechMap({ project }: Props) {
       map.setPaintProperty('report-points-layer', 'circle-color', colorExpr)
     }
 
-    /* Click handler ──────────────────────────────────────── */
+    /* Click handler */
     const onClick = (e: any) => {
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: ['report-lines-layer', 'report-points-layer'],
-      })
+      const features = map.queryRenderedFeatures(e.point, { layers: ['report-lines-layer', 'report-points-layer'] })
       if (!features.length) { setSelReport(null); return }
       const p = features[0].properties
       setSelReport({
@@ -286,24 +267,46 @@ export default function HitechMap({ project }: Props) {
     map.on('mouseenter', 'report-points-layer', () => { map.getCanvas().style.cursor = 'pointer' })
     map.on('mouseleave', 'report-points-layer', () => { map.getCanvas().style.cursor = '' })
 
-    /* Fit map to road extent ─────────────────────────────── */
+    /* ── Fit map bounds ─────────────────────────────────────
+       If chainage filter is active → zoom to that range.
+       Otherwise → fit the entire road.
+    ────────────────────────────────────────────────────────── */
     if (mapData.stations.length > 0) {
-      const lngs = mapData.stations.map(s => s.longitude)
-      const lats = mapData.stations.map(s => s.latitude)
-      map.fitBounds(
-        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-        { padding: 60, duration: 1200 }
-      )
+      const chFromNum = chFrom ? Number(chFrom) : null
+      const chToNum   = chTo   ? Number(chTo)   : null
+      const hasChFilter = chFromNum != null && chToNum != null &&
+                          !isNaN(chFromNum) && !isNaN(chToNum) &&
+                          chToNum > chFromNum
+
+      if (hasChFilter) {
+        // Zoom to the filtered chainage range
+        const rangeStations = mapData.stations.filter(
+          s => s.label >= chFromNum! && s.label <= chToNum!
+        )
+        const target = rangeStations.length > 0 ? rangeStations : mapData.stations
+        const lngs = target.map(s => s.longitude)
+        const lats = target.map(s => s.latitude)
+        map.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 80, duration: 1200, maxZoom: 16 }
+        )
+      } else {
+        // Fit entire road
+        const lngs = mapData.stations.map(s => s.longitude)
+        const lats = mapData.stations.map(s => s.latitude)
+        map.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 60, duration: 1200 }
+        )
+      }
     }
 
     return () => { map.off('click', onClick) }
-  }, [mapLoaded, mapData, colorBy, project])
+  }, [mapLoaded, mapData, colorBy, project, chFrom, chTo])
 
   /* ── Render ─────────────────────────────────────────────── */
   const legendItems = colorBy === 'category' ? Object.entries(CAT_COLORS) : Object.entries(STATUS_COLORS)
-  const hasReports  = mapData && mapData.reports.some(
-    r => r.start_chainage != null || r.start_chainage_lat != null
-  )
+  const hasReports  = mapData && mapData.reports.some(r => r.start_chainage != null || r.start_chainage_lat != null)
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
@@ -313,17 +316,25 @@ export default function HitechMap({ project }: Props) {
         <span style={{ fontSize: 11, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: 1 }}>COLOR BY</span>
         {(['category', 'status'] as const).map(opt => (
           <button key={opt} onClick={() => setColorBy(opt)} style={{
-            background:   colorBy === opt ? D.amber : 'transparent',
-            color:        colorBy === opt ? '#000'  : D.muted,
-            border:       `1px solid ${colorBy === opt ? D.amber : D.sub}`,
+            background: colorBy === opt ? D.amber : 'transparent',
+            color:      colorBy === opt ? '#000'  : D.muted,
+            border:     `1px solid ${colorBy === opt ? D.amber : D.sub}`,
             borderRadius: 5, padding: '4px 14px', fontSize: 11,
             cursor: 'pointer', fontFamily: 'var(--font-mono)',
             letterSpacing: 1, textTransform: 'uppercase', transition: 'all 0.2s',
             boxShadow: colorBy === opt ? SH_RAISED : 'none',
-          }}>
-            {opt}
-          </button>
+          }}>{opt}</button>
         ))}
+
+        {/* Active chainage range badge */}
+        {chFrom && chTo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${D.amber}15`, border: `1px solid ${D.amber}44`, borderRadius: 5, padding: '4px 10px' }}>
+            <span style={{ fontSize: 10, color: D.amber, fontFamily: 'var(--font-mono)', letterSpacing: 0.5 }}>
+              CH {Number(chFrom).toLocaleString()} → {Number(chTo).toLocaleString()}
+            </span>
+          </div>
+        )}
+
         {mapData && (
           <span style={{ marginLeft: 'auto', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)' }}>
             {mapData.reports.length} reports · {mapData.stations.length.toLocaleString()} chainage points

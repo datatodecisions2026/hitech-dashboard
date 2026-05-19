@@ -23,7 +23,6 @@ function groupCount(vals: string[]): Array<{ name: string; count: number }> {
     .map(([name, count]) => ({ name, count }))
 }
 
-/** Fetch ALL rows from a table by paginating 1 000 rows at a time. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchAll<T = Record<string, unknown>>(query: any): Promise<T[]> {
   const all: T[] = []
@@ -44,12 +43,23 @@ export async function GET(req: NextRequest) {
   const session = await getIronSession<AppSession>(req, res, sessionOptions)
   if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // ── Read filter params ────────────────────────────────────────────────────
   const { searchParams } = new URL(req.url)
-  const filterCategory  = searchParams.get('category')  || ''
-  const filterProject   = searchParams.get('project')   || ''
-  const filterDateFrom  = searchParams.get('date_from') || ''
-  const filterDateTo    = searchParams.get('date_to')   || ''
+  const filterCategory = searchParams.get('category')  || ''
+  const filterProject  = searchParams.get('project')   || ''
+  const filterDateFrom = searchParams.get('date_from') || ''
+  const filterDateTo   = searchParams.get('date_to')   || ''
+  const filterChFrom   = searchParams.get('ch_from')   || ''
+  const filterChTo     = searchParams.get('ch_to')     || ''
+
+  // Chainage filter is only active when BOTH values are present and numeric
+  const chFromNum = Number(filterChFrom)
+  const chToNum   = Number(filterChTo)
+  const applyChFilter = !!(
+    filterChFrom && filterChTo &&
+    !isNaN(chFromNum) && !isNaN(chToNum) &&
+    chFromNum > 0 && chToNum > 0 &&
+    chToNum > chFromNum
+  )
 
   const now = new Date()
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -63,7 +73,6 @@ export async function GET(req: NextRequest) {
   }
   const cutoff = Object.keys(dayMap)[0]
 
-  // ── Build base query with filters ─────────────────────────────────────────
   function buildLiteQuery() {
     let q = supabase
       .from('hitech_report_hitechreport')
@@ -74,18 +83,19 @@ export async function GET(req: NextRequest) {
       )
     if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
     if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
-    if (filterDateFrom) q = (q as any).gte('date_of_activity', filterDateFrom)
-    if (filterDateTo)   q = (q as any).lte('date_of_activity', filterDateTo)
+    if (filterDateFrom) q = (q as any).gte('date_of_activity',    filterDateFrom)
+    if (filterDateTo)   q = (q as any).lte('date_of_activity',    filterDateTo)
+    if (applyChFilter) {
+      q = (q as any).gte('start_chainage_val', chFromNum)
+      q = (q as any).lte('start_chainage_val', chToNum)
+    }
     return q
   }
 
-  // ── Fetch everything in parallel ──────────────────────────────────────────
   const [all, recent, media, totalMediaResult, machines, employees, engineers, supervisors, filterOptions] =
     await Promise.all([
-      // All report rows (paginated, filtered)
       fetchAll(buildLiteQuery()),
 
-      // Recent 12 reports — same filters as main query
       (() => {
         let q = supabase
           .from('hitech_report_hitechreport')
@@ -95,58 +105,51 @@ export async function GET(req: NextRequest) {
           .limit(12)
         if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
         if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
-        if (filterDateFrom) q = (q as any).gte('date_of_activity', filterDateFrom)
-        if (filterDateTo)   q = (q as any).lte('date_of_activity', filterDateTo)
+        if (filterDateFrom) q = (q as any).gte('date_of_activity',    filterDateFrom)
+        if (filterDateTo)   q = (q as any).lte('date_of_activity',    filterDateTo)
+        if (applyChFilter) {
+          q = (q as any).gte('start_chainage_val', chFromNum)
+          q = (q as any).lte('start_chainage_val', chToNum)
+        }
         return q
       })(),
 
-      // Media
       supabase
         .from('hitech_report_hitechphoto')
         .select('file, media_type, report_id')
         .order('id', { ascending: false })
         .limit(600),
 
-      // Total photo count
       supabase
         .from('hitech_report_hitechphoto')
         .select('id', { count: 'exact', head: true })
         .eq('media_type', 'image'),
 
-      // Machines
       supabase
         .from('hitech_report_hitechmachine')
         .select('machine_name, ownership, driver_name, fleet_number, report_id'),
 
-      // Employees
       supabase
         .from('hitech_report_hitechemployee')
         .select('employee_name, employee_role, report_id'),
 
-      // Engineers
       supabase
         .from('hitech_report_hitechengineer')
         .select('engineer_name, party, report_id'),
 
-      // Supervisors
       supabase
         .from('hitech_report_hitechsupervisor')
         .select('supervisor_name, party, report_id'),
 
-      // Filter dropdown options (unfiltered — always show all options, paginated to get every row)
       fetchAll(supabase
         .from('hitech_report_hitechreport')
         .select('activity_category, project_name')),
     ])
 
-  // ── Aggregate report data ─────────────────────────────────────────────────
   const totalReports     = all.length
   const reportsThisMonth = all.filter(r => (r as any).date_of_activity >= thisMonthStart).length
   const activeProjects   = new Set(
-    all
-      .filter(r => (r as any).date_of_activity >= cutoff)
-      .map(r => (r as any).project_name)
-      .filter(Boolean)
+    all.filter(r => (r as any).date_of_activity >= cutoff).map(r => (r as any).project_name).filter(Boolean)
   ).size
   const uniqueReporters  = new Set(all.map(r => (r as any).reporter_name).filter(Boolean)).size
 
@@ -160,19 +163,16 @@ export async function GET(req: NextRequest) {
   const byWeather  = groupCount(all.map(r => (r as any).weather            as string)).slice(0, 6)
   const byDay      = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
 
-  // ── HR / Machine charts — filter by the same report IDs as the main query ──
   const filteredIds = new Set(all.map(r => (r as any).id as number))
-  const inFilter = (row: unknown) => !filterProject && !filterCategory && !filterDateFrom && !filterDateTo
-    ? true
-    : filteredIds.has((row as any).report_id as number)
+  const hasFilters  = !!(filterProject || filterCategory || filterDateFrom || filterDateTo || applyChFilter)
+  const inFilter    = (row: unknown) => !hasFilters ? true : filteredIds.has((row as any).report_id as number)
 
-  const byMachine    = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).machine_name   as string)).slice(0, 15)
-  const byEmployee   = groupCount((employees.data   ?? []).filter(inFilter).map(e => (e as any).employee_name  as string)).slice(0, 15)
-  const byEngineer   = groupCount((engineers.data   ?? []).filter(inFilter).map(e => (e as any).engineer_name  as string)).slice(0, 15)
+  const byMachine    = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).machine_name    as string)).slice(0, 15)
+  const byEmployee   = groupCount((employees.data   ?? []).filter(inFilter).map(e => (e as any).employee_name   as string)).slice(0, 15)
+  const byEngineer   = groupCount((engineers.data   ?? []).filter(inFilter).map(e => (e as any).engineer_name   as string)).slice(0, 15)
   const bySupervisor = groupCount((supervisors.data ?? []).filter(inFilter).map(s => (s as any).supervisor_name as string)).slice(0, 15)
-  const byOwnership  = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).ownership      as string))
+  const byOwnership  = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).ownership       as string))
 
-  // ── Map points ────────────────────────────────────────────────────────────
   const mapPoints = all
     .filter(r => (r as any).start_chainage_lat && (r as any).start_chainage_long)
     .map(r => ({
@@ -186,7 +186,6 @@ export async function GET(req: NextRequest) {
     }))
     .filter(p => !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0)
 
-  // ── Activity calendar ─────────────────────────────────────────────────────
   const calMap: Record<string, { count: number; projs: Set<string> }> = {}
   all.forEach(r => {
     const d = (r as any).date_of_activity as string
@@ -199,15 +198,13 @@ export async function GET(req: NextRequest) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, { count, projs }]) => ({ date, count, projects: [...projs] }))
 
-  // ── Filter dropdown options ───────────────────────────────────────────────
-  const allRows       = filterOptions ?? []
-  const categories    = [...new Set(allRows.map(r => toTitleCase((r as any).activity_category)).filter(Boolean))].sort()
-  const projects      = [...new Set(allRows.map(r => toTitleCase((r as any).project_name)).filter(Boolean))].sort()
+  const allRows    = filterOptions ?? []
+  const categories = [...new Set(allRows.map(r => toTitleCase((r as any).activity_category)).filter(Boolean))].sort()
+  const projects   = [...new Set(allRows.map(r => toTitleCase((r as any).project_name)).filter(Boolean))].sort()
 
-  // ── Media ─────────────────────────────────────────────────────────────────
   const reportProjectMap: Record<number, string> = {}
   for (const r of all) {
-    const id = (r as any).id as number
+    const id   = (r as any).id as number
     const proj = toTitleCase((r as any).project_name as string)
     if (id && proj) reportProjectMap[id] = proj
   }
@@ -215,11 +212,10 @@ export async function GET(req: NextRequest) {
   const mediaItems = (media.data ?? [])
     .filter(p => p.file)
     .map(p => ({
-      file: p.file as string,
-      media_type: (p.media_type || 'image') as string,
+      file:         p.file as string,
+      media_type:   (p.media_type || 'image') as string,
       project_name: reportProjectMap[(p as any).report_id as number] || '',
     }))
-    // When a project filter is active, only return photos whose report belongs to that project
     .filter(p => !filterProject || p.project_name !== '')
 
   return NextResponse.json({
@@ -232,20 +228,11 @@ export async function GET(req: NextRequest) {
         : (totalMediaResult.count ?? 0),
       uniqueReporters,
     },
-    byCategory,
-    byProject,
-    byDay,
-    byWeather,
-    byMachine,
-    byEmployee,
-    byEngineer,
-    bySupervisor,
-    byOwnership,
-    mediaItems,
-    mapPoints,
-    activityCalendar,
+    byCategory, byProject, byDay, byWeather,
+    byMachine, byEmployee, byEngineer, bySupervisor, byOwnership,
+    mediaItems, mapPoints, activityCalendar,
     recentReports: recent.data ?? [],
     filterOptions: { categories, projects },
-    activeFilters: { filterCategory, filterProject, filterDateFrom, filterDateTo },
+    activeFilters: { filterCategory, filterProject, filterDateFrom, filterDateTo, filterChFrom, filterChTo },
   })
 }
