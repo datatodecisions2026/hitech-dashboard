@@ -22,7 +22,7 @@ async function fetchAll<T = Record<string, unknown>>(
     }
     const { data, error } = await q
     if (error || !data || data.length === 0) break
-    all.push(...data)
+    all.push(...(data as T[]))
     if (data.length < PAGE) break
     from += PAGE
   }
