@@ -2,7 +2,7 @@
 sync_to_supabase.py
 ────────────────────────────────────────────────────────────────────
 Pulls data from Google Drive Excel files, applies all Power BI
-M-code transformations, then inserts into Supabase tables:
+M-code transformations, then UPSERTS into Supabase tables:
 
   • hitech_report_hitechreport      ← Main_Survey_Data (new + old)
   • hitech_report_hitechphoto       ← PowerBI_Photo_Links (linked via globalid)
@@ -11,20 +11,23 @@ M-code transformations, then inserts into Supabase tables:
   • hitech_report_hitechengineer    ← site_engineers sheet
   • hitech_report_hitechmachine     ← machine_1 sheet
 
-SAFE: Does NOT delete or modify any existing rows.
+FIXES vs old script:
+  ✓ globalid saved to DB (was missing)
+  ✓ start_chainage / end_chainage strings saved
+  ✓ start_chainage_val / end_chainage_val computed numerically
+  ✓ All GPS columns mapped
+  ✓ UPSERT on globalid — no duplicates even if run multiple times
+  ✓ Deduplication before insert
 
 Requirements:
-    pip install pandas openpyxl requests python-dotenv
-    pip install supabase==2.10.0
+    pip install pandas openpyxl requests python-dotenv supabase==2.10.0
 
 Usage:
-    cd C:\hitech-dashboard
+    cd C:\\hitech-dashboard
     python sync_to_supabase.py
 """
 
-import io
-import os
-import datetime
+import io, os, re, math, datetime
 import requests
 import pandas as pd
 from dotenv import load_dotenv
@@ -136,29 +139,21 @@ def gdrive_url(file_id):
 def fetch_excel_file(file_id: str, label: str) -> bytes:
     print(f"  Downloading {label} ({file_id[:8]}…)")
     session = requests.Session()
-
-    # First request — may get a confirmation page for large files
     r = session.get(gdrive_url(file_id), timeout=120)
     r.raise_for_status()
 
-    # Check if Google returned a virus-scan warning page instead of the file
     if b"confirm=" in r.content or b"download_warning" in r.content:
         print("  Large file — confirming download…")
-        # Extract confirm token
-        import re
         match = re.search(rb"confirm=([0-9A-Za-z_\-]+)", r.content)
         if match:
             token = match.group(1).decode()
             url = gdrive_url(file_id) + f"&confirm={token}"
         else:
-            # Newer Drive uses a different confirmation URL
             url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
         r = session.get(url, timeout=180)
         r.raise_for_status()
 
-    # Verify we got an actual Excel file
     if r.content[:2] not in (b'PK', b'\xd0\xcf'):
-        # Try the direct export URL as fallback
         print("  Retrying with direct export URL…")
         url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
         r = session.get(url, timeout=180)
@@ -186,7 +181,7 @@ def epoch_ms_to_date_str(series):
 def clean_val(v):
     if v is None:
         return None
-    if isinstance(v, float) and v != v:
+    if isinstance(v, float) and math.isnan(v):
         return None
     s = str(v).strip()
     if s in ("", "nan", "NaT", "None", "null"):
@@ -198,8 +193,27 @@ def clean_row(row: dict) -> dict:
     return {k: clean_val(v) for k, v in row.items()}
 
 
+def chainage_to_val(s) -> float | None:
+    """Convert '30+951' → 30951.0  or  '94.42' → 94.42  or  None."""
+    s = clean_val(s)
+    if s is None:
+        return None
+    s = str(s).strip()
+    # Format: 30+951 or 30+951.5
+    m = re.match(r'^(\d+)\+(\d+(?:\.\d+)?)$', s)
+    if m:
+        try:
+            return float(m.group(1)) * 1000 + float(m.group(2))
+        except Exception:
+            return None
+    # Plain decimal / integer
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
 def insert_batched(supabase: Client, table: str, rows: list) -> list:
-    """Insert rows in batches. Returns all inserted rows (with Supabase-assigned id)."""
     total = len(rows)
     if total == 0:
         print(f"  No rows for {table} — skipping.")
@@ -215,6 +229,26 @@ def insert_batched(supabase: Client, table: str, rows: list) -> list:
     return inserted
 
 
+def upsert_batched(supabase: Client, table: str, rows: list,
+                   on_conflict: str = "globalid") -> list:
+    """Upsert rows — update existing rows with same globalid, insert new ones."""
+    total = len(rows)
+    if total == 0:
+        print(f"  No rows for {table} — skipping.")
+        return []
+    inserted = []
+    for i in range(0, total, BATCH_SIZE):
+        batch = rows[i:i + BATCH_SIZE]
+        result = supabase.table(table).upsert(
+            batch, on_conflict=on_conflict
+        ).execute()
+        if result.data:
+            inserted.extend(result.data)
+        print(f"    {min(i + BATCH_SIZE, total)}/{total} upserted into {table}…")
+    print(f"  ✓ {total} rows → {table}")
+    return inserted
+
+
 # ─── Load + transform ─────────────────────────────────────────────────────────
 
 def load_combined(new_content: bytes, old_content: bytes) -> pd.DataFrame:
@@ -223,6 +257,14 @@ def load_combined(new_content: bytes, old_content: bytes) -> pd.DataFrame:
     old_df = read_sheet(old_content, "Main_Survey_Data")
     df = pd.concat([new_df, old_df], ignore_index=True)
     print(f"  Raw rows: {len(df)}")
+
+    # Deduplicate on globalid
+    if "globalid" in df.columns:
+        before = len(df)
+        df["globalid"] = df["globalid"].fillna("").astype(str).str.strip()
+        df = df[df["globalid"] != ""]  # remove rows with no globalid
+        df = df.drop_duplicates(subset=["globalid"], keep="first")
+        print(f"  After dedup on globalid: {len(df)} rows (removed {before - len(df)})")
 
     # Date conversion
     df["date_of_activity"] = epoch_ms_to_date_str(df["date_of_activity"])
@@ -236,7 +278,6 @@ def load_combined(new_content: bytes, old_content: bytes) -> pd.DataFrame:
     df["project_section"] = df["project_section"].fillna("").astype(str) \
         if "project_section" in df.columns else ""
     df["activity_status"] = df["activity_status"].replace("", "Pending")
-    df["globalid"] = df["globalid"].fillna("").astype(str)
 
     # M-code replacements
     df["activity_type"] = apply_replacements(df["activity_type"], ACTIVITY_TYPE_REPLACEMENTS)
@@ -247,22 +288,18 @@ def load_combined(new_content: bytes, old_content: bytes) -> pd.DataFrame:
     )
     df["activity_category"] = apply_replacements(df["activity_category"], CATEGORY_REPLACEMENTS)
 
-    # GPS
+    # GPS columns — keep as strings (Supabase stores as varchar)
     for col in ["start_chainage_lat", "start_chainage_long",
-                "end_chainage_lat",   "end_chainage_long"]:
+                "end_chainage_lat",   "end_chainage_long",
+                "chainage_entity_lat", "chainage_entity_long"]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = df[col].astype(str).replace({"nan": None, "": None, "None": None})
 
     print(f"  Transformed: {len(df)} rows")
     return df
 
 
 def load_images(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Returns a DataFrame with columns:
-      file, media_type, uploaded_at, globalid
-    globalid is used later to look up the report_id after insert.
-    """
     print("\n[LOAD 2/6] Photo links…")
     if "PowerBI_Photo_Links" not in df.columns:
         print("  No photo links found.")
@@ -284,10 +321,7 @@ def load_images(df: pd.DataFrame) -> pd.DataFrame:
     )
     img["media_type"]  = "image"
     img["uploaded_at"] = img["date_of_activity"].fillna("2024-01-01")
-
-    img = img[["globalid", "file", "media_type", "uploaded_at"]].drop_duplicates(
-        subset=["file"]
-    )
+    img = img[["globalid", "file", "media_type", "uploaded_at"]].drop_duplicates(subset=["file"])
     print(f"  Photos: {len(img)}")
     return img
 
@@ -304,7 +338,7 @@ def load_sheet(content: bytes, sheet_name: str, label: str) -> pd.DataFrame:
 
 def sync_reports(supabase: Client, df: pd.DataFrame) -> dict:
     """
-    Insert all reports.
+    Upsert all reports on globalid.
     Returns { excel_globalid → supabase_report_id } map for child tables.
     """
     print("\n[SYNC 1/6] Reports → hitech_report_hitechreport…")
@@ -317,29 +351,102 @@ def sync_reports(supabase: Client, df: pd.DataFrame) -> dict:
         if not date_val or date_val in ("nan", "NaT", "None", ""):
             date_val = "2024-01-01"
 
+        gid = str(r.get("globalid", "")).strip()
+
+        # Chainage strings
+        start_ch = clean_val(r.get("start_chainage"))
+        end_ch   = clean_val(r.get("end_chainage"))
+
+        # Chainage numeric values
+        start_ch_val = chainage_to_val(start_ch)
+        end_ch_val   = chainage_to_val(end_ch)
+
         row = clean_row({
-            "date_of_activity":    date_val,
-            "submitted_at":        date_val,
-            "reporter_name":       r.get("reporter_name", ""),
-            "project_name":        r.get("project_name", ""),
-            "section_name":        r.get("project_section", ""),
-            "activity_category":   r.get("activity_category", ""),
-            "activity_type":       r.get("activity_type", ""),
-            "activity_status":     r.get("activity_status", "Pending") or "Pending",
-            "comment_activity":    r.get("comment_activity", ""),
-            "weather":             r.get("weather", ""),
-            "start_chainage_lat":  r.get("start_chainage_lat"),
-            "start_chainage_long": r.get("start_chainage_long"),
-            "end_chainage_lat":    r.get("end_chainage_lat"),
-            "end_chainage_long":   r.get("end_chainage_long"),
+            # ── Identity ──────────────────────────────────────
+            "globalid":                   gid,
+            "objectid":                   clean_val(r.get("objectid")),
+
+            # ── Dates ─────────────────────────────────────────
+            "date_of_activity":           date_val,
+            "submitted_at":               date_val,
+
+            # ── Who ───────────────────────────────────────────
+            "reporter_name":              r.get("reporter_name", ""),
+            "project_name":               r.get("project_name", ""),
+            "section_name":               r.get("project_section", ""),
+
+            # ── Activity ──────────────────────────────────────
+            "activity_category":          r.get("activity_category", ""),
+            "activity_type":              r.get("activity_type", ""),
+            "activity_subtype":           clean_val(r.get("subtype")),
+            "activity_status":            r.get("activity_status", "Pending") or "Pending",
+            "side":                       clean_val(r.get("side")),
+            "comment_activity":           r.get("comment_activity", ""),
+            "weather":                    r.get("weather", ""),
+
+            # ── Chainage strings ───────────────────────────────
+            "start_chainage":             start_ch,
+            "end_chainage":               end_ch,
+            "chainage_entity":            clean_val(r.get("chainage_entity")),
+
+            # ── Chainage numeric values ────────────────────────
+            "start_chainage_val":         start_ch_val,
+            "end_chainage_val":           end_ch_val,
+
+            # ── Chainage GPS ───────────────────────────────────
+            "start_chainage_lat":         clean_val(r.get("start_chainage_lat")),
+            "start_chainage_long":        clean_val(r.get("start_chainage_long")),
+            "end_chainage_lat":           clean_val(r.get("end_chainage_lat")),
+            "end_chainage_long":          clean_val(r.get("end_chainage_long")),
+            "chainage_entity_lat":        clean_val(r.get("chainage_entity_lat")),
+            "chainage_entity_long":       clean_val(r.get("chainage_entity_long")),
+
+            # ── Distances ─────────────────────────────────────
+            "show_dist":                  clean_val(r.get("show_dist")),
+            "show_dist_abs":              clean_val(r.get("show_dist_abs")),
+            "show_dist_cond":             clean_val(r.get("show_dist_cond")),
+            "length_entity":              clean_val(r.get("length_entity")),
+
+            # ── Measurements ──────────────────────────────────
+            "measurments":                clean_val(r.get("measurments")),
+            "nbr_cell":                   clean_val(r.get("nbr_cell")),
+            "nbr_precast_cells":          clean_val(r.get("nbr_precast_cells")),
+            "cement_quantity":            clean_val(r.get("cement_quantity")),
+            "iron_quantity":              clean_val(r.get("iron_quantity")),
+
+            # ── Compliance ────────────────────────────────────
+            "not_conforming":             clean_val(r.get("yes_no_like_design")),
+            "not_conforming_issue":       clean_val(r.get("not_like_design_issue")),
+            "not_conforming_correction":  clean_val(r.get("not_like_design_correction")),
+
+            # ── Party ─────────────────────────────────────────
+            "party_for_activity":         clean_val(r.get("employee_contractor")),
+            "subcontractor_name_activity":clean_val(r.get("subcontactor_name")),
+
+            # ── Car / Team ────────────────────────────────────
+            "car_used":                   clean_val(r.get("car_using")),
+            "team_car":                   clean_val(r.get("team_car")),
+            "team_car_missing":           clean_val(r.get("team_car_missing")),
+
+            # ── Notes / Links ─────────────────────────────────
+            "images_note":                clean_val(r.get("images_note")),
+            "table_info":                 clean_val(r.get("table_info")),
+            "concatenate":                clean_val(r.get("concatenate")),
+            "powerbi_photo_links":        clean_val(r.get("PowerBI_Photo_Links")),
+            "drive_folder_link":          clean_val(r.get("Drive_Folder_Link")),
         })
+
         if not row.get("submitted_at"):
             row["submitted_at"] = "2024-01-01"
+        if not row.get("globalid"):
+            continue  # skip rows without globalid
 
         rows.append(row)
-        globalids.append(str(r.get("globalid", "")))
+        globalids.append(gid)
 
-    inserted = insert_batched(supabase, "hitech_report_hitechreport", rows)
+    # UPSERT on globalid — no duplicates
+    inserted = upsert_batched(supabase, "hitech_report_hitechreport", rows,
+                              on_conflict="globalid")
 
     # Build globalid → supabase id map
     globalid_map = {}
@@ -451,7 +558,7 @@ def sync_machines(supabase: Client, df: pd.DataFrame, globalid_map: dict):
             "machine_name": r.get("machinery_1", ""),
             "plate_number": plate,
             "driver_name":  r.get("machine_driver_1", ""),
-            "fleet_number": plate or "N/A",  # NOT NULL — use plate as fallback
+            "fleet_number": plate or "N/A",
             "report_id":    report_id,
         }))
     print(f"  Matched: {len(rows)} | Skipped: {skipped}")
@@ -464,15 +571,12 @@ def main():
     print("=" * 60)
     print("  Hitech Google Drive → Supabase Full Sync")
     print(f"  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("  Tables: reports, photos, employees, supervisors,")
-    print("          engineers, machines")
-    print("  NOTE: Insert only — no existing rows deleted.")
+    print("  UPSERT mode — no duplicates, safe to run multiple times")
     print("=" * 60)
 
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     print(f"\n  ✓ Connected to Supabase")
 
-    # Download both Excel files once each
     print("\nDownloading Excel files from Google Drive…")
     new_content = fetch_excel_file(NEW_REPORT_ID, "new_report")
     old_content = fetch_excel_file(OLD_REPORT_ID, "old_report")
@@ -486,10 +590,26 @@ def main():
     engineers   = load_sheet(new_content, "site_engineers",     "Engineers")
     machines    = load_sheet(new_content, "machine_1",          "Machines")
 
-    # Insert reports first — get globalid → id map back
+    # Clear child tables before re-inserting
+    # (child tables don't have a natural unique key so we clear + re-insert)
+    print("\nClearing child tables…")
+    for table in [
+        "hitech_report_hitechmachine",
+        "hitech_report_hitechemployee",
+        "hitech_report_hitechphoto",
+        "hitech_report_hitechsupervisor",
+        "hitech_report_hitechengineer",
+    ]:
+        try:
+            supabase.table(table).delete().neq("id", 0).execute()
+            print(f"  Cleared: {table}")
+        except Exception as e:
+            print(f"  Could not clear {table}: {e}")
+
+    # Upsert reports — returns globalid → id map
     globalid_map = sync_reports(supabase, combined)
 
-    # Insert all child tables using the map
+    # Insert child tables
     sync_photos(supabase, images, globalid_map)
     sync_employees(supabase, employees, globalid_map)
     sync_supervisors(supabase, supervisors, globalid_map)
@@ -499,6 +619,7 @@ def main():
     print("\n" + "=" * 60)
     print("  ✓ Full sync complete!")
     print(f"  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Reports upserted: {len(globalid_map)}")
     print("  Refresh http://localhost:3000/dashboard")
     print("=" * 60)
 

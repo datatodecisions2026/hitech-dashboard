@@ -75,12 +75,12 @@ export async function GET(req: NextRequest) {
 
   function buildLiteQuery() {
     let q = supabase
-      .from('hitech_report_hitechreport')
-      .select(
-        'id, activity_category, project_name, date_of_activity, weather, ' +
-        'activity_status, reporter_name, start_chainage_lat, start_chainage_long, ' +
-        'end_chainage_lat, end_chainage_long'
-      )
+    .from('hitech_report_hitechreport')
+    .select(
+      'id, activity_category, project_name, date_of_activity, weather, ' +
+      'activity_status, reporter_name, start_chainage_lat, start_chainage_long, ' +
+      'end_chainage_lat, end_chainage_long, start_chainage_val, end_chainage_val'
+    )
     if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
     if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
     if (filterDateFrom) q = (q as any).gte('date_of_activity',    filterDateFrom)
