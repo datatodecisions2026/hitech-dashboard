@@ -105,38 +105,60 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
-    import('mapbox-gl').then(({ default: mapboxgl }) => {
-      mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+    if (!token) {
+      setError('Mapbox token not set (NEXT_PUBLIC_MAPBOX_TOKEN missing)')
+      setLoading(false)
+      return
+    }
 
-      const map = new mapboxgl.Map({
-        container: mapContainer.current!,
-        style:     'mapbox://styles/mapbox/dark-v11',
-        center:    [3.627, 6.432],
-        zoom:      11,
-        attributionControl: false,
+    let localMap: any = null
+
+    import('mapbox-gl')
+      .then(({ default: mapboxgl }) => {
+        if (!mapContainer.current) return
+        mapboxgl.accessToken = token
+
+        try {
+          localMap = new mapboxgl.Map({
+            container: mapContainer.current,
+            style:     'mapbox://styles/mapbox/dark-v11',
+            center:    [3.627, 6.432],
+            zoom:      11,
+            attributionControl: false,
+          })
+        } catch (err: any) {
+          setError(`Map init failed: ${err?.message || String(err)}`)
+          setLoading(false)
+          return
+        }
+
+        localMap.addControl(new mapboxgl.NavigationControl(),              'top-right')
+        localMap.addControl(new mapboxgl.ScaleControl({ unit: 'metric' }), 'bottom-right')
+        localMap.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left')
+
+        localMap.on('load', () => {
+          mapRef.current = localMap
+          setMapLoaded(true)
+        })
+
+        localMap.on('error', (e: any) => {
+          setError(`Map error: ${e?.error?.message || 'unknown'}`)
+          setLoading(false)
+        })
       })
-
-      map.addControl(new mapboxgl.NavigationControl(),              'top-right')
-      map.addControl(new mapboxgl.ScaleControl({ unit: 'metric' }), 'bottom-right')
-      map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left')
-
-      map.on('load', () => {
-        mapRef.current = map
-        setMapLoaded(true)
-      })
-
-      map.on('error', (e: any) => {
-        setError(`Map failed to load: ${e?.error?.message || 'check Mapbox token'}`)
+      .catch((err: any) => {
+        setError(`Failed to load Mapbox library: ${err?.message || String(err)}`)
         setLoading(false)
       })
-    })
 
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove()
-        mapRef.current = null
-        setMapLoaded(false)
+      const m = localMap || mapRef.current
+      if (m) {
+        try { m.remove() } catch (_) {}
       }
+      mapRef.current = null
+      setMapLoaded(false)
     }
   }, [])
 
