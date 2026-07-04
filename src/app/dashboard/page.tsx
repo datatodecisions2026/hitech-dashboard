@@ -301,15 +301,26 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
   const [lightbox, setLightbox] = useState<MediaItem | null>(null)
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 12
-  useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [])
-  useEffect(() => { setPage(0); setLightbox(null) }, [activeProject])
-
-  if (!activeProject) return <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center' }}>Select a project to view site media</div>
   const images = items.filter(m => m.media_type !== 'video')
   const videos = items.filter(m => m.media_type === 'video')
   const sorted = [...images, ...videos]
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
   const pageItems  = sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setLightbox(null); return }
+      if (!lightbox) return
+      const idx = sorted.indexOf(lightbox)
+      if (e.key === 'ArrowRight' && idx < sorted.length - 1) setLightbox(sorted[idx + 1])
+      if (e.key === 'ArrowLeft'  && idx > 0)                 setLightbox(sorted[idx - 1])
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [lightbox, sorted])
+  useEffect(() => { setPage(0); setLightbox(null) }, [activeProject])
+
+  if (!activeProject) return <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center' }}>Select a project to view site media</div>
   if (!sorted.length) return <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center' }}>No media for this project</div>
 
   return (
@@ -327,7 +338,9 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.03)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(212,160,64,0.3)` }}
               onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)';   (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}>
               {isVideo
-                ? <video src={item.file} muted playsInline preload="none" style={{ width:'100%',height:'100%',objectFit:'cover',display:'block' }}/>
+                ? <video src={item.file} muted playsInline preload="metadata"
+                    onLoadedMetadata={e => { (e.currentTarget as HTMLVideoElement).currentTime = 0.1 }}
+                    style={{ width:'100%',height:'100%',objectFit:'cover',display:'block',background:'#000' }}/>
                 : <img   src={item.file} alt="" loading="lazy" decoding="async"  style={{ width:'100%',height:'100%',objectFit:'cover',display:'block' }}/>}
               {isVideo && <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none' }}><div style={{ width:32,height:32,borderRadius:'50%',background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center' }}><svg width={14} height={14} viewBox="0 0 24 24" fill={D.amber}><polygon points="5,3 19,12 5,21"/></svg></div></div>}
               <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',backdropFilter:'blur(4px)',borderRadius:4,padding:'2px 7px',fontSize:10,color:D.muted,fontFamily:'var(--font-mono)' }}>{page*PAGE_SIZE+i+1}</div>
@@ -351,14 +364,31 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
             style={{ background:'transparent', color: page===totalPages-1?D.sub:D.amber, border:`1px solid ${page===totalPages-1?D.sub:D.amber}30`, borderRadius:8, padding:'7px 18px', fontSize:12, cursor: page===totalPages-1?'not-allowed':'pointer', fontFamily:'var(--font-mono)', transition:'all 0.2s' }}>Next ›</button>
         </div>
       )}
-      {lightbox && (
-        <div onClick={() => setLightbox(null)} style={{ position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,0.94)',display:'flex',alignItems:'center',justifyContent:'center',padding:40,backdropFilter:'blur(12px)',animation:'fadeIn 0.2s ease' }}>
-          {lightbox.media_type==='video'
-            ? <video key={lightbox.file} src={lightbox.file} autoPlay controls playsInline onClick={e => e.stopPropagation()} style={{ maxWidth:'90vw',maxHeight:'88vh',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,0.9)' }}/>
-            : <img src={lightbox.file} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:'90vw',maxHeight:'88vh',objectFit:'contain',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,0.9)' }}/>}
-          <button onClick={() => setLightbox(null)} style={{ position:'absolute',top:20,right:24,background:'rgba(255,255,255,0.06)',border:`1px solid ${D.sub}`,color:D.muted,width:38,height:38,borderRadius:9,cursor:'pointer',fontSize:'1.1rem',display:'flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s' }}>✕</button>
-        </div>
-      )}
+      {lightbox && (() => {
+        const lbIdx = sorted.indexOf(lightbox)
+        const hasPrev = lbIdx > 0
+        const hasNext = lbIdx < sorted.length - 1
+        const navBtn = (dir: 'left'|'right', enabled: boolean, onClick: () => void) => (
+          <button onClick={e => { e.stopPropagation(); onClick() }} disabled={!enabled}
+            style={{ position:'absolute', top:'50%', transform:'translateY(-50%)', [dir==='left'?'left':'right']:16,
+              background:'rgba(0,0,0,0.55)', border:`1px solid ${enabled?D.amber:D.sub}40`, color: enabled?D.amber:D.sub,
+              width:44, height:44, borderRadius:10, cursor: enabled?'pointer':'default',
+              fontSize:'1.3rem', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.2s', zIndex:1 }}>
+            {dir==='left'?'‹':'›'}
+          </button>
+        )
+        return (
+          <div onClick={() => setLightbox(null)} style={{ position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,0.94)',display:'flex',alignItems:'center',justifyContent:'center',padding:40,backdropFilter:'blur(12px)',animation:'fadeIn 0.2s ease' }}>
+            {lightbox.media_type==='video'
+              ? <video key={lightbox.file} src={lightbox.file} autoPlay controls playsInline onClick={e => e.stopPropagation()} style={{ maxWidth:'90vw',maxHeight:'88vh',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,0.9)' }}/>
+              : <img src={lightbox.file} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:'90vw',maxHeight:'88vh',objectFit:'contain',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,0.9)' }}/>}
+            {navBtn('left',  hasPrev, () => setLightbox(sorted[lbIdx - 1]))}
+            {navBtn('right', hasNext, () => setLightbox(sorted[lbIdx + 1]))}
+            <div onClick={e => e.stopPropagation()} style={{ position:'absolute',bottom:20,left:'50%',transform:'translateX(-50%)',color:D.muted,fontFamily:'var(--font-mono)',fontSize:'0.65rem' }}>{lbIdx+1} / {sorted.length}</div>
+            <button onClick={() => setLightbox(null)} style={{ position:'absolute',top:20,right:24,background:'rgba(255,255,255,0.06)',border:`1px solid ${D.sub}`,color:D.muted,width:38,height:38,borderRadius:9,cursor:'pointer',fontSize:'1.1rem',display:'flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s' }}>✕</button>
+          </div>
+        )
+      })()}
     </>
   )
 }
