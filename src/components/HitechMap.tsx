@@ -110,7 +110,7 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
 
       const map = new mapboxgl.Map({
         container: mapContainer.current!,
-        style:     'mapbox://styles/melhemdatallah1995/cmp3vk6mg001l01qw4oi8glp1',
+        style:     'mapbox://styles/mapbox/dark-v11',
         center:    [3.627, 6.432],
         zoom:      11,
         attributionControl: false,
@@ -363,7 +363,7 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
 
         {/* Error */}
         {error && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(33,33,36,0.9)', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(33,33,36,0.95)', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 12, zIndex: 20, textAlign: 'center', padding: 24 }}>
             {error}
           </div>
         )}
