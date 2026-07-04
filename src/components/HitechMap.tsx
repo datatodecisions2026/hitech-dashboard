@@ -124,6 +124,11 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
         mapRef.current = map
         setMapLoaded(true)
       })
+
+      map.on('error', (e: any) => {
+        setError(`Map failed to load: ${e?.error?.message || 'check Mapbox token'}`)
+        setLoading(false)
+      })
     })
 
     return () => {
