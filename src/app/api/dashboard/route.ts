@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   const applyChFilter = !!(
     filterChFrom && filterChTo &&
     !isNaN(chFromNum) && !isNaN(chToNum) &&
-    chFromNum > 0 && chToNum > 0 &&
+    chFromNum >= 0 && chToNum >= 0 &&
     chToNum > chFromNum
   )
 
@@ -125,21 +125,21 @@ export async function GET(req: NextRequest) {
         .select('id', { count: 'exact', head: true })
         .eq('media_type', 'image'),
 
-      supabase
+      fetchAll(supabase
         .from('hitech_report_hitechmachine')
-        .select('machine_name, ownership, driver_name, fleet_number, report_id'),
+        .select('machine_name, ownership, driver_name, fleet_number, report_id')),
 
-      supabase
+      fetchAll(supabase
         .from('hitech_report_hitechemployee')
-        .select('employee_name, employee_role, report_id'),
+        .select('employee_name, employee_role, report_id')),
 
-      supabase
+      fetchAll(supabase
         .from('hitech_report_hitechengineer')
-        .select('engineer_name, party, report_id'),
+        .select('engineer_name, party, report_id')),
 
-      supabase
+      fetchAll(supabase
         .from('hitech_report_hitechsupervisor')
-        .select('supervisor_name, party, report_id'),
+        .select('supervisor_name, party, report_id')),
 
       fetchAll(supabase
         .from('hitech_report_hitechreport')
@@ -167,11 +167,11 @@ export async function GET(req: NextRequest) {
   const hasFilters  = !!(filterProject || filterCategory || filterDateFrom || filterDateTo || applyChFilter)
   const inFilter    = (row: unknown) => !hasFilters ? true : filteredIds.has((row as any).report_id as number)
 
-  const byMachine    = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).machine_name    as string)).slice(0, 15)
-  const byEmployee   = groupCount((employees.data   ?? []).filter(inFilter).map(e => (e as any).employee_name   as string)).slice(0, 15)
-  const byEngineer   = groupCount((engineers.data   ?? []).filter(inFilter).map(e => (e as any).engineer_name   as string)).slice(0, 15)
-  const bySupervisor = groupCount((supervisors.data ?? []).filter(inFilter).map(s => (s as any).supervisor_name as string)).slice(0, 15)
-  const byOwnership  = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).ownership       as string))
+  const byMachine    = groupCount(machines.filter(inFilter).map(m => (m as any).machine_name    as string)).slice(0, 15)
+  const byEmployee   = groupCount(employees.filter(inFilter).map(e => (e as any).employee_name   as string)).slice(0, 15)
+  const byEngineer   = groupCount(engineers.filter(inFilter).map(e => (e as any).engineer_name   as string)).slice(0, 15)
+  const bySupervisor = groupCount(supervisors.filter(inFilter).map(s => (s as any).supervisor_name as string)).slice(0, 15)
+  const byOwnership  = groupCount(machines.filter(inFilter).map(m => (m as any).ownership         as string))
 
   const mapPoints = all
     .filter(r => (r as any).start_chainage_lat && (r as any).start_chainage_long)
