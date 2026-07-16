@@ -50,6 +50,20 @@ export async function GET(req: NextRequest) {
   const filterDateTo   = searchParams.get('date_to')   || ''
   const filterChFrom   = searchParams.get('ch_from')   || ''
   const filterChTo     = searchParams.get('ch_to')     || ''
+  const filterSearch   = (searchParams.get('search')   || '').trim()
+  const filterWeather    = searchParams.get('weather')    || ''
+  const filterMachine    = searchParams.get('machine')    || ''
+  const filterEmployee   = searchParams.get('employee')   || ''
+  const filterEngineer   = searchParams.get('engineer')   || ''
+  const filterSupervisor = searchParams.get('supervisor') || ''
+
+  // Strip characters that would break PostgREST .or() filter syntax
+  const searchTerm = filterSearch.replace(/[,()%*]/g, '')
+  const searchOr = searchTerm
+    ? ['reporter_name', 'project_name', 'section_name', 'activity_type', 'comment_activity']
+        .map(col => `${col}.ilike.%${searchTerm}%`)
+        .join(',')
+    : ''
 
   // Chainage filter is only active when BOTH values are present and numeric
   const chFromNum = Number(filterChFrom)
@@ -83,8 +97,10 @@ export async function GET(req: NextRequest) {
     )
     if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
     if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
+    if (filterWeather)  q = (q as any).ilike('weather',           filterWeather)
     if (filterDateFrom) q = (q as any).gte('date_of_activity',    filterDateFrom)
     if (filterDateTo)   q = (q as any).lte('date_of_activity',    filterDateTo)
+    if (searchOr)        q = (q as any).or(searchOr)
     if (applyChFilter) {
       q = (q as any).gte('start_chainage_val', chFromNum)
       q = (q as any).lte('start_chainage_val', chToNum)
@@ -92,27 +108,9 @@ export async function GET(req: NextRequest) {
     return q
   }
 
-  const [all, recent, media, totalMediaResult, machines, employees, engineers, supervisors, filterOptions] =
+  const [allRaw, media, totalMediaResult, machines, employees, engineers, supervisors, filterOptions] =
     await Promise.all([
       fetchAll(buildLiteQuery()),
-
-      (() => {
-        let q = supabase
-          .from('hitech_report_hitechreport')
-          .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity')
-          .order('date_of_activity', { ascending: false })
-          .order('id', { ascending: false })
-          .limit(12)
-        if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
-        if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
-        if (filterDateFrom) q = (q as any).gte('date_of_activity',    filterDateFrom)
-        if (filterDateTo)   q = (q as any).lte('date_of_activity',    filterDateTo)
-        if (applyChFilter) {
-          q = (q as any).gte('start_chainage_val', chFromNum)
-          q = (q as any).lte('start_chainage_val', chToNum)
-        }
-        return q
-      })(),
 
       supabase
         .from('hitech_report_hitechphoto')
@@ -146,6 +144,53 @@ export async function GET(req: NextRequest) {
         .select('activity_category, project_name')),
     ])
 
+  // Machine/Employee/Engineer/Supervisor filters are resolved in-memory: those
+  // tables are already fetched in full on every request, so no extra round trip.
+  function matchReportIds(rows: Record<string, unknown>[], field: string, filterVal: string): Set<number> | null {
+    if (!filterVal) return null
+    const target = filterVal.toLowerCase()
+    return new Set(
+      rows
+        .filter(r => toTitleCase(r[field] as string).toLowerCase() === target)
+        .map(r => r.report_id as number)
+    )
+  }
+  const hrIdSets = [
+    matchReportIds(machines.data    ?? [], 'machine_name',    filterMachine),
+    matchReportIds(employees.data   ?? [], 'employee_name',   filterEmployee),
+    matchReportIds(engineers.data   ?? [], 'engineer_name',   filterEngineer),
+    matchReportIds(supervisors.data ?? [], 'supervisor_name', filterSupervisor),
+  ].filter((s): s is Set<number> => s !== null)
+  const hrRestrictIds = hrIdSets.length
+    ? hrIdSets.reduce((acc, s) => new Set([...acc].filter(id => s.has(id))))
+    : null
+
+  const all = hrRestrictIds ? allRaw.filter(r => hrRestrictIds.has((r as any).id as number)) : allRaw
+
+  // Recent-reports feed: take the most-recent N ids from the FULLY filtered set
+  // (all filters, including machine/employee/engineer/supervisor applied above),
+  // then fetch their display fields. Doing this against `all` — rather than
+  // limiting the DB query to N rows before applying the HR filter — avoids
+  // returning an empty feed when the most-recent rows overall happen not to
+  // match a narrow HR filter.
+  const recentIds = [...all]
+    .sort((a, b) => {
+      const d = ((b as any).date_of_activity || '').localeCompare((a as any).date_of_activity || '')
+      return d !== 0 ? d : ((b as any).id as number) - ((a as any).id as number)
+    })
+    .slice(0, searchOr ? 300 : 12)
+    .map(r => (r as any).id as number)
+
+  const recent = recentIds.length
+    ? ((await supabase
+        .from('hitech_report_hitechreport')
+        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity')
+        .in('id', recentIds)
+        .order('date_of_activity', { ascending: false })
+        .order('id', { ascending: false })
+      ).data ?? [])
+    : []
+
   const totalReports     = all.length
   const reportsThisMonth = all.filter(r => (r as any).date_of_activity >= thisMonthStart).length
   const activeProjects   = new Set(
@@ -164,7 +209,7 @@ export async function GET(req: NextRequest) {
   const byDay      = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
 
   const filteredIds = new Set(all.map(r => (r as any).id as number))
-  const hasFilters  = !!(filterProject || filterCategory || filterDateFrom || filterDateTo || applyChFilter)
+  const hasFilters  = !!(filterProject || filterCategory || filterWeather || filterDateFrom || filterDateTo || applyChFilter || searchOr || hrRestrictIds)
   const inFilter    = (row: unknown) => !hasFilters ? true : filteredIds.has((row as any).report_id as number)
 
   const byMachine    = groupCount((machines.data    ?? []).filter(inFilter).map(m => (m as any).machine_name    as string)).slice(0, 15)
@@ -216,14 +261,14 @@ export async function GET(req: NextRequest) {
       media_type:   (p.media_type || 'image') as string,
       project_name: reportProjectMap[(p as any).report_id as number] || '',
     }))
-    .filter(p => !filterProject || p.project_name !== '')
+    .filter(p => !hasFilters || p.project_name !== '')
 
   return NextResponse.json({
     summary: {
       totalReports,
       reportsThisMonth,
       activeProjects,
-      totalPhotos: filterProject
+      totalPhotos: hasFilters
         ? mediaItems.filter(p => p.media_type !== 'video').length
         : (totalMediaResult.count ?? 0),
       uniqueReporters,
@@ -231,8 +276,11 @@ export async function GET(req: NextRequest) {
     byCategory, byProject, byDay, byWeather,
     byMachine, byEmployee, byEngineer, bySupervisor, byOwnership,
     mediaItems, mapPoints, activityCalendar,
-    recentReports: recent.data ?? [],
+    recentReports: recent,
     filterOptions: { categories, projects },
-    activeFilters: { filterCategory, filterProject, filterDateFrom, filterDateTo, filterChFrom, filterChTo },
+    activeFilters: {
+      filterCategory, filterProject, filterDateFrom, filterDateTo, filterChFrom, filterChTo, filterSearch,
+      filterWeather, filterMachine, filterEmployee, filterEngineer, filterSupervisor,
+    },
   })
 }

@@ -343,7 +343,7 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       </div>
 
       {/* Map */}
-      <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', height: 500, boxShadow: SH_WELL }}>
+      <div className="hitech-map-frame" style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', height: 500, boxShadow: SH_WELL }}>
         <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
 
         {/* Loading overlay */}
@@ -404,6 +404,7 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       </div>
 
       <style>{`
+        @media (max-width: 640px) { .hitech-map-frame { height: 340px !important; } }
         @keyframes mapSpin { to { transform: rotate(360deg); } }
         .mapboxgl-ctrl-group { background: rgba(30,30,34,0.95) !important; border: 1px solid rgba(255,255,255,0.08) !important; }
         .mapboxgl-ctrl-group button { background: transparent !important; color: #848080 !important; }

@@ -640,14 +640,14 @@ function ProgressPageInner() {
       </div>
 
       {/* Sub-header */}
-      <div style={{ position: 'sticky', top: 52, zIndex: 50, background: 'rgba(14,14,16,0.95)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${D.border}`, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 20, height: 46 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="sub-header-bar" style={{ position: 'sticky', top: 52, zIndex: 50, background: 'rgba(14,14,16,0.95)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${D.border}`, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 20, height: 46, overflowX: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1.05rem', letterSpacing: '0.14em', color: D.amber, textShadow: `0 0 20px ${D.amber}44` }}>PROGRESS</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', letterSpacing: '0.14em', color: D.sub, textTransform: 'uppercase', background: D.panel, padding: '2px 8px', borderRadius: 4, border: `1px solid ${D.border}` }}>Coastal Road · 1b&c</span>
+          <span className="sub-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', letterSpacing: '0.14em', color: D.sub, textTransform: 'uppercase', background: D.panel, padding: '2px 8px', borderRadius: 4, border: `1px solid ${D.border}` }}>Coastal Road · 1b&c</span>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, marginLeft: 20, background: D.bg, borderRadius: 8, padding: 3, border: `1px solid ${D.border}` }}>
+        <div style={{ display: 'flex', gap: 2, marginLeft: 20, background: D.bg, borderRadius: 8, padding: 3, border: `1px solid ${D.border}`, flexShrink: 0 }}>
           {([{ key: 'overview', label: 'Overview' }, { key: 'planning', label: 'Planning' }, { key: 'boq', label: 'BOQ' }, { key: 'reports', label: 'Activity Reports' }] as const).map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)} style={{ background: activeTab === t.key ? D.amber : 'transparent', color: activeTab === t.key ? '#000' : D.sub, border: 'none', borderRadius: 6, padding: '4px 14px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 0.8, textTransform: 'uppercase', transition: 'all 0.2s', fontWeight: activeTab === t.key ? 700 : 400, boxShadow: activeTab === t.key ? `0 0 12px ${D.amber}44` : 'none' }}>{t.label}</button>
           ))}
@@ -659,12 +659,12 @@ function ProgressPageInner() {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: D.amber, letterSpacing: '0.1em' }}>FILTERING…</span>
         </div>}
 
-        <div style={{ marginLeft: filtering ? 0 : 'auto', fontSize: '0.55rem', color: D.sub, fontFamily: 'var(--font-mono)' }}>
+        <div className="sub-date" style={{ marginLeft: filtering ? 0 : 'auto', flexShrink: 0, fontSize: '0.55rem', color: D.sub, fontFamily: 'var(--font-mono)' }}>
           {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
         </div>
       </div>
 
-      <div style={{ padding: '28px 32px 80px', maxWidth: 1480, margin: '0 auto', position: 'relative', zIndex: 1 }}>
+      <div className="dash-content" style={{ padding: '28px 32px 80px', maxWidth: 1480, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         {error && <div style={{ background: 'rgba(248,113,113,0.06)', border: `1px solid rgba(248,113,113,0.2)`, borderRadius: 12, padding: '14px 18px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', marginBottom: 20 }}>{error}</div>}
 
         {/* ── Filter Bar ── */}
@@ -703,7 +703,7 @@ function ProgressPageInner() {
         {/* Content */}
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>{[0,1,2,3,4].map(i => <Skeleton key={i} h={110} />)}</div>
+            <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>{[0,1,2,3,4].map(i => <Skeleton key={i} h={110} />)}</div>
             <Skeleton h={320} /><Skeleton h={420} /><Skeleton h={320} />
           </div>
         ) : data && (
@@ -712,7 +712,7 @@ function ProgressPageInner() {
             {/* ── OVERVIEW ── */}
             {activeTab === 'overview' && (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 20 }}>
+                <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 20 }}>
                   <KPICard label="Overall Completion"   value={data.summary.overallPct}    suffix="%" color={D.amber}  icon={<IconCheck />} delay={0}   glow={GLOW_AMBER} />
                   <KPICard label="Completed Activities" value={data.summary.totalCompleted}             color={D.green}  icon={<IconCheck />} delay={80}  glow={GLOW_GREEN} />
                   <KPICard label="Delayed Activities"   value={data.summary.delayed}                    color={D.red}    icon={<IconAlert />} delay={160} glow={GLOW_RED} />
@@ -729,7 +729,7 @@ function ProgressPageInner() {
             {activeTab === 'planning' && (
               <>
                 <Reveal style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
+                  <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
                     <Panel title="Delayed vs On Schedule"><DelayDonut delayed={data.summary.delayed} onSchedule={data.summary.onSchedule} /></Panel>
                     <Panel title="Number of Days for Completion by Entities"><DaysByEntityChart data={data.daysByEntity} /></Panel>
                   </div>
@@ -769,6 +769,23 @@ function ProgressPageInner() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(212,160,64,0.2); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(212,160,64,0.4); }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 1180px) {
+          .kpi-grid { grid-template-columns: repeat(3,1fr) !important; }
+        }
+        @media (max-width: 900px) {
+          .grid-responsive { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 640px) {
+          .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
+          .dash-content { padding: 18px 14px 60px !important; }
+          .sub-header-bar { padding: 0 14px !important; gap: 12px !important; }
+        }
+        @media (max-width: 480px) {
+          .kpi-grid { grid-template-columns: repeat(1,1fr) !important; }
+          .sub-badge, .sub-date { display: none !important; }
+        }
       `}</style>
     </div>
   )

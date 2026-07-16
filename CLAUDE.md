@@ -273,6 +273,51 @@ Copy `.env.local.example` to `.env.local` and fill in values to run locally.
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-07-16 — Click-to-filter on Category donut and Top Projects bar chart
+
+**Files changed:** `src/app/dashboard/page.tsx`
+
+**What changed:**
+- `DonutChart` (Activity by Category) and the `HBarChart` instance used for "Top Projects by Reports" now accept `activeName`/`onSliceClick` / `activeName`/`onBarClick` props. Clicking a segment or bar applies the corresponding value as the global `category`/`project` filter — identical to picking it from the FilterBar dropdown, so it refetches and updates every chart together. Clicking the already-active slice/bar clears that filter. The active slice/bar gets a persistent highlight (extra glow/width) even without hover.
+- Other `HBarChart` usages (Machines, Employees, Engineers, Supervisors) were left non-interactive — there's no corresponding filter param in `GET /api/dashboard` for those dimensions, so a click there wouldn't have anything real to do. Weather and the 30-day timeline were left alone for the same reason.
+- **Bug fix, found via this work:** `TimelineChart`'s gridline `<g key={v}>` used the rounded gridline *value* as the React key. When a filter narrows the 30-day report count so `maxVal` is small (e.g. 1–2), several of the four gridline percentiles round to the same integer, producing duplicate keys — which Next's dev overlay surfaces as a blocking "Console Error" dialog. Fixed by keying on array index instead (`key={gi}`).
+
+**Why:** User wants dashboard visuals to be clickable filters, not just the dropdowns — clicking a bar/segment should behave exactly like selecting that value in the FilterBar (confirmed explicitly: it's meant to cascade to every other chart, not stay isolated to the one clicked).
+
+### 2026-07-16 — Click-to-filter on Machines, Employees, Engineers, Supervisors, Weather
+
+**Files changed:** `src/app/api/dashboard/route.ts`, `src/app/dashboard/page.tsx`
+
+**What changed:**
+- `GET /api/dashboard` now accepts `weather`, `machine`, `employee`, `engineer`, `supervisor` query params. `weather` is a plain `.ilike()` column filter (like `category`/`project`). The other four are resolved **in-memory, with no extra DB round trip** — `hitech_report_hitechmachine`/`hitechemployee`/`hitechengineer`/`hitechsupervisor` were already being fetched in full on every request, so their rows are matched by name (case-insensitive, title-cased) to build a `Set` of `report_id`s, which is then used to filter the main report set (`all`) and the recent-reports feed before every downstream aggregate (KPIs, charts, map, calendar, media) is computed from it. Multiple HR filters active at once are intersected (AND), not unioned.
+- `hasFilters` (used to narrow the HR cross-reference and to decide whether `totalPhotos`/`mediaItems` should reflect the filtered set) now also considers `filterWeather` and the HR restriction. `totalPhotos` and the `mediaItems` prune previously only activated for `filterProject` — generalized to any active filter (`hasFilters`), so e.g. filtering by Category alone now also correctly narrows the Site Photos KPI, not just Project.
+- `WeatherBars` gained `activeName`/`onBarClick` (it had no click support at all before). `HBarChart` instances for Machines/Employees/Engineers/Supervisors are now wired the same way as Top Projects. All eight chart dimensions (Category, Project, Weather, Machine, Employee, Engineer, Supervisor — Timeline excluded, no date-range-from-single-day UX was requested) now click-to-filter identically.
+- Added a request-generation guard (`requestIdRef`) in `DashboardPageInner.loadData` so a slow, stale fetch response can never overwrite state from a newer one that resolved first — defensive fix motivated by having far more click targets now able to fire rapid successive filter changes.
+
+**Why:** Same rationale as the Category/Project click-filters above — user wants every chart, not just two, to act as a filter shortcut.
+
+### 2026-07-16 — Fix dashboard content (incl. HitechMap) remounting on every filter change
+
+**Files changed:** `src/app/dashboard/page.tsx`
+
+**What changed:**
+- The content block was previously gated as `{!loading && data && (<>...</>)}`, meaning every filter change (dropdown or, now, chart click) briefly set `loading=true` and **unmounted the entire content tree** — KPIs, all charts, and `HitechMapComponent` — then remounted it once the new data arrived. `HitechMap` was already correctly written to react to `project`/`chFrom`/`chTo` prop changes in place (its data-fetch `useEffect` depends only on `[project]`), but the remount forced it through a full fresh mount every time regardless, re-running `fetch('/api/map?project=...')` even when `project` hadn't changed at all.
+- Changed the gate to `{loading && !data && <DashSkeleton/>}` (skeleton only on the true first load) and `{data && (<div style={{opacity: loading?0.5:1, pointerEvents: loading?'none':'auto', transition:'opacity 0.25s'}}>...</div>)}` — content now stays mounted continuously once first loaded; a filter refetch just dims it slightly and disables clicks until the new data lands, then updates in place. No component in the tree remounts anymore on a filter change, so `HitechMapComponent` (and every chart's internal `ready`/hover state) only re-renders with new props instead of restarting from scratch.
+- Verified via request counting: `/api/map` fired twice on initial page load (expected — React Strict Mode double-invokes effects in dev) and **zero additional times** across subsequent filter clicks, versus 4+ calls previously for a single filter change.
+
+**Why:** Discovered while verifying the Machines/Employees/Engineers/Supervisors/Weather click-filters above — every filter interaction was silently re-triggering a full map refetch (and replaying every chart's entrance animation), which is wasted work and, under real network conditions, a visible flash/flicker on every click. Same root cause the user asked to have fixed once flagged.
+
+### 2026-07-16 — Fix "Recent Activity Reports" table vanishing under Machine/Employee/Engineer/Supervisor filters
+
+**Files changed:** `src/app/api/dashboard/route.ts`
+
+**What changed:**
+- The recent-reports query fetched only the **12 most-recent rows overall** (constrained by `category`/`project`/`weather`/date/chainage/`search` at the DB level, since those are real Postgres filters) and only *afterward* filtered that already-small batch in memory by the HR restriction. Since a narrow HR filter (e.g. one machine) matches a small fraction of the table, the 12 most-recent-overall rows almost never happened to be in that subset — so the table came back empty even when hundreds of matching reports existed (verified: `?machine=GPS` → 379 matching reports, 0 shown in the feed). The panel then disappeared entirely, since it's only rendered when `recentReports.length > 0 || filterSearch` is true.
+- Fixed by sourcing the recent feed from `all` (the fully-filtered set, HR restriction included) instead of a separately-limited query: sort `all` by `date_of_activity`/`id` descending, take the top N ids (`300` when searching, `12` otherwise — same limits as before), then fetch just those rows' full display fields via `.in('id', recentIds)`. Bounded to ≤300 ids so the query string stays small. This is a sequential follow-up query (after `all` is known) rather than parallel with it as before, but it now runs conditionally (skipped entirely when `recentIds` is empty) and only fetches exactly the rows that will be shown.
+- Verified: `?machine=GPS` now returns 12 recent reports (was 0); `?category=Earthworks`, `?weather=Sunny`, `?employee=Olaniyi`, and combined filters (`?machine=GPS&category=Earthworks`) all correctly return up to 12; `?search=excavat` (254 total matches) correctly returns all 254 within the 300-row window.
+
+**Why:** User reported the table at the bottom of the dashboard was disappearing under filtering — this is why, specifically for the four HR dimensions added earlier in this session (the pre-existing category/project/weather/search/date filters were never affected, since those are real column filters applied at the DB level in the same query).
+
 ### 2026-05-15 — Project-filtered media gallery
 
 **Files changed:** `src/app/api/dashboard/route.ts`, `src/app/dashboard/page.tsx`

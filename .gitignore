@@ -6,3 +6,7 @@ out/
 *.tsbuildinfo
 
 .vercel
+
+# Local scratch / QA artifacts
+.tmp-*
+*.xlsx

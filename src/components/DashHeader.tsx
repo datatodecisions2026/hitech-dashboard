@@ -36,13 +36,13 @@ export default function DashHeader() {
   ]
 
   return (
-    <header style={{
+    <header className="dash-header" style={{
       position: 'sticky', top: 0, zIndex: 100, height: 52,
       background: '#1c1c1f',
       backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.005) 5px, rgba(255,255,255,0.005) 6px)',
       boxShadow: '0 2px 8px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.5)',
       display: 'flex', alignItems: 'center',
-      padding: '0 24px', gap: 14, flexShrink: 0,
+      padding: '0 24px', gap: 14, flexShrink: 0, overflowX: 'auto',
     }}>
 
       {/* Logo */}
@@ -50,17 +50,17 @@ export default function DashHeader() {
       <img src="/logo.jpg" alt="Hitech" style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, boxShadow: '0 0 0 1px rgba(255,255,255,0.08)' }} />
 
       {/* Wordmark */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>
         <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1rem', letterSpacing: '0.12em', color: '#d4a040' }}>
           HITECH
         </span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', letterSpacing: '0.16em', color: '#504e54', textTransform: 'uppercase' }}>
+        <span className="dh-subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', letterSpacing: '0.16em', color: '#504e54', textTransform: 'uppercase' }}>
           Analytics
         </span>
       </div>
 
       {/* Nav links */}
-      <nav style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16 }}>
+      <nav style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16, flexShrink: 0 }}>
         {NAV_LINKS.map(link => {
           const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
           return (
@@ -93,7 +93,7 @@ export default function DashHeader() {
 
       {/* User name */}
       {user && (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: '#504e54', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>
+        <span className="dh-username" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: '#504e54', letterSpacing: '0.06em', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {user.first_name} {user.last_name}
         </span>
       )}
@@ -107,7 +107,7 @@ export default function DashHeader() {
           fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em',
           textTransform: 'uppercase', color: hovLogout ? '#848080' : '#504e54',
           background: '#252528', border: 'none', borderRadius: 6,
-          padding: '4px 10px', cursor: 'pointer',
+          padding: '4px 10px', cursor: 'pointer', flexShrink: 0,
           boxShadow: hovLogout
             ? '3px 3px 10px rgba(0,0,0,0.78), -1px -1px 3px rgba(255,255,255,0.052), inset 0 1px 0 rgba(255,255,255,0.07)'
             : '2px 2px 6px rgba(0,0,0,0.7), -1px -1px 2px rgba(255,255,255,0.045), inset 0 1px 0 rgba(255,255,255,0.055)',
@@ -116,6 +116,16 @@ export default function DashHeader() {
       >
         Logout
       </button>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .dash-header { padding: 0 12px !important; gap: 10px !important; }
+          .dh-subtitle { display: none !important; }
+        }
+        @media (max-width: 480px) {
+          .dh-username { display: none !important; }
+        }
+      `}</style>
     </header>
   )
 }
