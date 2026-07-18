@@ -734,15 +734,10 @@ function DashboardPageInner() {
 
           {(data.byMachine?.length > 0 || data.byEmployee?.length > 0) && (
             <Reveal delay={60} style={{ marginBottom:16 }}>
-<<<<<<< HEAD
               <div className="grid-responsive" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-                {data.byMachine?.length  > 0 && <Panel title="Machines Used"><HBarChart data={data.byMachine} color={D.amber} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)}/></Panel>}
-                {data.byEmployee?.length > 0 && <Panel title="Top Employees"><HBarChart data={data.byEmployee} color={D.green} activeName={data.activeFilters.filterEmployee} onBarClick={name => handleFilter('employee', name)}/></Panel>}
-=======
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
                 {data.byMachine?.length  > 0 && (
                   <Panel title="Machines Used">
-                    <HBarChart data={data.byMachine} color={D.amber}/>
+                    <HBarChart data={data.byMachine} color={D.amber} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)}/>
                     {data.byOwnership?.length > 0 && (
                       <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${D.border}` }}>
                         <div style={{ fontSize:'0.58rem', color:D.muted, fontFamily:'var(--font-mono)', letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:10 }}>Ownership</div>
@@ -765,8 +760,7 @@ function DashboardPageInner() {
                     )}
                   </Panel>
                 )}
-                {data.byEmployee?.length > 0 && <Panel title="Top Employees"><HBarChart data={data.byEmployee} color={D.green}/></Panel>}
->>>>>>> 75a63147399fdeb25f6168226492814a4516050e
+                {data.byEmployee?.length > 0 && <Panel title="Top Employees"><HBarChart data={data.byEmployee} color={D.green} activeName={data.activeFilters.filterEmployee} onBarClick={name => handleFilter('employee', name)}/></Panel>}
               </div>
             </Reveal>
           )}
