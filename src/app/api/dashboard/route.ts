@@ -156,10 +156,10 @@ export async function GET(req: NextRequest) {
     )
   }
   const hrIdSets = [
-    matchReportIds(machines.data    ?? [], 'machine_name',    filterMachine),
-    matchReportIds(employees.data   ?? [], 'employee_name',   filterEmployee),
-    matchReportIds(engineers.data   ?? [], 'engineer_name',   filterEngineer),
-    matchReportIds(supervisors.data ?? [], 'supervisor_name', filterSupervisor),
+    matchReportIds(machines,    'machine_name',    filterMachine),
+    matchReportIds(employees,   'employee_name',   filterEmployee),
+    matchReportIds(engineers,   'engineer_name',   filterEngineer),
+    matchReportIds(supervisors, 'supervisor_name', filterSupervisor),
   ].filter((s): s is Set<number> => s !== null)
   const hrRestrictIds = hrIdSets.length
     ? hrIdSets.reduce((acc, s) => new Set([...acc].filter(id => s.has(id))))
@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
   const recent = recentIds.length
     ? ((await supabase
         .from('hitech_report_hitechreport')
-        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity')
+        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity, weather')
         .in('id', recentIds)
         .order('date_of_activity', { ascending: false })
         .order('id', { ascending: false })
@@ -206,7 +206,11 @@ export async function GET(req: NextRequest) {
   const byCategory = groupCount(all.map(r => (r as any).activity_category as string)).slice(0, 7)
   const byProject  = groupCount(all.map(r => (r as any).project_name      as string)).slice(0, 8)
   const byWeather  = groupCount(all.map(r => (r as any).weather            as string)).slice(0, 6)
+  const byStatus   = groupCount(all.map(r => (r as any).activity_status    as string))
   const byDay      = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
+
+  const completedCount = byStatus.find(s => s.name === 'Completed' || s.name === 'Complete')?.count ?? 0
+  const completionRate = totalReports ? Math.round((completedCount / totalReports) * 100) : 0
 
   const filteredIds = new Set(all.map(r => (r as any).id as number))
   const hasFilters  = !!(filterProject || filterCategory || filterWeather || filterDateFrom || filterDateTo || applyChFilter || searchOr || hrRestrictIds)
@@ -272,8 +276,9 @@ export async function GET(req: NextRequest) {
         ? mediaItems.filter(p => p.media_type !== 'video').length
         : (totalMediaResult.count ?? 0),
       uniqueReporters,
+      completionRate,
     },
-    byCategory, byProject, byDay, byWeather,
+    byCategory, byProject, byDay, byWeather, byStatus,
     byMachine, byEmployee, byEngineer, bySupervisor, byOwnership,
     mediaItems, mapPoints, activityCalendar,
     recentReports: recent,

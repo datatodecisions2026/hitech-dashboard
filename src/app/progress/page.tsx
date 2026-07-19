@@ -25,9 +25,15 @@ const GLOW_AMBER  = '0 0 20px rgba(212,160,64,0.15), 0 0 60px rgba(212,160,64,0.
 const GLOW_GREEN  = '0 0 20px rgba(52,211,153,0.15)'
 const GLOW_RED    = '0 0 20px rgba(248,113,113,0.15)'
 const SH_PANEL    = '0 4px 24px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)'
+const SH_PANELLG  = '0 10px 36px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 32px rgba(212,160,64,0.05)'
 const SH_CARD     = '0 2px 12px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.05)'
+const SH_CARDLG   = '0 10px 36px rgba(0,0,0,0.82), 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(212,160,64,0.08)'
 const SH_INSET    = 'inset 0 2px 8px rgba(0,0,0,0.6), inset 0 1px 0 rgba(0,0,0,0.3)'
 const BORDER_GLOW = '1px solid rgba(212,160,64,0.15)'
+
+/* ── Shared motion tokens ──────────────────────────────────── */
+const EASE        = 'cubic-bezier(0.16,1,0.3,1)'
+const EASE_SPRING = 'cubic-bezier(0.34,1.56,0.64,1)'
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface ProgressData {
@@ -84,7 +90,7 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
     obs.observe(el); return () => obs.disconnect()
   }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(20px)', transition: `opacity 0.6s ease ${delay}ms, transform 0.6s cubic-bezier(0.16,1,0.3,1) ${delay}ms`, ...st }}>
+    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.985)', transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ${EASE} ${delay}ms`, ...st }}>
       {children}
     </div>
   )
@@ -95,7 +101,7 @@ function Panel({ children, title, style: st }: { children: React.ReactNode; titl
   const [hov, setHov] = useState(false)
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? BORDER_GLOW : `1px solid ${D.border}`, boxShadow: hov ? `${SH_PANEL}, ${GLOW_AMBER}` : SH_PANEL, transition: 'border-color 0.3s ease, box-shadow 0.3s ease', ...st }}>
+      style={{ background: D.panel, borderRadius: 16, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? BORDER_GLOW : `1px solid ${D.border}`, boxShadow: hov ? SH_PANELLG : SH_PANEL, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
@@ -118,16 +124,18 @@ function KPICard({ label, value, color = D.amber, icon, suffix = '', delay = 0, 
     return () => clearTimeout(t)
   }, [delay])
   const displayed = useCountUp(vis ? value : 0, 1400, vis)
+  const entranceY = vis ? 0 : 16
+  const hoverY    = hov ? -3 : 0
 
   return (
     <div ref={ref} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.97)', transition: `opacity 0.6s ease ${delay}ms, transform 0.6s cubic-bezier(0.16,1,0.3,1) ${delay}ms, box-shadow 0.3s ease, border-color 0.3s ease`, border: hov ? `1px solid rgba(212,160,64,0.2)` : `1px solid ${D.border}`, boxShadow: hov ? `${SH_CARD}, ${glow || GLOW_AMBER}` : SH_CARD }}>
+      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s`, border: hov ? `1px solid rgba(212,160,64,0.2)` : `1px solid ${D.border}`, boxShadow: hov ? `${SH_CARDLG}, ${glow || GLOW_AMBER}` : SH_CARD }}>
       {/* Accent line */}
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s ease' }} />
       {/* Corner glow */}
-      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: `radial-gradient(circle, ${color}18 0%, transparent 70%)`, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: `radial-gradient(circle, ${color}${hov ? '28' : '18'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: `${color}15`, border: `1px solid ${color}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, boxShadow: `inset 0 1px 0 ${color}20` }}>{icon}</div>
+        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${color}20`, border: `1px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, boxShadow: `inset 0 1px 0 ${color}20`, transform: hov ? 'scale(1.08)' : 'scale(1)', transition: `transform 0.3s ${EASE_SPRING}` }}>{icon}</div>
       </div>
       <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2.4rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.02em', color, textShadow: hov ? `0 0 20px ${color}44` : 'none', transition: 'text-shadow 0.3s ease' }}>{displayed.toLocaleString()}{suffix}</div>
       <div style={{ fontSize: '0.58rem', color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
@@ -311,7 +319,7 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
             const entityTotal = validTotals.length > 0 ? validTotals.reduce((s, v) => s + v, 0) / validTotals.length : null
             return (
               <>
-                <tr key={`${entityName}-h`} onClick={() => toggle(entityName)} style={{ cursor: 'pointer', borderBottom: `1px solid ${D.border}`, background: 'rgba(255,255,255,0.02)', transition: 'background 0.2s' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,160,64,0.04)')} onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}>
+                <tr key={`${entityName}-h`} onClick={() => toggle(entityName)} className="tbl-row-header" style={{ cursor: 'pointer', borderBottom: `1px solid ${D.border}`, background: 'rgba(255,255,255,0.02)' }}>
                   <td style={{ padding: '11px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 10, color: D.amber, transition: 'transform 0.2s', display: 'inline-block', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▼</span>
@@ -436,7 +444,7 @@ function DelayTable({ data }: { data: ProgressData['delayData'] }) {
           <tbody>
             {pageData.map((r, i) => {
               const isD = r.performance_status === 'Delayed'
-              return <tr key={i} style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,160,64,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              return <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
                 <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.entity_name || '—'}</td>
                 <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.side || '—'}</td>
                 <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{fmtDate(r.planned_date)}</td>
@@ -451,9 +459,9 @@ function DelayTable({ data }: { data: ProgressData['delayData'] }) {
       </div>
       {total > PAGE && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', transition: 'all 0.2s' }}>‹ Prev</button>
+          <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>‹ Prev</button>
           <span style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, total)} of {total.toLocaleString()}</span>
-          <button onClick={() => setPage(p => Math.min(Math.ceil(total / PAGE) - 1, p + 1))} style={{ background: 'transparent', color: D.amber, border: `1px solid ${D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', transition: 'all 0.2s' }}>Next ›</button>
+          <button className="btn-ghost" onClick={() => setPage(p => Math.min(Math.ceil(total / PAGE) - 1, p + 1))} style={{ background: 'transparent', color: D.amber, border: `1px solid ${D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>Next ›</button>
         </div>
       )}
     </div>
@@ -475,14 +483,14 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
           <div style={{ fontSize: 22, color: D.amber, fontFamily: 'var(--font-loader)', textShadow: `0 0 20px ${D.amber}44` }}>{(totalQty / 1000).toFixed(0)}K</div>
         </div>
         <div style={{ display: 'flex', gap: 6, background: D.bg, borderRadius: 8, padding: 4, border: `1px solid ${D.border}` }}>
-          {(['summary', 'detail'] as const).map(v => <button key={v} onClick={() => setView(v)} style={{ background: view === v ? D.amber : 'transparent', color: view === v ? '#000' : D.muted, border: 'none', borderRadius: 5, padding: '5px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 1, transition: 'all 0.2s', fontWeight: view === v ? 700 : 400 }}>{v}</button>)}
+          {(['summary', 'detail'] as const).map(v => <button key={v} className={view === v ? undefined : 'seg-btn'} onClick={() => setView(v)} style={{ background: view === v ? D.amber : 'transparent', color: view === v ? '#000' : D.muted, border: 'none', borderRadius: 5, padding: '5px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: view === v ? 700 : 400 }}>{v}</button>)}
         </div>
       </div>
       {view === 'summary' ? (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
           <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Category', 'Items', 'Total Qty', 'Amount'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
           <tbody>
-            {byCategory.map((r, i) => <tr key={i} style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,160,64,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+            {byCategory.map((r, i) => <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
               <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.category}</td>
               <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.items}</td>
               <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
@@ -495,7 +503,7 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Description', 'Category', 'Type', 'Qty', 'Unit', 'Reports'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
             <tbody>
-              {pageItems.map((r: any, i: number) => <tr key={i} style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,160,64,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              {pageItems.map((r: any, i: number) => <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
                 <td style={{ padding: '10px 14px', color: D.text, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description}</td>
                 <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.activity_category}</td>
                 <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.activity_type}</td>
@@ -507,9 +515,9 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
           </table>
           {items.length > PAGE && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>‹ Prev</button>
+              <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>‹ Prev</button>
               <span style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, items.length)} of {items.length}</span>
-              <button onClick={() => setPage(p => Math.min(Math.ceil(items.length / PAGE) - 1, p + 1))} style={{ background: 'transparent', color: D.amber, border: `1px solid ${D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>Next ›</button>
+              <button className="btn-ghost" onClick={() => setPage(p => Math.min(Math.ceil(items.length / PAGE) - 1, p + 1))} style={{ background: 'transparent', color: D.amber, border: `1px solid ${D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>Next ›</button>
             </div>
           )}
         </>
@@ -524,13 +532,13 @@ function ActivityReportsPanel({ reportsByType, recentReports }: { reportsByType:
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: D.bg, borderRadius: 8, padding: 4, border: `1px solid ${D.border}`, width: 'fit-content' }}>
-        {([{ key: 'by_type', label: 'By Activity Type' }, { key: 'recent', label: 'Recent Reports' }] as const).map(v => <button key={v.key} onClick={() => setView(v.key)} style={{ background: view === v.key ? D.amber : 'transparent', color: view === v.key ? '#000' : D.muted, border: 'none', borderRadius: 5, padding: '5px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', transition: 'all 0.2s', fontWeight: view === v.key ? 700 : 400 }}>{v.label}</button>)}
+        {([{ key: 'by_type', label: 'By Activity Type' }, { key: 'recent', label: 'Recent Reports' }] as const).map(v => <button key={v.key} className={view === v.key ? undefined : 'seg-btn'} onClick={() => setView(v.key)} style={{ background: view === v.key ? D.amber : 'transparent', color: view === v.key ? '#000' : D.muted, border: 'none', borderRadius: 5, padding: '5px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: view === v.key ? 700 : 400 }}>{v.label}</button>)}
       </div>
       {view === 'by_type' ? (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
           <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Activity Type', 'Total Reports', 'Completed', 'In Progress', 'Linked Entities', 'Latest Activity'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
           <tbody>
-            {reportsByType.map((r, i) => <tr key={i} style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,160,64,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+            {reportsByType.map((r, i) => <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
               <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.type}</td>
               <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.count}</td>
               <td style={{ padding: '10px 14px', color: D.green, fontFamily: 'var(--font-mono)' }}>{r.completed}</td>
@@ -547,7 +555,7 @@ function ActivityReportsPanel({ reportsByType, recentReports }: { reportsByType:
             {recentReports.map((r, i) => {
               const sc: Record<string, string> = { Completed: D.green, Complete: D.green, 'In Progress': D.amber, Ongoing: D.amber, Pending: D.blue }
               const statusColor = sc[r.activity_status] || D.sub
-              return <tr key={i} style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,160,64,0.03)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              return <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
                 <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'}</td>
                 <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.activity_type || '—'}</td>
                 <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.activity_category || '—'}</td>
@@ -649,7 +657,7 @@ function ProgressPageInner() {
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 2, marginLeft: 20, background: D.bg, borderRadius: 8, padding: 3, border: `1px solid ${D.border}`, flexShrink: 0 }}>
           {([{ key: 'overview', label: 'Overview' }, { key: 'planning', label: 'Planning' }, { key: 'boq', label: 'BOQ' }, { key: 'reports', label: 'Activity Reports' }] as const).map(t => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{ background: activeTab === t.key ? D.amber : 'transparent', color: activeTab === t.key ? '#000' : D.sub, border: 'none', borderRadius: 6, padding: '4px 14px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 0.8, textTransform: 'uppercase', transition: 'all 0.2s', fontWeight: activeTab === t.key ? 700 : 400, boxShadow: activeTab === t.key ? `0 0 12px ${D.amber}44` : 'none' }}>{t.label}</button>
+            <button key={t.key} className={activeTab === t.key ? undefined : 'seg-btn'} onClick={() => setActiveTab(t.key)} style={{ background: activeTab === t.key ? D.amber : 'transparent', color: activeTab === t.key ? '#000' : D.sub, border: 'none', borderRadius: 6, padding: '4px 14px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: activeTab === t.key ? 700 : 400, boxShadow: activeTab === t.key ? `0 0 12px ${D.amber}44` : 'none' }}>{t.label}</button>
           ))}
         </div>
 
@@ -668,7 +676,7 @@ function ProgressPageInner() {
         {error && <div style={{ background: 'rgba(248,113,113,0.06)', border: `1px solid rgba(248,113,113,0.2)`, borderRadius: 12, padding: '14px 18px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', marginBottom: 20 }}>{error}</div>}
 
         {/* ── Filter Bar ── */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px 20px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, marginBottom: 24, boxShadow: SH_PANEL, opacity: filtering ? 0.7 : 1, transition: 'opacity 0.3s ease' }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px 20px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, marginBottom: 24, boxShadow: SH_PANEL, opacity: filtering ? 0.75 : 1, transition: `opacity 0.3s ${EASE}` }}>
           {[
             { label: 'Entity', el: <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select> },
             { label: 'Side',   el: <select value={filterSide}   onChange={e => setFilterSide(e.target.value)}   style={{ ...selectStyle, minWidth: 110 }}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select> },
@@ -682,13 +690,11 @@ function ProgressPageInner() {
             </div>
           ))}
 
-          <button onClick={applyFilters} style={{ background: `linear-gradient(135deg, ${D.amber}, ${D.amberL})`, color: '#000', border: 'none', borderRadius: 8, padding: '7px 22px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end', fontWeight: 700, boxShadow: `0 4px 16px ${D.amber}44`, transition: 'all 0.2s', textTransform: 'uppercase' }}
-            onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-1px)')}
-            onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}>
+          <button className="btn-primary-amber" onClick={applyFilters} style={{ background: `linear-gradient(135deg, ${D.amber}, ${D.amberL})`, color: '#000', border: 'none', borderRadius: 8, padding: '7px 22px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end', fontWeight: 700, boxShadow: `0 4px 16px ${D.amber}44`, textTransform: 'uppercase' }}>
             Apply
           </button>
 
-          {hasFilters && <button onClick={clearFilters} style={{ background: 'transparent', color: D.amber, border: `1px solid rgba(212,160,64,0.3)`, borderRadius: 8, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end', transition: 'all 0.2s' }}>✕ Clear</button>}
+          {hasFilters && <button className="btn-ghost" onClick={clearFilters} style={{ background: 'transparent', color: D.amber, border: `1px solid rgba(212,160,64,0.3)`, borderRadius: 8, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end' }}>✕ Clear</button>}
 
           {hasFilters && (
             <div style={{ alignSelf: 'flex-end', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -707,7 +713,7 @@ function ProgressPageInner() {
             <Skeleton h={320} /><Skeleton h={420} /><Skeleton h={320} />
           </div>
         ) : data && (
-          <div style={{ opacity: filtering ? 0.5 : 1, transition: 'opacity 0.3s ease' }}>
+          <div style={{ opacity: filtering ? 0.55 : 1, filter: filtering ? 'blur(1.5px) saturate(0.85)' : 'blur(0) saturate(1)', transform: filtering ? 'scale(0.997)' : 'scale(1)', pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.35s ${EASE}, filter 0.35s ${EASE}, transform 0.35s ${EASE}` }}>
 
             {/* ── OVERVIEW ── */}
             {activeTab === 'overview' && (
@@ -769,6 +775,20 @@ function ProgressPageInner() {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(212,160,64,0.2); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(212,160,64,0.4); }
+
+        /* ── Shared interactive states ─────────────────────────── */
+        .btn-ghost { transition: background 0.2s ${EASE}, border-color 0.2s ${EASE}, color 0.2s ${EASE}, transform 0.2s ${EASE} !important; }
+        .btn-ghost:not(:disabled):hover { background: rgba(212,160,64,0.1) !important; border-color: rgba(212,160,64,0.55) !important; color: ${D.amberL} !important; transform: translateY(-1px); }
+        .btn-ghost:not(:disabled):active { transform: translateY(0) scale(0.97); }
+        .btn-primary-amber { transition: transform 0.2s ${EASE}, box-shadow 0.2s ${EASE}; }
+        .btn-primary-amber:hover { transform: translateY(-1px); box-shadow: 0 6px 20px ${D.amber}55; }
+        .seg-btn { transition: background 0.2s ${EASE}, color 0.2s ${EASE}; }
+        .seg-btn:hover { background: rgba(255,255,255,0.05) !important; color: ${D.text} !important; }
+        .tbl-row { transition: background 0.15s ${EASE}; }
+        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.014); }
+        .tbl-row:hover { background: rgba(212,160,64,0.045) !important; }
+        .tbl-row-header { transition: background 0.2s ${EASE}; }
+        .tbl-row-header:hover { background: rgba(212,160,64,0.06) !important; }
 
         /* ── Responsive ─────────────────────────────────────── */
         @media (max-width: 1180px) {

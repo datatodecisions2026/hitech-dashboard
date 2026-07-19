@@ -47,7 +47,9 @@
       "Bash(node scripts/verify-map-remount-fix.mjs)",
       "Bash(rm -f scripts/debug-panels.mjs scripts/verify-map-remount-fix.mjs)",
       "Bash(curl -s -o /dev/null -w \"dashboard responds: %{http_code} in %{time_total}s\\\\n\" http://localhost:3000/dashboard --max-time 10)",
-      "Bash(node scripts/debug-recent.mjs)"
+      "Bash(node scripts/debug-recent.mjs)",
+      "Bash(npm run *)",
+      "Bash(grep -c \"onMouseEnter={e => \\(e.currentTarget.style.background = 'rgba\\(212,160,64,0.03\\)'\\)} onMouseLeave={e => \\(e.currentTarget.style.background = 'transparent'\\)}\" src/app/progress/page.tsx)"
     ]
   }
 }

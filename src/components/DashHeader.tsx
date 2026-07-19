@@ -59,8 +59,8 @@ export default function DashHeader() {
         </span>
       </div>
 
-      {/* Nav links */}
-      <nav style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16, flexShrink: 0 }}>
+      {/* Nav links — mobile-only fallback; SideNav covers this on wider screens */}
+      <nav className="dh-nav-links" style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16, flexShrink: 0 }}>
         {NAV_LINKS.map(link => {
           const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
           return (
@@ -118,6 +118,9 @@ export default function DashHeader() {
       </button>
 
       <style>{`
+        @media (min-width: 641px) {
+          .dh-nav-links { display: none !important; }
+        }
         @media (max-width: 640px) {
           .dash-header { padding: 0 12px !important; gap: 10px !important; }
           .dh-subtitle { display: none !important; }

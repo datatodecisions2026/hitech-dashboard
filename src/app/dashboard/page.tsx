@@ -12,7 +12,7 @@ const D = {
   panel2: '#1a1a1e',
   border: 'rgba(255,255,255,0.06)',
   text:   '#e8e2d8',
-  muted:  '#7a7570',
+  muted:  '#8c867e',
   sub:    '#3d3b42',
   amber:  '#d4a040',
   amberL: '#f0c060',
@@ -22,8 +22,13 @@ const D = {
 }
 
 const SH_CARD   = '0 4px 20px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05)'
-const SH_CARDLG = '0 8px 32px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.06), 0 0 24px rgba(212,160,64,0.06)'
+const SH_CARDLG = '0 10px 36px rgba(0,0,0,0.82), 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(212,160,64,0.08)'
 const SH_PANEL  = '0 4px 24px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)'
+const SH_PANELLG = '0 10px 36px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 32px rgba(212,160,64,0.05)'
+
+/* ── Shared motion tokens ──────────────────────────────────── */
+const EASE        = 'cubic-bezier(0.16,1,0.3,1)'   // decelerate — entrances, growth
+const EASE_SPRING = 'cubic-bezier(0.34,1.56,0.64,1)' // slight overshoot — pops, ticks
 
 const CAT_COLORS = ['#d4a040','#e87040','#60a5fa','#34d399','#a78bfa','#f87171','#f472b6']
 
@@ -37,11 +42,12 @@ interface MediaItem { file: string; media_type: string; project_name: string }
 interface MapPoint { lat: number; lng: number; lat2: number | null; lng2: number | null; project: string; category: string; status: string }
 interface CalDay { date: string; count: number; projects: string[] }
 interface DashData {
-  summary: { totalReports: number; reportsThisMonth: number; activeProjects: number; totalPhotos: number; uniqueReporters: number }
+  summary: { totalReports: number; reportsThisMonth: number; activeProjects: number; totalPhotos: number; uniqueReporters: number; completionRate: number }
   byCategory:   Array<{ name: string; count: number }>
   byProject:    Array<{ name: string; count: number }>
   byDay:        Array<{ date: string; count: number }>
   byWeather:    Array<{ name: string; count: number }>
+  byStatus:     Array<{ name: string; count: number }>
   byMachine:    Array<{ name: string; count: number }>
   byEmployee:   Array<{ name: string; count: number }>
   byEngineer:   Array<{ name: string; count: number }>
@@ -50,7 +56,7 @@ interface DashData {
   mediaItems:   MediaItem[]
   mapPoints:    MapPoint[]
   activityCalendar: CalDay[]
-  recentReports: Array<{ id: number; date_of_activity: string; reporter_name: string; project_name: string; section_name: string; activity_category: string; activity_type: string; activity_status: string; comment_activity: string }>
+  recentReports: Array<{ id: number; date_of_activity: string; reporter_name: string; project_name: string; section_name: string; activity_category: string; activity_type: string; activity_status: string; comment_activity: string; weather?: string }>
   filterOptions: { categories: string[]; projects: string[] }
   activeFilters: {
     filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
@@ -76,6 +82,18 @@ function useCountUp(target: number, duration = 1200, delay = 0) {
   return val
 }
 
+/* ── Empty state ───────────────────────────────────────────── */
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, padding:'32px 0', animation:`fadeIn 0.4s ${EASE}` }}>
+      <div style={{ width:34, height:34, borderRadius:9, background:'rgba(255,255,255,0.03)', border:`1px solid ${D.border}`, display:'flex', alignItems:'center', justifyContent:'center', color:D.sub }}>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+      </div>
+      <div style={{ color:D.sub, fontSize:'0.78rem', fontFamily:'var(--font-mono)', textAlign:'center' }}>{label}</div>
+    </div>
+  )
+}
+
 /* ── Reveal on scroll ──────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -86,7 +104,7 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
     obs.observe(el); return () => obs.disconnect()
   }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(22px)', transition: `opacity 0.6s ease ${delay}ms, transform 0.6s cubic-bezier(0.16,1,0.3,1) ${delay}ms`, ...st }}>
+    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0) scale(1)' : 'translateY(22px) scale(0.985)', transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ${EASE} ${delay}ms`, willChange: vis ? 'auto' : 'opacity, transform', ...st }}>
       {children}
     </div>
   )
@@ -97,14 +115,14 @@ function Panel({ children, title, action, style: st }: { children: React.ReactNo
   const [hov, setHov] = useState(false)
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.15)' : `1px solid ${D.border}`, boxShadow: hov ? `${SH_PANEL}, 0 0 40px rgba(212,160,64,0.04)` : SH_PANEL, transition: 'border-color 0.3s, box-shadow 0.3s', ...st }}>
+      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.16)' : `1px solid ${D.border}`, boxShadow: hov ? SH_PANELLG : SH_PANEL, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 6px ${D.amber}` }} />
           </div>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: D.muted, background: '#0e0e10', padding: '2px 10px', borderRadius: 4, border: `1px solid ${D.border}` }}>{title}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: hov ? D.text : D.muted, background: '#0e0e10', padding: '2px 10px', borderRadius: 4, border: `1px solid ${hov ? 'rgba(212,160,64,0.25)' : D.border}`, transition: `color 0.3s ${EASE}, border-color 0.3s ${EASE}` }}>{title}</span>
         </div>
         {action}
       </div>
@@ -114,21 +132,23 @@ function Panel({ children, title, action, style: st }: { children: React.ReactNo
 }
 
 /* ── KPI Card ──────────────────────────────────────────────── */
-function KPICard({ label, value, sub, color = D.amber, icon, delay = 0 }: { label: string; value: number; sub?: string; color?: string; icon: React.ReactNode; delay?: number }) {
+function KPICard({ label, value, sub, color = D.amber, icon, delay = 0, primary = false }: { label: string; value: number; sub?: string; color?: string; icon: React.ReactNode; delay?: number; primary?: boolean }) {
   const [vis, setVis] = useState(false)
   const [hov, setHov] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
   const displayed = useCountUp(vis ? value : 0, 1300, 0)
+  const entranceY = vis ? 0 : 14
+  const hoverY    = hov ? -3 : 0
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 16, padding: '18px 20px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0) scale(1)' : 'translateY(14px) scale(0.97)', transition: `opacity 0.6s ease ${delay}ms, transform 0.6s cubic-bezier(0.16,1,0.3,1) ${delay}ms, border-color 0.3s, box-shadow 0.3s`, border: hov ? `1px solid rgba(212,160,64,0.2)` : `1px solid ${D.border}`, boxShadow: hov ? SH_CARDLG : SH_CARD }}>
+      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, border-color 0.3s, box-shadow 0.3s, background 0.3s`, border: hov ? `1px solid ${color}33` : primary ? `1px solid ${color}22` : `1px solid ${D.border}`, boxShadow: hov ? SH_CARDLG : SH_CARD }}>
       {/* Left accent */}
-      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s' }} />
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: primary ? 3 : 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : primary ? 0.75 : 0.5, transition: 'opacity 0.3s, width 0.3s' }} />
       {/* Corner glow */}
-      <div style={{ position: 'absolute', top: -24, right: -24, width: 90, height: 90, borderRadius: '50%', background: `radial-gradient(circle, ${color}15 0%, transparent 70%)`, pointerEvents: 'none' }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: `${color}12`, border: `1px solid ${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>{icon}</div>
-        {sub && <span style={{ fontSize: '0.58rem', color: D.green, fontFamily: 'var(--font-mono)', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', padding: '2px 8px', borderRadius: 4, letterSpacing: '0.08em' }}>{sub}</span>}
+      <div style={{ position: 'absolute', top: -24, right: -24, width: 90, height: 90, borderRadius: '50%', background: `radial-gradient(circle, ${color}${hov ? '22' : '15'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${color}20`, border: `1px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, transform: hov ? 'scale(1.08)' : 'scale(1)', transition: `transform 0.3s ${EASE_SPRING}` }}>{icon}</div>
+        {sub && <span style={{ fontSize: '0.58rem', color: D.green, fontFamily: 'var(--font-mono)', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', padding: '2px 8px', borderRadius: 20, letterSpacing: '0.08em' }}>{sub}</span>}
       </div>
       <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2.5rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.03em', color, textShadow: hov ? `0 0 24px ${color}44` : 'none', transition: 'text-shadow 0.3s' }}>{displayed.toLocaleString()}</div>
       <div style={{ fontSize: '0.58rem', color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
@@ -164,7 +184,7 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
           return <circle key={i} r={r} fill="none" stroke={seg.color} strokeWidth={isHov || isActive ? sw + 6 : sw}
             strokeDasharray={`${ready ? seg.len : 0} ${circ}`} strokeDashoffset={-(seg.offset)} strokeLinecap="butt"
             strokeOpacity={hasActive ? (isActive ? 1 : 0.18) : (hov !== null && !isHov ? 0.22 : 1)}
-            style={{ transition: `stroke-dasharray 0.8s cubic-bezier(0.16,1,0.3,1) ${i * 0.07}s, stroke-width 0.2s, stroke-opacity 0.2s`, cursor: onSliceClick ? 'pointer' : 'default', filter: isHov || isActive ? `drop-shadow(0 0 6px ${seg.color}88)` : 'none' }}
+            style={{ transition: `stroke-dasharray 0.85s ${EASE} ${i * 0.07}s, stroke-width 0.25s ${EASE_SPRING}, stroke-opacity 0.2s`, cursor: onSliceClick ? 'pointer' : 'default', filter: isHov || isActive ? `drop-shadow(0 0 6px ${seg.color}88)` : 'none' }}
             onMouseEnter={() => setHov(i)} onClick={() => handleClick(seg.name)} />
         })}
         {hovSeg ? (<>
@@ -181,9 +201,9 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
           const isHov = hov === i
           const isActive = seg.name === activeName
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: onSliceClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.3 : 1), transition: 'opacity 0.2s' }}
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: onSliceClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.3 : 1), transform: isHov || isActive ? 'translateX(3px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}
               onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={() => handleClick(seg.name)}>
-              <div style={{ width: 8, height: 8, borderRadius: 2, background: seg.color, flexShrink: 0, transform: isHov || isActive ? 'scale(1.4)' : 'scale(1)', boxShadow: isHov || isActive ? `0 0 8px ${seg.color}` : 'none', transition: 'transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s' }} />
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: seg.color, flexShrink: 0, transform: isHov || isActive ? 'scale(1.4)' : 'scale(1)', boxShadow: isHov || isActive ? `0 0 8px ${seg.color}` : 'none', transition: `transform 0.3s ${EASE_SPRING}, box-shadow 0.2s` }} />
               <span style={{ fontSize: '0.7rem', color: isHov || isActive ? D.text : D.muted, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'var(--font-mono)', transition: 'color 0.2s' }}>{seg.name}</span>
               <span style={{ fontSize: '0.7rem', color: D.text, fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{seg.count}</span>
               <span style={{ fontSize: '0.62rem', color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{Math.round(seg.count / total * 100)}%</span>
@@ -191,6 +211,26 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/* ── Ring stat (radial progress) ──────────────────────────── */
+function RingStat({ label, pct, color = D.amber }: { label: string; pct: number; color?: string }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
+  const r = 52, sw = 12, circ = 2 * Math.PI * r
+  const offset = circ - (ready ? Math.min(Math.max(pct, 0), 100) / 100 : 0) * circ
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '8px 0' }}>
+      <svg width={132} height={132} viewBox="-66 -66 132 132">
+        <circle r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={sw} />
+        <circle r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+          strokeDasharray={circ} strokeDashoffset={offset} transform="rotate(-90)"
+          style={{ transition: `stroke-dashoffset 1s ${EASE}`, filter: `drop-shadow(0 0 8px ${color}66)` }} />
+        <text x="0" y="-2" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="26">{pct}%</text>
+        <text x="0" y="17" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="7.5" letterSpacing="1.5">{label.toUpperCase()}</text>
+      </svg>
     </div>
   )
 }
@@ -230,7 +270,7 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
           return (
             <g key={d.date} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
               <rect x={x} y={ready ? y : padT+chartH} width={barW} height={ready ? barH : 0} fill={isHov ? 'url(#bGradH)' : 'url(#bGrad)'} rx={2}
-                style={{ transition: `y 0.6s cubic-bezier(0.16,1,0.3,1) ${i*0.008}s, height 0.6s cubic-bezier(0.16,1,0.3,1) ${i*0.008}s`, filter: isHov ? `drop-shadow(0 0 4px ${D.amber}88)` : 'none' }} />
+                style={{ transition: `y 0.6s ${EASE} ${i*0.008}s, height 0.6s ${EASE} ${i*0.008}s, filter 0.2s`, filter: isHov ? `drop-shadow(0 0 4px ${D.amber}88)` : 'none' }} />
               {isHov && d.count > 0 && (() => {
                 const tx = Math.min(Math.max(x-22, padL), W-padR-70)
                 const ty = Math.max(padT+2, y-28)
@@ -267,11 +307,11 @@ function HBarChart({ data, color = D.amber, activeName, onBarClick }: { data: Ar
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.35 : 1), transition: 'opacity 0.2s' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.35 : 1), transform: isHov || isActive ? 'translateX(2px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}>
             <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${color}18` : 'transparent', border: isTop ? `1px solid ${color}35` : `1px solid transparent`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? color : D.sub, fontWeight: isTop ? 700 : 400 }}>{i+1}</div>
             <span style={{ width: 140, fontSize: '0.7rem', color: isHov || isActive ? D.text : D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, transition: 'color 0.2s' }} title={d.name}>{d.name}</span>
             <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.04)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? `linear-gradient(90deg, ${color}, ${color}bb)` : `linear-gradient(90deg, ${color}66, ${color}33)`, borderRadius: 6, transition: `width 0.9s cubic-bezier(0.16,1,0.3,1) ${i*0.04}s`, boxShadow: (isTop && isHov) || isActive ? `0 0 8px ${color}55` : 'none' }} />
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? `linear-gradient(90deg, ${color}, ${color}bb)` : `linear-gradient(90deg, ${color}66, ${color}33)`, borderRadius: 6, transition: `width 0.9s ${EASE} ${i*0.04}s, box-shadow 0.2s`, boxShadow: (isTop && isHov) || isActive ? `0 0 8px ${color}55` : 'none' }} />
               {isTop && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%)', animation: 'shimmer 2.5s ease-in-out infinite', animationDelay: `${i*0.4}s` }} />}
             </div>
             <span style={{ width: 32, textAlign: 'right', fontSize: '0.7rem', color: isHov || isActive ? color : D.text, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0, transition: 'color 0.2s' }}>{d.count}</span>
@@ -299,13 +339,13 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
-            style={{ cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : 1, transition: 'opacity 0.2s' }}>
+            style={{ cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : 1, transform: isHov || isActive ? 'translateX(2px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
               <span style={{ fontSize: '0.72rem', color: isHov || isActive ? D.text : D.muted, fontFamily: 'var(--font-mono)', display: 'flex', gap: 7, alignItems: 'center', transition: 'color 0.2s' }}><span>{WEATHER_ICON[d.name]||'🌡'}</span><span>{d.name}</span></span>
               <span style={{ fontSize: '0.72rem', color: D.text, fontFamily: 'var(--font-mono)' }}>{d.count} <span style={{ color: D.sub }}>({pct}%)</span></span>
             </div>
             <div style={{ height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: ready ? `${pct}%` : '0%', background: `linear-gradient(90deg, ${D.blue}, ${D.blue}66)`, borderRadius: 3, transition: `width 0.8s cubic-bezier(0.16,1,0.3,1) ${i*0.08}s`, boxShadow: isActive || isHov ? `0 0 6px ${D.blue}88` : 'none' }} />
+              <div style={{ height: '100%', width: ready ? `${pct}%` : '0%', background: `linear-gradient(90deg, ${D.blue}, ${D.blue}66)`, borderRadius: 3, transition: `width 0.8s ${EASE} ${i*0.08}s, box-shadow 0.2s`, boxShadow: isActive || isHov ? `0 0 6px ${D.blue}88` : 'none' }} />
             </div>
           </div>
         )
@@ -338,8 +378,8 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
   }, [lightbox, sorted])
   useEffect(() => { setPage(0); setLightbox(null) }, [activeProject])
 
-  if (!activeProject) return <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center' }}>Select a project to view site media</div>
-  if (!sorted.length) return <div style={{ color: D.sub, fontSize: '0.8rem', fontFamily: 'var(--font-mono)', padding: '32px 0', textAlign: 'center' }}>No media for this project</div>
+  if (!activeProject) return <EmptyState label="Select a project to view site media"/>
+  if (!sorted.length) return <EmptyState label="No media for this project"/>
 
   return (
     <>
@@ -368,17 +408,17 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
       </div>
       {totalPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
-          <button onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0}
+          <button className="btn-ghost" onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0}
             style={{ background:'transparent', color: page===0 ? D.sub : D.amber, border:`1px solid ${page===0 ? D.sub : D.amber}30`, borderRadius:8, padding:'7px 18px', fontSize:12, cursor: page===0?'not-allowed':'pointer', fontFamily:'var(--font-mono)', transition:'all 0.2s' }}>‹ Prev</button>
           <div style={{ display:'flex', gap:6, alignItems:'center' }}>
             {Array.from({length:totalPages},(_,i)=>i).filter(i => i===0||i===totalPages-1||Math.abs(i-page)<=2).map((i,idx,arr) => (
               <>
                 {idx>0 && arr[idx-1]!==i-1 && <span key={`e-${i}`} style={{ color:D.sub,fontFamily:'var(--font-mono)',fontSize:12,padding:'0 4px' }}>…</span>}
-                <button key={i} onClick={() => setPage(i)} style={{ width:30,height:30,borderRadius:7,border:`1px solid ${i===page?D.amber:D.sub}30`,background:i===page?D.amber:'transparent',color:i===page?'#000':D.muted,fontSize:11,cursor:'pointer',fontFamily:'var(--font-mono)',fontWeight:i===page?700:400,transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center' }}>{i+1}</button>
+                <button key={i} className={i===page?undefined:'btn-ghost'} onClick={() => setPage(i)} style={{ width:30,height:30,borderRadius:7,border:`1px solid ${i===page?D.amber:D.sub}30`,background:i===page?D.amber:'transparent',color:i===page?'#000':D.muted,fontSize:11,cursor:'pointer',fontFamily:'var(--font-mono)',fontWeight:i===page?700:400,transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center' }}>{i+1}</button>
               </>
             ))}
           </div>
-          <button onClick={() => setPage(p => Math.min(totalPages-1,p+1))} disabled={page===totalPages-1}
+          <button className="btn-ghost" onClick={() => setPage(p => Math.min(totalPages-1,p+1))} disabled={page===totalPages-1}
             style={{ background:'transparent', color: page===totalPages-1?D.sub:D.amber, border:`1px solid ${page===totalPages-1?D.sub:D.amber}30`, borderRadius:8, padding:'7px 18px', fontSize:12, cursor: page===totalPages-1?'not-allowed':'pointer', fontFamily:'var(--font-mono)', transition:'all 0.2s' }}>Next ›</button>
         </div>
       )}
@@ -387,7 +427,7 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
         const hasPrev = lbIdx > 0
         const hasNext = lbIdx < sorted.length - 1
         const navBtn = (dir: 'left'|'right', enabled: boolean, onClick: () => void) => (
-          <button onClick={e => { e.stopPropagation(); onClick() }} disabled={!enabled}
+          <button className={enabled?'btn-ghost':undefined} onClick={e => { e.stopPropagation(); onClick() }} disabled={!enabled}
             style={{ position:'absolute', top:'50%', transform:'translateY(-50%)', [dir==='left'?'left':'right']:16,
               background:'rgba(0,0,0,0.55)', border:`1px solid ${enabled?D.amber:D.sub}40`, color: enabled?D.amber:D.sub,
               width:44, height:44, borderRadius:10, cursor: enabled?'pointer':'default',
@@ -403,7 +443,7 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
             {navBtn('left',  hasPrev, () => setLightbox(sorted[lbIdx - 1]))}
             {navBtn('right', hasNext, () => setLightbox(sorted[lbIdx + 1]))}
             <div onClick={e => e.stopPropagation()} style={{ position:'absolute',bottom:20,left:'50%',transform:'translateX(-50%)',color:D.muted,fontFamily:'var(--font-mono)',fontSize:'0.65rem' }}>{lbIdx+1} / {sorted.length}</div>
-            <button onClick={() => setLightbox(null)} style={{ position:'absolute',top:20,right:24,background:'rgba(255,255,255,0.06)',border:`1px solid ${D.sub}`,color:D.muted,width:38,height:38,borderRadius:9,cursor:'pointer',fontSize:'1.1rem',display:'flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s' }}>✕</button>
+            <button className="btn-close-x" onClick={() => setLightbox(null)} style={{ position:'absolute',top:20,right:24,background:'rgba(255,255,255,0.06)',border:`1px solid ${D.sub}`,color:D.muted,width:38,height:38,borderRadius:9,cursor:'pointer',fontSize:'1.1rem',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.2s' }}>✕</button>
           </div>
         )
       })()}
@@ -434,9 +474,7 @@ function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
               const sc = SC[r.activity_status] || D.sub
               const dt = r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'}) : '—'
               return (
-                <tr key={r.id} style={{ borderBottom:`1px solid rgba(255,255,255,0.03)`, opacity:0, animation:`fadeIn 0.35s ease ${i*0.05}s forwards`, transition:'background 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.background='rgba(212,160,64,0.03)')}
-                  onMouseLeave={e => (e.currentTarget.style.background='transparent')}>
+                <tr key={r.id} className="report-row" style={{ borderBottom:`1px solid rgba(255,255,255,0.03)`, opacity:0, animation:`fadeIn 0.4s ${EASE} ${Math.min(i,12)*0.04}s forwards` }}>
                   <td style={{ padding:'11px 14px', color:D.muted, fontFamily:'var(--font-mono)', whiteSpace:'nowrap' }}>{dt}</td>
                   <td style={{ padding:'11px 14px', color:D.text, fontWeight:600, maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.project_name||'—'}</td>
                   <td style={{ padding:'11px 14px', color:D.muted, maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.section_name||'—'}</td>
@@ -452,10 +490,10 @@ function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
       </div>
       {totalPages > 1 && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:14 }}>
-          <button onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0}
+          <button className="btn-ghost" onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0}
             style={{ background:'transparent', color: page===0 ? D.sub : D.amber, border:`1px solid ${page===0 ? D.sub : D.amber}30`, borderRadius:7, padding:'6px 16px', fontSize:11, cursor: page===0?'not-allowed':'pointer', fontFamily:'var(--font-mono)', transition:'all 0.2s' }}>‹ Prev</button>
           <span style={{ fontSize:10, color:D.sub, fontFamily:'var(--font-mono)' }}>{page+1} / {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages-1,p+1))} disabled={page===totalPages-1}
+          <button className="btn-ghost" onClick={() => setPage(p => Math.min(totalPages-1,p+1))} disabled={page===totalPages-1}
             style={{ background:'transparent', color: page===totalPages-1 ? D.sub : D.amber, border:`1px solid ${page===totalPages-1 ? D.sub : D.amber}30`, borderRadius:7, padding:'6px 16px', fontSize:11, cursor: page===totalPages-1?'not-allowed':'pointer', fontFamily:'var(--font-mono)', transition:'all 0.2s' }}>Next ›</button>
         </div>
       )}
@@ -466,7 +504,7 @@ function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
 /* ── Activity Calendar ─────────────────────────────────────── */
 function ActivityCalendar({ data }: { data: CalDay[] }) {
   const [hovDay, setHovDay] = useState<(CalDay & { x: number; y: number }) | null>(null)
-  if (!data.length) return <div style={{ color:D.sub, fontSize:'0.72rem', fontFamily:'var(--font-mono)', padding:'20px 0' }}>No activity data</div>
+  if (!data.length) return <EmptyState label="No activity data"/>
   const calMap   = new Map(data.map(d => [d.date, d]))
   const maxCount = Math.max(...data.map(d => d.count), 1)
   const start    = new Date(data[0].date); start.setDate(start.getDate() - start.getDay())
@@ -529,6 +567,74 @@ const IconPin      = () => <svg width={18} height={18} viewBox="0 0 24 24" fill=
 const IconImage    = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
 const IconPeople   = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 
+/* ── Photo crossfade ───────────────────────────────────────── */
+function useCrossfade(count: number, intervalMs = 7000) {
+  const [idx, setIdx] = useState(0)
+  useEffect(() => {
+    if (count < 2) return
+    const t = setInterval(() => setIdx(i => (i + 1) % count), intervalMs)
+    return () => clearInterval(t)
+  }, [count, intervalMs])
+  return idx
+}
+
+/** Full-bleed, heavily dimmed/blurred crossfading photo layer for the fixed ambient background. */
+function PhotoBackdrop({ photos }: { photos: MediaItem[] }) {
+  const idx = useCrossfade(photos.length, 10000)
+  if (!photos.length) return null
+  return (
+    <>
+      {photos.map((p, i) => (
+        <div key={p.file} style={{ position: 'absolute', inset: 0, backgroundImage: `url(${p.file})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.06)', opacity: i === idx ? 1 : 0, filter: 'brightness(0.24) blur(7px) saturate(1.05)', transition: 'opacity 2.5s ease' }} />
+      ))}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,14,16,0.5)' }} />
+    </>
+  )
+}
+
+/* ── Hero welcome banner ───────────────────────────────────── */
+function HeroBanner({ firstName, totalReports, reportsThisMonth, photos, weather }: { firstName: string; totalReports: number; reportsThisMonth: number; photos: MediaItem[]; weather?: string }) {
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const idx = useCrossfade(photos.length, 6500)
+  const weatherIcon = weather ? (WEATHER_ICON[weather] || '🌡') : null
+  return (
+    <div style={{
+      position: 'relative', overflow: 'hidden', borderRadius: 22, padding: '26px 30px', marginBottom: 20, minHeight: 150,
+      background: photos.length ? undefined : `linear-gradient(120deg, ${D.panel} 0%, #1c1810 100%)`,
+      border: `1px solid ${D.border}`, boxShadow: SH_PANELLG,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap',
+    }}>
+      {photos.map((p, i) => (
+        <div key={p.file} style={{ position: 'absolute', inset: 0, backgroundImage: `url(${p.file})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: i === idx ? 1 : 0, filter: 'brightness(0.55) saturate(1.05)', transition: 'opacity 2s ease' }} />
+      ))}
+      {photos.length > 0 && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(14,14,16,0.94) 15%, rgba(14,14,16,0.55) 55%, rgba(14,14,16,0.25) 100%)' }} />}
+
+      <div style={{ position: 'relative', zIndex: 1, minWidth: 220 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: D.amber, marginBottom: 8 }}>{greeting}</div>
+        <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2rem', letterSpacing: '0.02em', color: D.text, lineHeight: 1.1 }}>
+          {firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
+        </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: D.muted, marginTop: 10 }}>
+          <span style={{ color: D.amberL, fontWeight: 700 }}>{reportsThisMonth}</span> reports logged this month, <span style={{ color: D.text, fontWeight: 700 }}>{totalReports.toLocaleString()}</span> total across all sites
+        </div>
+      </div>
+
+      {weather && (
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(0,0,0,0.4)', border: `1px solid ${D.border}`, borderRadius: 16, padding: '10px 20px', backdropFilter: 'blur(6px)' }}>
+          <span style={{ fontSize: '1.7rem', lineHeight: 1 }}>{weatherIcon}</span>
+          <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: D.text, fontWeight: 700 }}>{weather}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: D.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Latest logged conditions</div>
+          </div>
+        </div>
+      )}
+
+      {!photos.length && <div style={{ position: 'absolute', top: -60, right: -40, width: 260, height: 260, borderRadius: '50%', background: `radial-gradient(circle, rgba(212,160,64,0.08) 0%, transparent 70%)`, pointerEvents: 'none' }} />}
+    </div>
+  )
+}
+
 /* ── Filter Bar ────────────────────────────────────────────── */
 function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
   const active = data.activeFilters
@@ -562,8 +668,8 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
         <div style={{ position:'relative' }}>
           <input type='text' placeholder='Reporter, project, comment…' value={search} onChange={e=>setSearch(e.target.value)}
             style={{ ...inp, width:'100%', minWidth:0, paddingRight:28 }} />
-          {search && <button onClick={() => setSearch('')} aria-label="Clear search"
-            style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:D.sub, cursor:'pointer', fontSize:13, lineHeight:1, padding:0 }}>✕</button>}
+          {search && <button className="btn-close-x-plain" onClick={() => setSearch('')} aria-label="Clear search"
+            style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:D.sub, cursor:'pointer', fontSize:13, lineHeight:1, padding:0, transition:`color 0.2s ${EASE}` }}>✕</button>}
         </div>
       </div>
       {[
@@ -577,11 +683,12 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
 
       {(chFrom||chTo) && !(chFrom&&chTo) && <div style={{ alignSelf:'flex-end', fontSize:10, color:D.amber, fontFamily:'var(--font-mono)', opacity:0.7 }}>Enter both values</div>}
 
-      {hasFilters && <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__','') }}
+      {hasFilters && <button className="btn-ghost" onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__','') }}
         style={{ background:'transparent', color:D.amber, border:`1px solid rgba(212,160,64,0.3)`, borderRadius:8, padding:'7px 18px', fontSize:12, cursor:'pointer', fontFamily:'var(--font-mono)', letterSpacing:1, alignSelf:'flex-end', transition:'all 0.2s' }}>✕ Clear</button>}
 
-      {hasFilters && <div style={{ alignSelf:'flex-end', fontSize:11, color:D.muted, fontFamily:'var(--font-mono)' }}>
-        Filtered: <span style={{ color:D.amber }}>{data.summary.totalReports.toLocaleString()} reports</span>
+      {hasFilters && <div style={{ alignSelf:'flex-end', fontSize:11, color:D.text, fontFamily:'var(--font-mono)', display:'flex', alignItems:'center', gap:7, background:'rgba(212,160,64,0.07)', border:'1px solid rgba(212,160,64,0.2)', borderRadius:8, padding:'6px 12px', animation:'fadeIn 0.25s ease' }}>
+        <span style={{ width:5, height:5, borderRadius:'50%', background:D.amber, boxShadow:`0 0 6px ${D.amber}`, flexShrink:0 }}/>
+        <span style={{ color:D.muted }}>Filtered</span> <span style={{ color:D.amberL, fontWeight:700 }}>{data.summary.totalReports.toLocaleString()}</span> <span style={{ color:D.muted }}>reports</span>
       </div>}
     </div>
   )
@@ -614,7 +721,12 @@ function DashboardPageInner() {
   const [data, setData]     = useState<DashData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+  const [firstName, setFirstName] = useState('')
   const requestIdRef = useRef(0)
+
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => { if (d?.user?.first_name) setFirstName(d.user.first_name) }).catch(() => {})
+  }, [])
 
   const loadData = useCallback(() => {
     const reqId = ++requestIdRef.current
@@ -643,11 +755,19 @@ function DashboardPageInner() {
     router.push(`/dashboard?${p.toString()}`)
   }
 
+  const allImages     = data?.mediaItems.filter(m => m.media_type !== 'video') ?? []
+  const bgPhotos       = allImages.slice(0, 6)
+  const bannerPhotos   = allImages.slice(6, 10)
+  const latestWeather  = data?.recentReports.find(r => r.weather)?.weather
+
   return (
     <div style={{ minHeight:'100vh', background:D.bg, color:D.text, fontFamily:'var(--font-dm-sans)', backgroundImage:'linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)', backgroundSize:'60px 60px', position:'relative' }}>
 
       {/* Ambient */}
       <div style={{ position:'fixed', inset:0, zIndex:0, pointerEvents:'none', overflow:'hidden' }}>
+        {/* Real site-photo backdrop */}
+        <PhotoBackdrop photos={bgPhotos} />
+
         <div style={{ position:'absolute', width:900, height:900, borderRadius:'50%', background:'radial-gradient(circle, rgba(212,160,64,0.04) 0%, transparent 65%)', top:'-15%', right:'-10%', animation:'float1 28s ease-in-out infinite' }} />
         <div style={{ position:'absolute', width:600, height:600, borderRadius:'50%', background:'radial-gradient(circle, rgba(96,165,250,0.025) 0%, transparent 65%)', top:'45%',  left:'-8%',  animation:'float2 34s ease-in-out infinite' }} />
         <div style={{ position:'absolute', width:400, height:400, borderRadius:'50%', background:'radial-gradient(circle, rgba(52,211,153,0.02) 0%, transparent 65%)',  bottom:'10%', right:'15%', animation:'float1 22s ease-in-out infinite 8s' }} />
@@ -705,13 +825,14 @@ function DashboardPageInner() {
       <div className="dash-content" style={{ padding:'28px 32px 80px', maxWidth:1480, margin:'0 auto', position:'relative', zIndex:1 }}>
         {error && <div style={{ background:'rgba(248,113,113,0.06)', border:'1px solid rgba(248,113,113,0.2)', borderRadius:12, padding:'14px 18px', color:D.red, fontFamily:'var(--font-mono)', fontSize:'0.78rem', marginBottom:20 }}>{error}</div>}
 
+        {data && <HeroBanner firstName={firstName} totalReports={data.summary.totalReports} reportsThisMonth={data.summary.reportsThisMonth} photos={bannerPhotos} weather={latestWeather} />}
         {data && <FilterBar data={data} onFilter={handleFilter} />}
         {loading && !data && <DashSkeleton />}
 
-        {data && (<div style={{ opacity: loading ? 0.5 : 1, pointerEvents: loading ? 'none' : 'auto', transition: 'opacity 0.25s' }}>
+        {data && (<div style={{ opacity: loading ? 0.55 : 1, filter: loading ? 'blur(1.5px) saturate(0.85)' : 'blur(0) saturate(1)', transform: loading ? 'scale(0.997)' : 'scale(1)', pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.35s ${EASE}, filter 0.35s ${EASE}, transform 0.35s ${EASE}` }}>
           {/* KPIs */}
           <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14, marginBottom:20 }}>
-            <KPICard label="Total Activity Reports" value={data.summary.totalReports}     icon={<IconDoc/>}      delay={0}   color={D.amber} />
+            <KPICard label="Total Activity Reports" value={data.summary.totalReports}     icon={<IconDoc/>}      delay={0}   color={D.amber} primary />
             <KPICard label="Reports This Month"     value={data.summary.reportsThisMonth} icon={<IconCalendar/>} delay={80}  color={D.blue}  sub="MTD" />
             <KPICard label="Active Projects (30d)"  value={data.summary.activeProjects}   icon={<IconPin/>}      delay={160} color={D.green} />
             <KPICard label="Site Photos"            value={data.summary.totalPhotos}      icon={<IconImage/>}    delay={240} color="#a78bfa" />
@@ -719,9 +840,10 @@ function DashboardPageInner() {
           </div>
 
           <Reveal style={{ marginBottom:16 }}>
-            <div className="grid-responsive" style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:14 }}>
+            <div className="grid-responsive" style={{ display:'grid', gridTemplateColumns:'1fr 2fr 0.7fr', gap:14 }}>
               <Panel title="Activity by Category"><DonutChart data={data.byCategory} activeName={data.activeFilters.filterCategory} onSliceClick={name => handleFilter('category', name)}/></Panel>
               <Panel title="Reports per Day — last 30 days"><TimelineChart data={data.byDay}/></Panel>
+              <Panel title="Completion Rate"><RingStat label="Completed" pct={data.summary.completionRate} color={D.green}/></Panel>
             </div>
           </Reveal>
 
@@ -801,7 +923,7 @@ function DashboardPageInner() {
               <Panel title={data.activeFilters.filterSearch ? `Search Results for "${data.activeFilters.filterSearch}"` : 'Recent Activity Reports'}>
                 {data.recentReports.length > 0
                   ? <ReportFeed reports={data.recentReports}/>
-                  : <div style={{ color:D.sub, fontSize:'0.8rem', fontFamily:'var(--font-mono)', padding:'32px 0', textAlign:'center' }}>{data.activeFilters.filterSearch ? 'No reports match your search' : 'No reports match your filters'}</div>}
+                  : <EmptyState label={data.activeFilters.filterSearch ? 'No reports match your search' : 'No reports match your filters'}/>}
               </Panel>
             </Reveal>
           )}
@@ -825,6 +947,17 @@ function DashboardPageInner() {
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:rgba(212,160,64,0.2); border-radius:3px; }
         ::-webkit-scrollbar-thumb:hover { background:rgba(212,160,64,0.4); }
+
+        /* ── Shared interactive states ─────────────────────────── */
+        .btn-ghost { transition: background 0.2s ${EASE}, border-color 0.2s ${EASE}, color 0.2s ${EASE}, transform 0.2s ${EASE} !important; }
+        .btn-ghost:not(:disabled):hover { background:rgba(212,160,64,0.1) !important; border-color:rgba(212,160,64,0.55) !important; color:${D.amberL} !important; transform:translateY(-1px); }
+        .btn-ghost:not(:disabled):active { transform:translateY(0) scale(0.97); }
+        .btn-close-x { transition: background 0.2s ${EASE}, border-color 0.2s ${EASE}, color 0.2s ${EASE}, transform 0.2s ${EASE} !important; }
+        .btn-close-x:hover { background:rgba(255,255,255,0.12) !important; border-color:${D.amber}66 !important; color:${D.amberL} !important; transform:rotate(90deg); }
+        .btn-close-x-plain:hover { color:${D.amberL} !important; }
+        .report-row { background:transparent; transition: background 0.15s ${EASE}; }
+        .report-row:nth-child(even) { background:rgba(255,255,255,0.014); }
+        .report-row:hover { background:rgba(212,160,64,0.045) !important; }
 
         /* ── Responsive ─────────────────────────────────────── */
         @media (max-width: 1180px) {

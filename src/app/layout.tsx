@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { DM_Sans, DM_Mono, Bebas_Neue } from 'next/font/google'
 import './globals.css'
 import DashHeader from '@/components/DashHeader'
+import SideNav from '@/components/SideNav'
 
 const dmSans = DM_Sans({
   variable: '--font-dm-sans',
@@ -35,7 +36,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${dmSans.variable} ${dmMono.variable} ${bebasNeue.variable}`}>
         <DashHeader />
-        {children}
+        <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 52px)' }}>
+          <SideNav />
+          <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+        </div>
       </body>
     </html>
   )

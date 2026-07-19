@@ -23,7 +23,8 @@ src/
         me/route.ts         # GET  — return session user or 401
       dashboard/route.ts    # GET  — aggregate all dashboard data from Supabase
   components/
-    DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button
+    DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
+    SideNav.tsx             # 64px icon rail (Dashboard/Progress), sticky below header, hidden on /login and <640px
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
 ```
@@ -106,7 +107,8 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
     "reportsThisMonth": 38,
     "activeProjects": 5,
     "totalPhotos": 812,
-    "uniqueReporters": 14
+    "uniqueReporters": 14,
+    "completionRate": 74
   },
   "byCategory": [
     { "name": "Earthworks", "count": 120 }
@@ -119,6 +121,9 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
   ],
   "byWeather": [
     { "name": "Sunny", "count": 210 }
+  ],
+  "byStatus": [
+    { "name": "Completed", "count": 310 }
   ],
   "mediaItems": [
     { "file": "https://…/photo.jpg", "media_type": "image" }
@@ -145,7 +150,8 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
       "activity_category": "Earthworks",
       "activity_type": "Excavation",
       "activity_status": "Completed",
-      "comment_activity": "Completed 50m of cut"
+      "comment_activity": "Completed 50m of cut",
+      "weather": "Sunny"
     }
   ]
 }
@@ -272,6 +278,93 @@ Copy `.env.local.example` to `.env.local` and fill in values to run locally.
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-07-18 — Bring /progress up to the same motion/hover polish as /dashboard
+
+**Files changed:** `src/app/progress/page.tsx`
+
+**What changed:** `/progress` has its own independent copy of `Panel`/`KPICard`/`Reveal` (not shared with `/dashboard`'s), written before this session's animation/aesthetics pass and never brought along. Ported the same techniques over:
+- Added the same `EASE`/`EASE_SPRING` tokens and a `SH_PANELLG`/`SH_CARDLG` shadow pair (mirrors dashboard's), used throughout in place of one-off `cubic-bezier(...)` literals and `ease` transitions.
+- `Reveal`: added the scale-in (`0.985→1`) entrance to match dashboard's.
+- `Panel`: hover now lifts (`translateY(-2px)`) with a stronger shadow (`SH_PANELLG`), not just a border/shadow swap.
+- `KPICard`: `borderRadius` 16→22, icon chip 38px→44px with stronger fill (`${color}15`→`${color}20`)/border (`${color}25`→`${color}35`), entrance and hover transforms merged into one computed `transform` (hover previously did nothing to `transform`, only shadow/border).
+- **Fixed the same latent row-hover bug pattern found and fixed in the dashboard's `ReportFeed` earlier this session**: all 5 tables here (`DelayTable`, `BOQTable` ×2 views, `ActivityReportsPanel` ×2 views) used the identical imperative `onMouseEnter={e => e.currentTarget.style.background = '...'}` / `onMouseLeave={... = 'transparent'}` pattern — replaced with one shared `.tbl-row` CSS class (`nth-child(even)` zebra + `:hover`), and `MonthlyProgressTable`'s entity-group header row got its own `.tbl-row-header` variant. Same root issue as before: imperative mutation can't coexist with zebra striping without extra state, CSS handles both for free.
+- **New `.btn-ghost` / `.btn-primary-amber` / `.seg-btn` shared classes**: every pagination button (4 instances across `DelayTable`/`BOQTable`), the `Clear` filter button, the `Apply` button (previously its own one-off `onMouseEnter`/`onMouseLeave` inline lift — now the shared `.btn-primary-amber` class), and every segmented-control / tab button (Overview/Planning/BOQ/Activity Reports tabs, BOQ's summary/detail toggle, Activity Reports' by-type/recent toggle) — none of these had *any* hover feedback before beyond `cursor: pointer`.
+- Filter-bar dim-while-filtering (`opacity: 0.7`) and content dim-while-filtering (`opacity: 0.5`) replaced with the same softer `blur + saturate + scale` treatment used on the dashboard's filter-refetch state, plus `pointerEvents: 'none'` while filtering (previously clickable mid-fetch).
+
+**What was deliberately left out:** no hero banner, no real-photo background, no weather chip — `/api/progress` doesn't fetch media at all (`ProgressData` has no `mediaItems`), so porting those would mean adding a new Supabase query, not just a styling pass. Scoped this as a "bring visual/motion consistency up to the same bar" pass per the user's "clean up" ask, not a feature port — flagged as available on request.
+
+### 2026-07-18 — Real site photos in hero banner/background, weather chip from logged data
+
+**Files changed:** `src/app/dashboard/page.tsx`, `src/app/api/dashboard/route.ts`
+
+**What changed:**
+- User asked for "more realistic construction pictures" after seeing the abstract road-motif version — a direct reversal of the earlier "abstract, not real photos" call from the same session. Rather than sourcing/generating new imagery, reused what already exists: real site photos from `data.mediaItems` (the same Supabase-backed array the Media Gallery panel uses).
+- **Removed** the entire abstract-silhouette system from the previous pass: `SilTruck`/`SilExcavator`/`SilRoller`/`SilCone` components and the `driftX`/`coneBob`/`heroBob`/`roadDash` keyframes are gone — fully superseded, not kept as a dead fallback path. The ambient layer's ping/float/scanline gradient-glow elements (unrelated to the vehicle motif, just color accents) were left as-is.
+- **New `useCrossfade(count, intervalMs)` hook**: cycles an index on an interval, used by both new photo components below — factored out since both needed identical timed-crossfade behavior.
+- **New `PhotoBackdrop` component**: full-bleed, heavily blurred+dimmed (`brightness(0.24) blur(7px)`, plus a `rgba(14,14,16,0.5)` scrim on top) crossfading real-photo layer, inserted as the *first* child of the existing fixed ambient container (so the gradient glows/scanline still paint over it as accents). Sourced from `data.mediaItems` filtered to images (no videos), first 6. Renders nothing if there are no photos for the current filter — the existing gradient-blob ambient still carries the background in that case, no broken/empty state.
+- **`HeroBanner`**: the illustrated vehicle cluster is replaced with a crossfading real-photo layer (photos 7–10 from the same filtered list, so the banner and full-page background don't show identical images), dimmed less aggressively than the page background (`brightness(0.55)` + a directional gradient scrim, since it only needs to sit behind ~3 lines of text) so the photos actually read as photos here. Falls back to the previous flat gradient when there are no photos.
+- **Weather chip**: `GET /api/dashboard`'s recent-reports query now also selects `weather` (one extra column, already indexed by nothing special — cheap). The frontend takes `data.recentReports.find(r => r.weather)?.weather` — since `recentReports` is already sorted newest-first, this is "the most recent report that has a logged weather value," displayed in the hero banner with the same `WEATHER_ICON` emoji map the Weather Conditions chart already uses. **Deliberately not a live weather API** — user chose "derive from report data" over adding a third-party weather API + API key dependency when asked.
+- Both photo layers and the weather chip degrade gracefully to "just don't render" when there's no data (no photos, no logged weather) — no placeholder/broken-image states to design for.
+
+**Why:** Two direct asks in one message: realistic imagery (reversing the earlier abstract-motif decision from this same day) and a weather readout like the reference dashboard screenshot. Clarified only the weather-source question before implementing (live API vs. derived from existing data) since that one had a real new-dependency cost (API key acquisition); the photo-source question didn't need re-asking since "use your own real site photos, heavily dimmed" was already the user's stated preference from the very first background-animation round earlier this session, just not selected at the time in favor of the abstract option.
+
+### 2026-07-18 — Layout refresh inspired by a reference dashboard (sidebar, hero banner, rounder KPIs, completion ring)
+
+**Files changed:** `src/app/layout.tsx`, `src/components/SideNav.tsx` (new), `src/components/DashHeader.tsx`, `src/app/dashboard/page.tsx`, `src/app/api/dashboard/route.ts`
+
+**What changed:**
+- User shared a light-themed reference dashboard (rounded cards, hero "Welcome" banner with illustrated workers, icon sidebar, budget/resource charts, circular progress widgets) and asked for a dark-themed adaptation. Scoped via explicit follow-up: rounded stat cards + hero banner + icon sidebar + circular widgets, **no illustrated human characters** (kept abstract, reusing the road-motif silhouettes already added to the ambient background) and no literal "color wheel" (no meaningful data mapping for one — see below).
+- **`SideNav.tsx`** (new): 64px icon rail, `position: sticky` below the 52px header, entries for Dashboard/Progress (mirrors `DashHeader`'s existing `NAV_LINKS`). Self-hides via `pathname === '/login'` check (`usePathname`), and via CSS on screens <640px (mobile has no room for a persistent rail). Wired into `layout.tsx` by wrapping `{children}` in a flex row with `SideNav` — deliberately *not* conditional on auth state beyond the `/login` pathname check, since `DashHeader` already redirects unauthenticated sessions to `/login` on mount.
+- **`DashHeader.tsx`**: its existing text nav links (`Dashboard`/`Progress`) are now hidden ≥641px via a `@media (min-width: 641px) { .dh-nav-links { display:none } }` rule, since `SideNav` covers desktop navigation now and having both visible at once read as duplicated chrome. Below 640px (where `SideNav` hides itself), the text links reappear as the mobile fallback — so mobile never loses navigation.
+- **`KPICard`**: `borderRadius` 16→22, icon chip 38px→44px with a stronger filled background (`${color}12`→`${color}20`) and border (`${color}22`→`${color}35`), padding loosened slightly — moves toward the reference's rounder, more filled look without changing the underlying skeuomorphic shadow tokens (`SH_CARD`/`SH_CARDLG` untouched).
+- **`HeroBanner`** (new component in `page.tsx`): a rounded gradient panel at the top of the dashboard content (above the `FilterBar`), with a time-of-day greeting (`Good morning/afternoon/evening`), the logged-in user's first name (dashboard now makes its own light `GET /api/auth/me` call for this — `DashHeader` already does the same independently; not worth a shared-context refactor for one field), a one-line stat summary (`reportsThisMonth`/`totalReports`), and a small illustrated cluster reusing `SilTruck`/`SilExcavator`/`SilCone` (the same silhouettes from the ambient background, at full opacity and larger scale here) with a slow `heroBob` bob animation — this is the "road activities" visual, deliberately not photographic or human-illustrated.
+- **`RingStat`** (new component) + **Completion Rate ring**: an SVG radial-progress ring (`stroke-dashoffset` animated on mount) added as a third column next to the Category donut and 30-day timeline. Backed by a genuinely new data point — `GET /api/dashboard` now also returns `byStatus` (groupCount over `activity_status`, same pattern as `byWeather`) and `summary.completionRate` (`% of reports with status Completed`). The reference's second circular widget (a decorative "color wheel" with no visible data mapping) was deliberately **not** replicated — see Why.
+
+**Why:** Direct ask, scoped through two rounds of clarifying questions (which elements to adopt; illustrated-people question) before implementing, given a light-theme reference photo doesn't translate 1:1 into "same layout, dark colors" without real layout/asset decisions (sidebar nav didn't exist before this; illustrated characters would need sourced/generated artwork). The reference's "color wheel" widget was skipped rather than force-replicated: unlike "Schedule 57%" (clearly a completion/progress metric, which `completionRate` now genuinely represents), the color wheel had no obvious data mapping in this domain, and building a second decorative-only ring would violate the project's own steer toward real, filter-connected data rather than static chrome.
+
+### 2026-07-18 — Animated road-activity motif in the dashboard background
+
+**Files changed:** `src/app/dashboard/page.tsx`
+
+**What changed:**
+- Extended the existing fixed "Ambient" layer (the one with the floating radial-gradient blobs and scan-line, unchanged) with an abstract, low-opacity road/construction motif rather than real photos: four new inline SVG silhouette components (`SilTruck`, `SilExcavator`, `SilRoller`, `SilCone`) drawn as simple filled shapes, plus a `driftX` keyframe (slow diagonal drift across the viewport, `animation-direction: alternate` so it ping-pongs smoothly with no jump-cut at the loop boundary — one keyframe covers both directions) and a `roadDash` keyframe (a `repeating-linear-gradient` strip near the bottom edge with animated `background-position-x`, reading as flowing road-marking dashes).
+- All motif elements live in the same `pointer-events:none`, `z-index:0` fixed layer as the existing ambient blobs, so they never intercept clicks or sit above content. Opacity is baked into each element's `color` (`rgba(...)`, 0.035–0.09) rather than animated, since CSS `opacity` set as a base inline style gets clobbered once an `animation` targets a different property on the same element — keeping intensity fixed and only animating `transform`/`background-position-x` avoided that trap.
+- Each silhouette runs on a different `animation` duration (76s/94s/110s) and a negative `animationDelay` so they don't start synchronized or drift in visible lockstep.
+
+**Why:** User asked for the dashboard background to be animated with road-activity imagery. Given real site photos (already available via `data.mediaItems`) would fight for contrast against the KPI numbers/charts on this dark, low-noise gunmetal design system, user opted for an abstract motif instead of real photos, kept subtle and full-bleed rather than confined to one area — same design-system-first approach as the animation/aesthetics pass above.
+
+### 2026-07-18 — Fix Machine/Employee/Engineer/Supervisor bar-click filters wiping the whole dashboard
+
+**Files changed:** `src/app/api/dashboard/route.ts`
+
+**What changed:**
+- `machines`, `employees`, `engineers`, `supervisors` come from `fetchAll()`, which returns a plain array. The HR cross-reference block was reading `machines.data ?? []` (and the same for the other three) — arrays don't have a `.data` property, so this was always `undefined ?? []` → `[]`. `matchReportIds([], field, filterVal)` with a truthy `filterVal` returns an **empty** `Set` (not `null`), which then intersects `hrRestrictIds` down to empty — so `all` (every report) got filtered to zero rows whenever *any* of the four HR filters was active in the URL. Since KPIs, every chart, the calendar, the map, and even `byMachine`/`byEmployee`/etc. themselves (via `inFilter`) are all derived from `all` or gated by `hasFilters`, clicking a Machines/Employees/Engineers/Supervisors bar blanked the entire dashboard, not just the report table.
+- Fixed by removing the erroneous `.data` — `matchReportIds(machines, 'machine_name', filterMachine)` etc., since these are already the arrays `matchReportIds` expects.
+- This was flagged by `tsc --noEmit` (`Property 'data' does not exist on type 'Record<string, unknown>[]'` at these exact 4 lines) during the animation-polish pass above, but was initially dismissed as a pre-existing, unrelated type error — it turned out to be live-breaking, not just a type nag. Root cause looks like a leftover from the merge conflict resolved earlier the same day (`page.tsx`'s `<<<<<<< HEAD` markers) — `route.ts` likely has the same kind of merge mismatch (a `{data,error}`-destructuring code path merged against a `fetchAll`-array code path) without the literal conflict markers to flag it.
+- Verified via `tsc --noEmit` (zero errors project-wide, was 4) and `next build` (full build + type-check now passes, previously failed at the type-check step).
+- **Category/Project/Weather filters were never affected** — those apply via `.ilike()` at the DB level in `buildLiteQuery()`, a completely separate code path from the in-memory HR cross-reference.
+
+**Why:** User reported "the bars are no longer filtering the report" after the animation-polish pass above. The animation changes only touched `page.tsx` styling/motion (verified via diff — no logic in `loadData`/`handleFilter`/routing was touched), so the regression wasn't from that pass; it was this pre-existing `route.ts` bug, surfaced because the user was clicking around to review the new hover states.
+
+### 2026-07-18 — Dashboard animation & aesthetics polish pass
+
+**Files changed:** `src/app/dashboard/page.tsx`
+
+**What changed:**
+- Added two shared motion tokens, `EASE` (`cubic-bezier(0.16,1,0.3,1)`, decelerate) and `EASE_SPRING` (`cubic-bezier(0.34,1.56,0.64,1)`, slight overshoot), and replaced every inline easing-curve literal across `Reveal`, `Panel`, `KPICard`, `DonutChart`, `TimelineChart`, `HBarChart`, and `WeatherBars` with them — motion now reads as one consistent language instead of ad-hoc per-component curves.
+- `Reveal` entrance now also scales in (`0.985 → 1`) alongside the existing fade/translate, matching `KPICard`'s entrance style.
+- `Panel` and `KPICard` gained a hover "lift" (`translateY(-2px)`/`-3px`) plus stronger glow/shadow on hover (`SH_PANELLG` — new shadow token, same family as `SH_CARDLG`), reinforcing the skeuomorphic raised metaphor from the design system. `KPICard`'s entrance-transform and hover-transform were merged into a single computed `transform` (previously hover had no transform at all, only shadow/border changes).
+- `KPICard` gained an optional `primary` prop, used on "Total Activity Reports" — a persistent (not just hover) tinted border and thicker left accent bar, giving the KPI row a clear primary/secondary hierarchy instead of five visually-equal cards.
+- Row-level micro-interactions added: `DonutChart` legend rows, `HBarChart` rows, and `WeatherBars` rows now nudge `translateX` on hover/active (previously only opacity changed — clicking/hovering a row now has a tactile shift, not just a dim/brighten).
+- Data-refresh transition on the main content wrapper changed from a flat `opacity 0.5` dim to a softer `opacity 0.55 + blur(1.5px) saturate(0.85) + scale(0.997)` treatment — reads as "refreshing" rather than "disabled."
+- All outline/ghost buttons (media gallery pager, lightbox nav/close, report-feed pager, filter-bar Clear) previously had zero visual hover feedback (only `cursor:pointer`, no color/background change). Added shared `.btn-ghost` / `.btn-close-x` CSS classes with real hover states (amber tint + 1px lift) and `:not(:disabled)` guards so disabled pager buttons stay inert.
+- `ReportFeed` rows switched from an imperative `onMouseEnter`/`onMouseLeave` JS style-mutation (which also had a latent bug: mouseleave always reset to `'transparent'`, incompatible with zebra striping) to a `.report-row` CSS class with `nth-child` zebra striping + a proper `:hover` rule.
+- Added a reusable `EmptyState` component (icon + fade-in) and swapped it into all four bare-text empty states (`MediaGallery` ×2, `ActivityCalendar`, `ReportFeed`/search-results) — previously plain unstyled text with no entrance.
+- The "Filtered: N reports" indicator in `FilterBar` is now a proper pill (tinted background, border, live-dot) instead of plain inline text, matching the visual weight of an active-filter state elsewhere in the UI.
+- `D.muted` nudged from `#7a7570` to `#8c867e` for better legibility of small-caps labels (panel titles, KPI labels) against the `#141416` panel background — same warm-gray hue family, no new token introduced.
+
+**Why:** User asked for the animation effects and overall aesthetics to be improved, specifically calling out motion feeling flat/generic, visual hierarchy/density, color/contrast, and missing micro-interactions (all four, scoped to stay within the existing gunmetal/amber design system rather than a broader visual departure). Verified via `tsc --noEmit` (no new errors — the pre-existing `route.ts` `.data` type errors are unrelated) and `next build` (Turbopack compile succeeds; same pre-existing `route.ts` type-check failure blocks the full build, not caused by this change). Not verified in a live browser — the Mapbox account issue blocked getting a logged-in session for a screenshot check, so this was a careful code-level pass; user to spot-check visually.
 
 ### 2026-07-16 — Click-to-filter on Category donut and Top Projects bar chart
 
