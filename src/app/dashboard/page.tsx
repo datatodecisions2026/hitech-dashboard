@@ -356,37 +356,48 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
 
 /* ── Media Gallery ─────────────────────────────────────────── */
 function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProject: string }) {
+  const images = items.filter(m => m.media_type !== 'video')
+  const videos = items.filter(m => m.media_type === 'video')
+
+  if (!activeProject) return <EmptyState label="Select a project to view site media"/>
+  if (!images.length && !videos.length) return <EmptyState label="No media for this project"/>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <MediaBox label="Photos" items={images} activeProject={activeProject}/>
+      <MediaBox label="Videos" items={videos} activeProject={activeProject}/>
+    </div>
+  )
+}
+
+/* ── Media box (independent grid + pagination + lightbox, used per media type) ── */
+function MediaBox({ label, items, activeProject }: { label: string; items: MediaItem[]; activeProject: string }) {
   const [lightbox, setLightbox] = useState<MediaItem | null>(null)
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 12
-  const images = items.filter(m => m.media_type !== 'video')
-  const videos = items.filter(m => m.media_type === 'video')
-  const sorted = items // already newest-first from the API; don't bucket by type or videos always land last
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
-  const pageItems  = sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+  const totalPages = Math.ceil(items.length / PAGE_SIZE)
+  const pageItems  = items.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setLightbox(null); return }
       if (!lightbox) return
-      const idx = sorted.indexOf(lightbox)
-      if (e.key === 'ArrowRight' && idx < sorted.length - 1) setLightbox(sorted[idx + 1])
-      if (e.key === 'ArrowLeft'  && idx > 0)                 setLightbox(sorted[idx - 1])
+      const idx = items.indexOf(lightbox)
+      if (e.key === 'ArrowRight' && idx < items.length - 1) setLightbox(items[idx + 1])
+      if (e.key === 'ArrowLeft'  && idx > 0)                setLightbox(items[idx - 1])
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [lightbox, sorted])
+  }, [lightbox, items])
   useEffect(() => { setPage(0); setLightbox(null) }, [activeProject])
 
-  if (!activeProject) return <EmptyState label="Select a project to view site media"/>
-  if (!sorted.length) return <EmptyState label="No media for this project"/>
-
   return (
-    <>
-      <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: D.muted, marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
-        <span>{images.length} photos · {videos.length} videos</span>
-        <span style={{ color: D.sub }}>Showing {page*PAGE_SIZE+1}–{Math.min((page+1)*PAGE_SIZE, sorted.length)} of {sorted.length}</span>
+    <div style={{ background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 12, padding: 14 }}>
+      <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: D.muted, marginBottom: 10, display: 'flex', justifyContent: 'space-between', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+        <span>{label} · {items.length}</span>
+        {items.length > 0 && <span style={{ color: D.sub, textTransform: 'none', letterSpacing: 'normal' }}>Showing {page*PAGE_SIZE+1}–{Math.min((page+1)*PAGE_SIZE, items.length)} of {items.length}</span>}
       </div>
+      {!items.length ? <EmptyState label={`No ${label.toLowerCase()} for this project`}/> : (
       <div className="media-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         {pageItems.map((item, i) => {
           const isVideo = item.media_type === 'video'
@@ -406,6 +417,7 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
           )
         })}
       </div>
+      )}
       {totalPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
           <button className="btn-ghost" onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0}
@@ -423,9 +435,9 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
         </div>
       )}
       {lightbox && (() => {
-        const lbIdx = sorted.indexOf(lightbox)
+        const lbIdx = items.indexOf(lightbox)
         const hasPrev = lbIdx > 0
-        const hasNext = lbIdx < sorted.length - 1
+        const hasNext = lbIdx < items.length - 1
         const navBtn = (dir: 'left'|'right', enabled: boolean, onClick: () => void) => (
           <button className={enabled?'btn-ghost':undefined} onClick={e => { e.stopPropagation(); onClick() }} disabled={!enabled}
             style={{ position:'absolute', top:'50%', transform:'translateY(-50%)', [dir==='left'?'left':'right']:16,
@@ -440,14 +452,14 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
             {lightbox.media_type==='video'
               ? <video key={lightbox.file} src={lightbox.file} autoPlay controls playsInline onClick={e => e.stopPropagation()} style={{ maxWidth:'90vw',maxHeight:'88vh',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,0.9)' }}/>
               : <img src={lightbox.file} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:'90vw',maxHeight:'88vh',objectFit:'contain',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,0.9)' }}/>}
-            {navBtn('left',  hasPrev, () => setLightbox(sorted[lbIdx - 1]))}
-            {navBtn('right', hasNext, () => setLightbox(sorted[lbIdx + 1]))}
-            <div onClick={e => e.stopPropagation()} style={{ position:'absolute',bottom:20,left:'50%',transform:'translateX(-50%)',color:D.muted,fontFamily:'var(--font-mono)',fontSize:'0.65rem' }}>{lbIdx+1} / {sorted.length}</div>
+            {navBtn('left',  hasPrev, () => setLightbox(items[lbIdx - 1]))}
+            {navBtn('right', hasNext, () => setLightbox(items[lbIdx + 1]))}
+            <div onClick={e => e.stopPropagation()} style={{ position:'absolute',bottom:20,left:'50%',transform:'translateX(-50%)',color:D.muted,fontFamily:'var(--font-mono)',fontSize:'0.65rem' }}>{lbIdx+1} / {items.length}</div>
             <button className="btn-close-x" onClick={() => setLightbox(null)} style={{ position:'absolute',top:20,right:24,background:'rgba(255,255,255,0.06)',border:`1px solid ${D.sub}`,color:D.muted,width:38,height:38,borderRadius:9,cursor:'pointer',fontSize:'1.1rem',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.2s' }}>✕</button>
           </div>
         )
       })()}
-    </>
+    </div>
   )
 }
 
