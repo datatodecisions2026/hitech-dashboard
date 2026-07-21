@@ -361,7 +361,7 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
   const PAGE_SIZE = 12
   const images = items.filter(m => m.media_type !== 'video')
   const videos = items.filter(m => m.media_type === 'video')
-  const sorted = [...images, ...videos]
+  const sorted = items // already newest-first from the API; don't bucket by type or videos always land last
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
   const pageItems  = sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
 
