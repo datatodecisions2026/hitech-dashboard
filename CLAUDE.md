@@ -11,23 +11,33 @@ Standalone analytics dashboard for Hitech Construction Ltd. Built with Next.js 1
 ```
 src/
   app/
-    layout.tsx              # Root layout — mounts DashHeader, loads fonts
+    layout.tsx              # Root layout — mounts DashHeader + SideNav, loads fonts
     page.tsx                # Redirects / → /dashboard
     globals.css             # Minimal CSS reset + keyframes
     login/page.tsx          # Login page (amber theme, dark card)
-    dashboard/page.tsx      # Main dashboard (skeuomorphic, 1100+ lines, self-contained)
+    dashboard/page.tsx      # Main dashboard (skeuomorphic, ~990 lines, self-contained)
+    progress/page.tsx       # Construction progress dashboard (~820 lines, self-contained — own Panel/KPICard/Reveal, not shared with dashboard/page.tsx)
     api/
       auth/
         login/route.ts      # POST — authenticate against Supabase auth_user table
         logout/route.ts     # POST — destroy iron-session cookie
         me/route.ts         # GET  — return session user or 401
-      dashboard/route.ts    # GET  — aggregate all dashboard data from Supabase
+      dashboard/route.ts    # GET  — aggregate all dashboard data from Supabase (session-guarded)
+      progress/route.ts     # GET  — aggregate construction-progress data from Supabase (session-guarded)
+      map/route.ts          # GET  — chainage stations + geotagged reports for HitechMap (no session guard)
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
     SideNav.tsx             # 64px icon rail (Dashboard/Progress), sticky below header, hidden on /login and <640px
+    HitechMap.tsx           # Mapbox GL map — chainage stations + report points, used on /dashboard
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
+scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs
+sync_to_supabase.py         # Pulls Main_Survey_Data/photos/employees/supervisors/engineers/machines from Google Drive Excel, upserts into hitech_report_* tables (dedupes on globalid)
+sync_progress.py            # Uploads construction progress data (blocks/entities/BOQ) into hitech_construction_* tables from local CSV/XLSX
+sync_ogun.py                # Append-only sync of "Ogun - Total entities.xlsx" into hitech_ogun_entities (checks row count, inserts only new rows)
 ```
+
+> The three `sync_*.py` scripts are run manually/out-of-band (not deployed with the app) to populate Supabase from source Excel/CSV files exported elsewhere. They read `.env.local` for `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`.
 
 ---
 
@@ -99,6 +109,15 @@ Returns the currently authenticated user from the session.
 
 Returns all aggregated analytics data. Requires a valid session (401 if not authenticated).
 
+**Query params (all optional — combine freely, HR params are AND'd together):**
+```
+category, project, weather   — case-insensitive .ilike() match on the report columns
+date_from, date_to           — inclusive date range on date_of_activity
+ch_from, ch_to                — inclusive chainage range on start_chainage_val (only applied if both are valid numbers with ch_to > ch_from)
+search                        — matches reporter_name/project_name/section_name/activity_type/comment_activity
+machine, employee, engineer, supervisor — resolved in-memory against the HR join tables, not real columns on hitech_report_hitechreport
+```
+
 **Response (200):**
 ```json
 {
@@ -110,23 +129,18 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
     "uniqueReporters": 14,
     "completionRate": 74
   },
-  "byCategory": [
-    { "name": "Earthworks", "count": 120 }
-  ],
-  "byProject": [
-    { "name": "Ring Road Phase 2", "count": 85 }
-  ],
-  "byDay": [
-    { "date": "2026-04-16", "count": 4 }
-  ],
-  "byWeather": [
-    { "name": "Sunny", "count": 210 }
-  ],
-  "byStatus": [
-    { "name": "Completed", "count": 310 }
-  ],
+  "byCategory": [{ "name": "Earthworks", "count": 120 }],
+  "byProject": [{ "name": "Ring Road Phase 2", "count": 85 }],
+  "byDay": [{ "date": "2026-04-16", "count": 4 }],
+  "byWeather": [{ "name": "Sunny", "count": 210 }],
+  "byStatus": [{ "name": "Completed", "count": 310 }],
+  "byMachine": [{ "name": "Excavator 12", "count": 40 }],
+  "byEmployee": [{ "name": "Kofi Mensah", "count": 30 }],
+  "byEngineer": [{ "name": "Ama Owusu", "count": 22 }],
+  "bySupervisor": [{ "name": "Yaw Boateng", "count": 18 }],
+  "byOwnership": [{ "name": "Hitech", "count": 210 }],
   "mediaItems": [
-    { "file": "https://…/photo.jpg", "media_type": "image" }
+    { "file": "https://…/photo.jpg", "media_type": "image", "project_name": "Ring Road Phase 2" }
   ],
   "mapPoints": [
     {
@@ -153,15 +167,99 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
       "comment_activity": "Completed 50m of cut",
       "weather": "Sunny"
     }
-  ]
+  ],
+  "filterOptions": {
+    "categories": ["Earthworks", "Drainage"],
+    "projects": ["Ring Road Phase 2", "N1 Highway"]
+  },
+  "activeFilters": {
+    "filterCategory": "", "filterProject": "", "filterDateFrom": "", "filterDateTo": "",
+    "filterChFrom": "", "filterChTo": "", "filterSearch": "",
+    "filterWeather": "", "filterMachine": "", "filterEmployee": "", "filterEngineer": "", "filterSupervisor": ""
+  }
 }
 ```
+
+`byMachine`/`byEmployee`/`byEngineer`/`bySupervisor`/`byOwnership` are computed by cross-referencing the HR join tables (fetched in full every request, joined in-memory via `report_id`) against whichever reports match the active filters — see the 2026-07-16/2026-07-18 changelog entries below for the filtering/remount bugs this shape was built to fix.
+
+---
+
+### `GET /api/progress`
+
+Returns aggregated construction-progress data (entity/block completion, delays, BOQ, Gantt). Requires a valid session (401 if not authenticated). Backs `/progress`, not `/dashboard`.
+
+**Query params (all optional):**
+```
+project             — matched via .ilike() on project_name using the first word of the value (e.g. "Coastal Road" → "%Coastal%")
+entity               — exact match on entity_name, plus .ilike() on activity_type for BOQ/report cross-reference
+side                 — exact match, one of LHS / RHS / MEDIAN
+month                — "YYYY-MM" prefix match on planned_date
+ch_from, ch_to        — inclusive chainage range (only applied if both are valid numbers with ch_to > ch_from)
+```
+
+**Response (200) — shape:**
+```json
+{
+  "summary": {
+    "totalEntities": 340, "totalCompleted": 210, "overallPct": 62,
+    "delayed": 48, "onSchedule": 292, "totalBoqQty": 18500,
+    "totalReports": 1200, "linkedEntities": 190
+  },
+  "ganttData": [{ "entity": "Culvert C-12", "start": "2026-01-05", "end": "2026-02-01", "segments": 3 }],
+  "progressCurve": [{ "date": "2026-01-10", "count": 5, "pct": 1.47 }],
+  "monthlyProgress": [{ "entity": "Culvert C-12", "side": "LHS", "months": [{ "month": "2026-01", "completion_pct": 40, "pending_pct": 60, "cumulative_pct": 40 }], "total_completion": 72 }],
+  "allMonths": ["2026-01", "2026-02"],
+  "delayData": [{ "entity_name": "Culvert C-12", "side": "LHS", "label": 1500, "planned_date": "2026-01-01", "date_started": "2026-01-04", "date_completed": "2026-01-20", "delay_days": 3, "performance_status": "Delayed", "status": "Completed" }],
+  "daysByEntity": [{ "entity": "Culvert C-12", "lhs": 12, "rhs": 14, "median": null }],
+  "boqItems": [{ "description": "…", "activity_category": "Earthworks", "activity_type": "Excavation", "qty": 500, "unit": "m3", "rate": 12, "amount": 6000, "report_count": 8 }],
+  "boqByCategory": [{ "category": "Earthworks", "qty": 12000, "amount": 144000, "items": 40 }],
+  "reportsByType": [{ "type": "Excavation", "count": 120, "completed": 90, "inProgress": 20, "latest": "2026-07-10", "linked": 60 }],
+  "recentReports": [ "…up to 50 most recent hitech_report_hitechreport rows matching the filters…" ],
+  "activeFilters": { "filterEntity": "", "filterSide": "", "filterMonth": "", "filterChFrom": "", "filterChTo": "" },
+  "filterOptions": { "entities": ["Culvert C-12"], "sides": ["LHS", "RHS", "MEDIAN"], "months": ["2026-01"] }
+}
+```
+
+Reads from `hitech_construction_entities`, `hitech_construction_blocks`, `hitech_construction_boq` (all populated by `sync_progress.py`, not by the portal app), plus `hitech_report_hitechreport` for the activity-report cross-reference (`reportsByType`, `linkedEntities`).
+
+---
+
+### `GET /api/map`
+
+Returns chainage stations and geotagged activity reports for `HitechMap`, keyed by project. **No session guard** — do not add sensitive data to this response without adding one.
+
+**Query params:**
+```
+project   — project display name (default "Coastal Road"), mapped to a numeric project_id via a hardcoded PROJECT_ID_MAP in the route file — add new projects there when onboarding a new road
+```
+
+**Response (200):**
+```json
+{
+  "stations": [{ "label": "1+500", "chainage": 1500, "latitude": 5.603, "longitude": -0.187, "project_id": 1 }],
+  "reports": [
+    {
+      "id": 99, "start_chainage": "1+500", "end_chainage": "1+550",
+      "start_chainage_val": 1500, "end_chainage_val": 1550,
+      "activity_category": "Earthworks", "activity_type": "Excavation", "activity_status": "Completed",
+      "reporter_name": "Kofi Mensah", "date_of_activity": "2026-05-14",
+      "project_name": "Ring Road Phase 2", "section_name": "Section A",
+      "start_chainage_lat": "5.603", "start_chainage_long": "-0.187",
+      "end_chainage_lat": "5.605", "end_chainage_long": "-0.185"
+    }
+  ],
+  "projectId": 1,
+  "project": "Coastal Road"
+}
+```
+
+Reads `hitech_report_chainage` (station markers) and `hitech_report_hitechreport` (report chainage points), filtered by project via `.ilike()` on the first word of the project name.
 
 ---
 
 ## Database Tables (Supabase / PostgreSQL)
 
-The dashboard reads from two tables:
+The dashboard's core data lives in two tables, cross-referenced by four HR join tables and a few progress/mapping tables added later:
 
 ### `hitech_report_hitechreport`
 Activity reports submitted by field workers.
@@ -182,6 +280,9 @@ Activity reports submitted by field workers.
 | `start_chainage_long` | text (numeric) | GPS start lng |
 | `end_chainage_lat` | text (numeric) | GPS end lat |
 | `end_chainage_long` | text (numeric) | GPS end lng |
+| `start_chainage` / `end_chainage` | text | Display chainage, e.g. `"1+500"` |
+| `start_chainage_val` / `end_chainage_val` | numeric | Chainage in metres — used for range filtering (`ch_from`/`ch_to`) in `/api/dashboard`, `/api/progress`, `/api/map` |
+| `globalid` | text | Cross-referenced against `hitech_construction_entities.global_id` to link a report to a progress entity |
 
 ### `hitech_report_hitechphoto`
 Media attached to reports.
@@ -206,6 +307,24 @@ Django-managed user table (read-only from this app).
 | `is_superuser` | bool | True = admin role |
 | `is_active` | bool | False = login blocked |
 
+### HR join tables — `hitech_report_hitechmachine` / `hitechemployee` / `hitechengineer` / `hitechsupervisor`
+Each row links one machine/employee/engineer/supervisor to one report via `report_id`. Fetched in full on every `/api/dashboard` request and joined in-memory (no per-request filtered query) — see the byMachine/byEmployee/byEngineer/bySupervisor shape in `GET /api/dashboard` above. Key columns: `machine_name`/`employee_name`/`engineer_name`/`supervisor_name`, `report_id`, plus `ownership`/`driver_name`/`fleet_number` (machine), `employee_role` (employee), `party` (engineer/supervisor).
+
+### `hitech_report_chainage`
+Chainage station markers used by `HitechMap`/`GET /api/map`. Columns: `label`, `chainage` (numeric), `latitude`, `longitude`, `project_id` (see `PROJECT_ID_MAP` in `src/app/api/map/route.ts`).
+
+### `hitech_construction_entities`
+One row per constructible "entity" (e.g. a culvert or drainage segment) — backs `/progress`'s Gantt, progress curve, delay, and monthly-progress views. Key columns: `entity_name`, `side` (`LHS`/`RHS`/`MEDIAN`), `status`, `planned_date`, `date_started`, `date_completed`, `label` (chainage), `global_id`, `report_id` (FK link to `hitech_report_hitechreport` when an activity report is tied to this entity), `project_name`. Populated by `sync_progress.py`.
+
+### `hitech_construction_blocks`
+Physical construction blocks/segments within an entity — backs `/progress`'s "days by entity" duration chart. Key columns: `entity_name`, `side`, `date_started`, `date_completed`, `total_segments`, `planned_start`, `block_start`/`block_end` (chainage range), `completion_global_id`, `report_id`, `project_name`. Populated by `sync_progress.py`.
+
+### `hitech_construction_boq`
+Bill of quantities line items — backs `/progress`'s BOQ tab. Key columns: `description`, `activity_category`, `activity_type` (cross-referenced against `hitech_report_hitechreport.activity_type` to compute `report_count`), `qty`, `unit`, `rate`, `amount`, `project_name`. Populated by `sync_progress.py`.
+
+### `hitech_ogun_entities`
+Populated by `sync_ogun.py` (append-only, checks row count before inserting). Not currently read by any route in this app — data-ingestion-only as of this writing; confirm before assuming it's dead.
+
 ---
 
 ## Auth Flow
@@ -214,14 +333,18 @@ Django-managed user table (read-only from this app).
 2. `POST /api/auth/login` verifies against `auth_user.password` (Django pbkdf2_sha256)
 3. On success: iron-session sets `hitech-dashboard-session` cookie
 4. `DashHeader` calls `GET /api/auth/me` on mount — redirects to `/login` on 401
-5. `GET /api/dashboard` also guards with session check — returns 401 if unauthenticated
+5. `GET /api/dashboard` and `GET /api/progress` also guard with a session check — return 401 if unauthenticated. `GET /api/map` does **not** guard — it's fetched client-side by `HitechMap` and returns no user-identifying data, but keep that in mind if its response shape ever changes
 6. Logout: `POST /api/auth/logout` destroys the cookie, redirect to `/login`
+
+`SideNav` hides itself on `/login` (pathname check) and on screens <640px; `DashHeader`'s text nav links are the mobile fallback in that case. Neither component gates on auth state beyond the `/login` pathname check — the actual redirect-if-unauthenticated logic lives in `DashHeader`'s `GET /api/auth/me` call and each page's own data fetch.
 
 ---
 
 ## Dashboard Design System
 
 The dashboard (`src/app/dashboard/page.tsx`) uses a **skeuomorphic gunmetal** design. All tokens are defined locally in that file — do not use globals.css CSS vars inside the dashboard.
+
+> `/progress` (`src/app/progress/page.tsx`) uses the same visual language and the same `EASE`/`EASE_SPRING` motion tokens, but keeps its **own independent copy** of the `D` palette, shadow constants, `Panel`/`KPICard`/`Reveal` — it is not a shared import. If you change a token or a shared component's behavior in one file, it will not propagate to the other; update both deliberately, per the 2026-07-18 "bring /progress up to parity" changelog entry.
 
 ```ts
 const D = {
@@ -270,14 +393,40 @@ Full documentation of every portal route, its request/response shape, and the un
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only (API routes) |
 | `SESSION_SECRET` | Server only (iron-session) |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Client (`HitechMap`) — without it, the map on `/dashboard` renders an inline "Mapbox token not set" error instead of failing silently |
 
-Copy `.env.local.example` to `.env.local` and fill in values to run locally.
+> There is no `.env.local.example` file checked in — create `.env.local` directly with the variables above (and see `sync_progress.py`'s docstring for the two variables the Python sync scripts read from the same file).
 
 ---
 
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-07-22 — Fix `/progress` timing out: move entity aggregation from Node into Postgres RPCs
+
+**Files changed:** `src/app/api/progress/route.ts`, Supabase migrations `add_progress_aggregation_rpcs`, `add_linked_count_to_progress_summary`, `fix_progress_summary_linked_count_plan`, `drop_entities_global_id_index`
+
+**What changed:**
+- `hitech_construction_entities` has grown to 579,703 rows. `GET /api/progress` was calling `fetchAll()` on it (and on the unfiltered dropdown query) — a `while` loop paging `.range()` 1000 rows at a time, sequentially, until the table was exhausted. That's ~580 sequential HTTP round trips to Supabase per request, plus building `monthlyMap`/`dateCountMap`/`delayData`/`linkedGlobalIds` over the full result in JS. This is what was timing out the `/progress` page.
+- Added 5 Postgres functions (`progress_summary_counts`, `progress_unique_entity_names`, `progress_monthly_breakdown`, `progress_curve`, `progress_delay_rows`) that do the same `GROUP BY`/`COUNT`/date-math work as `WHERE`-filtered SQL aggregates instead of raw-row fetches. `route.ts` now calls these via `supabase.rpc(...)` in the same `Promise.all` alongside the small-table queries (`blocks`, `boq`, `activityReports` — all already bounded, left untouched). Response shape is byte-for-byte identical to before; only how it's computed changed.
+- Each function's `EXECUTE` grant is revoked from `public`/`anon`/`authenticated` and given only to `service_role` — these functions aren't behind PostgREST's RLS, so without the explicit revoke they'd be callable directly via the public anon key, bypassing this app's session guard.
+- **First attempt at the `linkedEntities` count had the same bug it was fixing**: it fetched entities with `report_id IS NOT NULL` assuming that was a small subset (bounded by report volume, ~9.7k). For this dataset, *every* entity row has `report_id` set (it's a fully-synced historical import), so that "small filtered fetch" was still an ~580k-row `fetchAll()` — this alone produced an 11-minute response in testing. Fixed by computing the true count in SQL (`progress_summary_counts.linked_count`, a `COUNT(DISTINCT global_id)` — global_id has heavy duplication, 579,703 rows → 4,046 distinct values, since each logical entity spans many row segments) and, separately, scoping the per-report-type `linked` flag to only the ≤2000 report rows actually being returned (`.in('global_id', reportGlobalIds)`) rather than every entity in the table.
+- `COUNT(DISTINCT global_id)` combined with the other `FILTER`-clause counts in one aggregate made Postgres pick a slow sort-based distinct plan (~7s). Split into a separate subquery cross-joined with the fast plain-count subquery — lands around 0.8–5s depending on cache warmth, run concurrently with the other 4 RPCs so it's not additive to total request time.
+- Added `pg_trgm` + a GIN trigram index on `project_name` (for `ilike '%word%'` matching — headroom for when this table holds multiple projects, though this dataset is currently 100% one project so the planner still picks a seq scan today) and plain indexes on `status`/`date_completed`/`date_started`. Explicitly did **not** keep an index on `global_id` — tested it for the linked-count query and it made the plan slower (index-ordered scan lost table locality vs. a straight seq scan at this duplication ratio), so it was dropped again.
+- Measured end-to-end via a locally-run dev server hitting the real Supabase project: request time dropped from 120s+ (timing out) to ~5–8s steady state (trending down as Postgres's cache warms across requests). `tsc --noEmit` and `next build` both pass.
+
+**What was deliberately left alone:** `/api/dashboard` has the same `fetchAll()`-into-JS-reduce pattern, including unconditionally fetching all 4 HR join tables (~10k–16k rows each) in full on every request regardless of filters — but its base table (`hitech_report_hitechreport`, ~9.7k rows) is two orders of magnitude smaller than `hitech_construction_entities`, so it wasn't the thing timing out. Same fix (RPC aggregation) would apply if it becomes a problem — flagged as a likely next step, not done here.
+
+**Also surfaced, not fixed:** Supabase's advisor flagged Row Level Security as disabled on 36 tables in this project, including `hitech_construction_entities`/`blocks`/`boq` and several tables belonging to *other, unrelated apps* hosted in the same Supabase project (this Supabase project — "Activity report's Project" — also backs a Manga app, a CLR/student-clearance app, a blog, and a portfolio site; RLS-disabled tables are fully readable/writable by anyone with the public anon key). Not auto-fixed: enabling RLS without first writing policies would break those other apps' access entirely. Left for the user to decide policy-by-policy.
+
+### 2026-07-20 — Docs sync: CLAUDE.md was several sessions stale
+
+**Files changed:** `CLAUDE.md` (no code changes)
+
+**What changed:** Read through the actual codebase against this file and found the doc had fallen behind a lot of shipped work below — it documented only `/dashboard` and its one API route, but `/progress`, `/api/progress`, `/api/map`, and `HitechMap.tsx` had all been built (see the `/progress`-related entries below) without ever being added up here. Specifically added: `/progress` page and `HitechMap.tsx` to Project Structure; `GET /api/progress` and `GET /api/map` full route docs (query params + response shape); `GET /api/dashboard`'s query params and the `byMachine`/`byEmployee`/`byEngineer`/`bySupervisor`/`byOwnership`/`filterOptions`/`activeFilters` fields that had shipped in the 2026-07-16 entries but were never reflected in the response example; the HR join tables, `hitech_report_chainage`, `hitech_construction_entities`/`blocks`/`boq`, and `hitech_ogun_entities` to Database Tables (all previously undocumented); the three `sync_*.py` scripts and `scripts/*.mjs` to Project Structure; `NEXT_PUBLIC_MAPBOX_TOKEN` to Environment Variables and removed the reference to a `.env.local.example` file that doesn't exist in the repo; a note in Dashboard Design System that `/progress` keeps its own independent copy of the shared tokens/components. Also corrected the dashboard line count (was "1100+", is currently ~990).
+
+**Why:** User asked to review the project and bring the doc current. Nothing in the app changed — this is a read-and-reconcile pass, not a feature.
 
 ### 2026-07-18 — Bring /progress up to the same motion/hover polish as /dashboard
 

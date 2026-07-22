@@ -40,19 +40,25 @@ export async function GET(req: NextRequest) {
   const chToNum   = Number(filterChTo)
   const applyChFilter = !!(filterChFrom && filterChTo && !isNaN(chFromNum) && !isNaN(chToNum) && chToNum > chFromNum)
 
-  // ── Entity query with all filters ────────────────────────
-  let entitiesQuery = supabase
-    .from('hitech_construction_entities')
-    .select('entity_name, side, status, planned_date, date_started, date_completed, label, global_id, report_id')
-    .ilike('project_name', projectLike)
-    .order('planned_date', { ascending: true })
+  // hitech_construction_entities has 500k+ rows — never fetchAll() it. All
+  // entity-level aggregation below runs in Postgres via RPC (see migration
+  // add_progress_aggregation_rpcs) instead of pulling the whole table into
+  // Node and reducing it in JS, which is what was timing out.
+  const rpcFilters = {
+    p_project_like: projectLike,
+    p_entity:  filterEntity || null,
+    p_side:    filterSide   || null,
+    p_month:   filterMonth  || null,
+    p_ch_from: applyChFilter ? chFromNum : null,
+    p_ch_to:   applyChFilter ? chToNum   : null,
+  }
 
-  if (filterEntity) entitiesQuery = (entitiesQuery as any).eq('entity_name', filterEntity)
-  if (filterSide)   entitiesQuery = (entitiesQuery as any).eq('side', filterSide)
-  if (filterMonth)  entitiesQuery = (entitiesQuery as any).like('planned_date', `${filterMonth}%`)
-  if (applyChFilter) {
-    entitiesQuery = (entitiesQuery as any).gte('label', chFromNum)
-    entitiesQuery = (entitiesQuery as any).lte('label', chToNum)
+  function nextMonthStart(ym: string): string | null {
+    const m = /^(\d{4})-(\d{2})$/.exec(ym)
+    if (!m) return null
+    let y = Number(m[1]), mo = Number(m[2]) + 1
+    if (mo > 12) { mo = 1; y += 1 }
+    return `${y}-${String(mo).padStart(2, '0')}-01`
   }
 
   // ── Blocks query with filters ─────────────────────────────
@@ -90,9 +96,11 @@ export async function GET(req: NextRequest) {
     return q
   })()
 
-  const [blocks, entities, boqItemsRes, boqRawRes, activityReports, allEntityRows] = await Promise.all([
+  const [
+    blocks, boqItemsRes, boqRawRes, activityReports,
+    summaryCountsRes, uniqueEntitiesRes, monthlyRes, curveRes, delayRowsRes,
+  ] = await Promise.all([
     fetchAll(blocksQuery),
-    fetchAll(entitiesQuery),
     boqDetailQuery,
     boqRawQuery,
 
@@ -112,25 +120,57 @@ export async function GET(req: NextRequest) {
       return q
     })(),
 
-    // Unique entity names — unfiltered, paginated for dropdown
-    fetchAll(
-      supabase
-        .from('hitech_construction_entities')
-        .select('entity_name')
-        .ilike('project_name', projectLike)
-    ),
+    supabase.rpc('progress_summary_counts', rpcFilters),
+    supabase.rpc('progress_unique_entity_names', { p_project_like: projectLike }),
+    supabase.rpc('progress_monthly_breakdown', rpcFilters),
+    supabase.rpc('progress_curve', rpcFilters),
+    supabase.rpc('progress_delay_rows', { ...rpcFilters, p_limit: 1000 }),
   ])
 
   const blocksArr   = blocks   as any[]
-  const entitiesArr = entities as any[]
   const boqArr      = boqItemsRes.data ?? []
   const boqRawArr   = boqRawRes.data   ?? []
   const reportsArr  = activityReports.data ?? []
 
+  const summaryCounts    = (summaryCountsRes.data?.[0] ?? {}) as any
+  const totalFiltered    = Number(summaryCounts.total_filtered    ?? 0)
+  const totalCompleted   = Number(summaryCounts.total_completed   ?? 0)
+  const delayedCount     = Number(summaryCounts.delayed_count     ?? 0)
+  const onScheduleCount  = Number(summaryCounts.onschedule_count  ?? 0)
+  const linkedCount      = Number(summaryCounts.linked_count      ?? 0)
+
   // ── Unique entities for dropdown ──────────────────────────
-  const uniqueEntities = [...new Set(
-    (allEntityRows as any[]).map(e => e.entity_name).filter(Boolean)
-  )].sort() as string[]
+  const uniqueEntities = ((uniqueEntitiesRes.data ?? []) as any[])
+    .map(r => r.entity_name as string)
+    .filter(Boolean)
+
+  // Which of the reports actually being shown (≤2000, already fetched above)
+  // are linked to an entity — deliberately NOT a fetch of all linked entities
+  // (this table has ~580k rows, nearly all report_id-linked, so that would
+  // reintroduce the same full-table pull this migration removes). Bounded by
+  // report volume instead.
+  const reportGlobalIds = [...new Set(reportsArr.map((r: any) => r.globalid).filter(Boolean))]
+  let linkedGlobalIds = new Set<string>()
+  if (reportGlobalIds.length) {
+    let lq = supabase
+      .from('hitech_construction_entities')
+      .select('global_id')
+      .ilike('project_name', projectLike)
+      .in('global_id', reportGlobalIds)
+      .not('report_id', 'is', null)
+    if (filterEntity) lq = (lq as any).eq('entity_name', filterEntity)
+    if (filterSide)   lq = (lq as any).eq('side', filterSide)
+    if (applyChFilter) {
+      lq = (lq as any).gte('label', chFromNum)
+      lq = (lq as any).lte('label', chToNum)
+    }
+    if (filterMonth) {
+      const end = nextMonthStart(filterMonth)
+      if (end) lq = (lq as any).gte('planned_date', `${filterMonth}-01`).lt('planned_date', end)
+    }
+    const { data: linkedRows } = await lq
+    linkedGlobalIds = new Set((linkedRows ?? []).map((r: any) => r.global_id as string).filter(Boolean))
+  }
 
   // ── Gantt ─────────────────────────────────────────────────
   const ganttMap: Record<string, { entity: string; start: string; end: string; segments: number }> = {}
@@ -146,40 +186,34 @@ export async function GET(req: NextRequest) {
   }
   const ganttData = Object.values(ganttMap).sort((a, b) => a.start.localeCompare(b.start))
 
-  // ── Progress Curve ────────────────────────────────────────
-  const completedEntities = entitiesArr.filter(e => e.status === 'Completed' && e.date_completed)
-  const totalEntities     = entitiesArr.length
-  const totalCompleted    = completedEntities.length
-
-  const dateCountMap: Record<string, number> = {}
-  for (const e of completedEntities) {
-    const d = e.date_completed as string
-    dateCountMap[d] = (dateCountMap[d] || 0) + 1
-  }
+  // ── Progress Curve (pre-grouped by Postgres — see progress_curve RPC) ────
   let cumulative = 0
-  const progressCurve = Object.keys(dateCountMap).sort().map(date => {
-    cumulative += dateCountMap[date]
-    return { date, count: cumulative, pct: totalEntities > 0 ? Math.round((cumulative / totalEntities) * 10000) / 100 : 0 }
-  })
+  const progressCurve = ((curveRes.data ?? []) as any[])
+    .map(r => ({ date: r.date_completed as string, count: Number(r.count) }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(({ date, count }) => {
+      cumulative += count
+      return { date, count: cumulative, pct: totalFiltered > 0 ? Math.round((cumulative / totalFiltered) * 10000) / 100 : 0 }
+    })
 
-  // ── Monthly Progress — split by entity + side ─────────────
+  // ── Monthly Progress — split by entity + side (pre-grouped by Postgres —
+  // see progress_monthly_breakdown RPC) ─────────────────────
   const monthlyMap: Record<string, Record<string, Record<string, { completed: number; total: number }>>> = {}
-  for (const e of entitiesArr) {
-    const entityName  = e.entity_name || 'Unknown'
-    const side        = e.side        || 'Unknown'
-    const plannedDate = e.planned_date as string
-    if (!plannedDate) continue
-    const monthKey = plannedDate.slice(0, 7)
-    if (!monthlyMap[entityName])                   monthlyMap[entityName] = {}
-    if (!monthlyMap[entityName][side])             monthlyMap[entityName][side] = {}
-    if (!monthlyMap[entityName][side][monthKey])   monthlyMap[entityName][side][monthKey] = { completed: 0, total: 0 }
-    monthlyMap[entityName][side][monthKey].total++
-    if (e.status === 'Completed') monthlyMap[entityName][side][monthKey].completed++
+  const allMonthsSet = new Set<string>()
+  for (const row of (monthlyRes.data ?? []) as any[]) {
+    const entityName = row.entity_name || 'Unknown'
+    const side        = row.side || 'Unknown'
+    const monthKey    = row.month as string
+    if (!monthKey) continue
+    allMonthsSet.add(monthKey)
+    if (!monthlyMap[entityName])       monthlyMap[entityName] = {}
+    if (!monthlyMap[entityName][side]) monthlyMap[entityName][side] = {}
+    monthlyMap[entityName][side][monthKey] = {
+      total:     Number(row.total),
+      completed: Number(row.completed),
+    }
   }
-
-  const allMonths = [...new Set(
-    entitiesArr.map((e: any) => e.planned_date?.slice(0, 7)).filter(Boolean)
-  )].sort() as string[]
+  const allMonths = [...allMonthsSet].sort()
 
   const monthlyProgress = Object.entries(monthlyMap).flatMap(([entityName, sides]) =>
     Object.entries(sides).map(([side, months]) => {
@@ -209,28 +243,18 @@ export async function GET(req: NextRequest) {
     return (sideOrder[a.side] ?? 3) - (sideOrder[b.side] ?? 3)
   })
 
-  // ── Delay Data ────────────────────────────────────────────
-  const delayData = entitiesArr
-    .filter(e => e.date_started && e.planned_date)
-    .map(e => {
-      const delayDays = Math.max(0, Math.floor(
-        (new Date(e.date_started).getTime() - new Date(e.planned_date).getTime()) / 86400000
-      ))
-      return {
-        entity_name:        e.entity_name,
-        side:               e.side,
-        label:              e.label,
-        planned_date:       e.planned_date,
-        date_started:       e.date_started,
-        date_completed:     e.date_completed,
-        delay_days:         delayDays,
-        performance_status: delayDays > 0 ? 'Delayed' : 'On Schedule',
-        status:             e.status,
-      }
-    })
-
-  const onScheduleCount = delayData.filter(d => d.performance_status === 'On Schedule').length
-  const delayedCount    = delayData.filter(d => d.performance_status === 'Delayed').length
+  // ── Delay Data (computed + limited to 1000 in Postgres — see progress_delay_rows RPC) ──
+  const delayData = ((delayRowsRes.data ?? []) as any[]).map(r => ({
+    entity_name:        r.entity_name,
+    side:                r.side,
+    label:               r.label,
+    planned_date:        r.planned_date,
+    date_started:        r.date_started,
+    date_completed:      r.date_completed,
+    delay_days:          Number(r.delay_days),
+    performance_status:  r.performance_status,
+    status:               r.status,
+  }))
 
   // ── Days by Entity ────────────────────────────────────────
   const daysMap: Record<string, Record<string, number[]>> = {}
@@ -264,13 +288,7 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b.qty - a.qty)
   const totalBoqQty = boqRawArr.reduce((s: number, b: any) => s + (b.qty || 0), 0)
 
-  // ── Activity Report connection ────────────────────────────
-  const linkedGlobalIds = new Set(
-    entitiesArr
-      .filter((e: any) => e.report_id && e.global_id)
-      .map((e: any) => e.global_id as string)
-  )
-
+  // ── Activity Report connection (linkedGlobalIds computed above from linkedRows) ──
   const reportsByType: Record<string, { count: number; completed: number; inProgress: number; latest: string; linked: number }> = {}
   for (const r of reportsArr) {
     const type = (r as any).activity_type || 'Unknown'
@@ -295,7 +313,7 @@ export async function GET(req: NextRequest) {
     report_count: reportTypeCount[(b.activity_type || '').toLowerCase().trim()] || 0,
   }))
 
-  const overallPct = totalEntities > 0 ? Math.round((totalCompleted / totalEntities) * 100) : 0
+  const overallPct = totalFiltered > 0 ? Math.round((totalCompleted / totalFiltered) * 100) : 0
 
   return NextResponse.json({
     summary: {
@@ -306,13 +324,13 @@ export async function GET(req: NextRequest) {
       onSchedule:     onScheduleCount,
       totalBoqQty:    Math.round(totalBoqQty),
       totalReports:   reportsArr.length,
-      linkedEntities: linkedGlobalIds.size,
+      linkedEntities: linkedCount,
     },
     ganttData,
     progressCurve,
     monthlyProgress,
     allMonths,
-    delayData:       delayData.slice(0, 1000),
+    delayData,
     daysByEntity,
     boqItems:        boqWithReportCount,
     boqByCategory,
