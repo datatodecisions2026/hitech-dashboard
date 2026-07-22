@@ -41,6 +41,7 @@ const STATUS_COLORS: Record<string, string> = {
 const catColor    = (c: string) => CAT_COLORS[c]    || '#848080'
 const statusColor = (s: string) => STATUS_COLORS[s] || '#848080'
 
+
 /* ── Types ─────────────────────────────────────────────────── */
 interface Station {
   label:      number
@@ -52,10 +53,10 @@ interface Station {
 
 interface ActivityReport {
   id:                   number
-  start_chainage:       number | null
-  end_chainage:         number | null
-  start_chainage_val:   number | null
-  end_chainage_val:     number | null
+  start_chainage?:      number | null
+  end_chainage?:        number | null
+  start_chainage_val?:  number | null
+  end_chainage_val?:    number | null
   activity_category:    string
   activity_type:        string
   activity_status:      string
@@ -63,10 +64,10 @@ interface ActivityReport {
   date_of_activity:     string
   project_name:         string
   section_name:         string
-  start_chainage_lat:   string | null
-  start_chainage_long:  string | null
-  end_chainage_lat:     string | null
-  end_chainage_long:    string | null
+  start_chainage_lat?:  string | null
+  start_chainage_long?: string | null
+  end_chainage_lat?:    string | null
+  end_chainage_long?:   string | null
 }
 
 interface MapData {
@@ -80,6 +81,9 @@ interface Props {
   project: string
   chFrom?: string   // chainage filter from — zooms map when both set
   chTo?:   string   // chainage filter to
+  // Set this (e.g. from a click on a report row elsewhere on the dashboard)
+  // to pan/zoom the map to that report's location and open its popup.
+  focusReport?: ActivityReport | null
 }
 
 interface ViewState {
@@ -95,7 +99,7 @@ interface ViewState {
 setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '', v: 'weekly' })
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function HitechMap({ project, chFrom, chTo }: Props) {
+export default function HitechMap({ project, chFrom, chTo, focusReport }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<google.maps.Map | null>(null)
   const [mapData,    setMapData]    = useState<MapData | null>(null)
@@ -108,6 +112,7 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
   const [viewState,  setViewState]  = useState<ViewState | null>(null)
   const prevProjectRef = useRef<string | null>(null)
   const lastFitKeyRef   = useRef<string>('')
+  const lastFocusIdRef  = useRef<number | null>(null)
 
   // Overlay objects have no Mapbox-style setData() — each rebuild clears and
   // recreates them, so refs track what's currently on the map to clear.
@@ -173,10 +178,13 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
           localMap = new Map(mapContainer.current, {
             center: { lat: 6.432, lng: 3.627 },
             zoom: 11,
-            mapTypeId: 'hybrid', // satellite imagery + road/place labels
-            mapTypeControl: true,
+            mapTypeId: 'hybrid', // satellite imagery + road/place labels — kept per explicit request
+            mapTypeControl: false,   // no Map/Satellite toggle — wasn't in the original
             streetViewControl: false,
             fullscreenControl: false,
+            scaleControl: true,      // equivalent to Mapbox's ScaleControl
+            zoomControl: true,       // equivalent to Mapbox's NavigationControl
+            zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_TOP },
             clickableIcons: false,
           })
         } catch (err: any) {
@@ -246,7 +254,7 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       strokeOpacity: 0.001, // near-invisible solid — the dashed look comes from the icons pattern below
       strokeWeight:  1.5,
       icons: [{
-        icon:   { path: 'M 0,-1 0,1', strokeOpacity: 0.35, strokeColor: '#ffffff', scale: 2 },
+        icon:   { path: 'M 0,-1 0,1', strokeOpacity: 0.2, strokeColor: '#ffffff', scale: 2 },
         offset: '0',
         repeat: '12px',
       }],
@@ -255,14 +263,20 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       map,
     })
 
-    /* Chainage tick marks every 1 km */
+    /* Chainage tick marks every 1 km — label sits above the point, matching
+       Mapbox's text-offset:[0,-1.2] / text-anchor:'bottom' */
     tickMarkersRef.current = mapData.stations
       .filter(s => s.label % 1000 === 0)
       .map(s => new google.maps.Marker({
         position: { lat: s.latitude, lng: s.longitude },
         map,
-        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0, strokeOpacity: 0, fillOpacity: 0 },
-        label: { text: s.chainage, color: D.amber, fontSize: '10px', fontFamily: 'var(--font-mono)', className: 'chainage-tick-label' },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 0, strokeOpacity: 0, fillOpacity: 0,
+          anchor: new google.maps.Point(0, 0),
+          labelOrigin: new google.maps.Point(0, -8),
+        },
+        label: { text: s.chainage, color: D.amber, fontSize: '10px', fontFamily: 'var(--font-mono)' },
         clickable: false,
         zIndex: 2,
       }))
@@ -326,11 +340,31 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
     // Clustered: nearby report points bundle into a bubble at low zoom and
     // split apart on click/zoom, instead of every point rendering as its
     // own marker. clearMarkers() above already emptied the previous set.
+    // Custom renderer matches the original amber step-sized bubble design
+    // (14/18/24/30px by count) instead of MarkerClusterer's default look.
     reportMarkersRef.current = reportMarkers
     if (clustererRef.current) {
       clustererRef.current.addMarkers(reportMarkers)
     } else {
-      clustererRef.current = new MarkerClusterer({ map, markers: reportMarkers })
+      clustererRef.current = new MarkerClusterer({
+        map, markers: reportMarkers,
+        renderer: {
+          render: ({ count, position }) => {
+            const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
+            return new google.maps.Marker({
+              position,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: D.amber, fillOpacity: 0.85,
+                strokeColor: 'rgba(0,0,0,0.5)', strokeWeight: 2,
+                scale: radius,
+              },
+              label: { text: String(count), color: '#000', fontSize: '11px', fontFamily: 'var(--font-mono)' },
+              zIndex: 1000 + count,
+            })
+          },
+        },
+      })
     }
 
     /* ── Fit map bounds ─────────────────────────────────────
@@ -369,6 +403,36 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       }
     }
   }, [mapLoaded, mapData, colorBy, project, chFrom, chTo])
+
+  /* ── Focus a specific report (e.g. clicked from a list elsewhere on the
+     dashboard) ─────────────────────────────────────────────
+     Pans/zooms straight to that report's coordinates and opens its popup.
+     Guarded by lastFocusIdRef so this only fires once per distinct focus
+     request — without it, every unrelated mapData refresh (a normal
+     viewport-driven refetch while the user is freely panning afterward)
+     would re-run this effect and yank the camera back.
+     If the report belongs to a different project than what's currently
+     loaded, the caller (dashboard page) is expected to also change the
+     `project` prop; this effect waits for `mapData.project` to actually
+     reflect that before panning, rather than acting on stale/wrong data. ── */
+  useEffect(() => {
+    if (!focusReport || !mapLoaded || !mapRef.current) return
+    if (lastFocusIdRef.current === focusReport.id) return
+
+    if (mapData?.project && focusReport.project_name) {
+      const wantWord = focusReport.project_name.split(' ')[0].toLowerCase()
+      if (!mapData.project.toLowerCase().includes(wantWord)) return // wait for the right project's data to load
+    }
+
+    const lat = focusReport.start_chainage_lat  ? parseFloat(focusReport.start_chainage_lat)  : null
+    const lng = focusReport.start_chainage_long ? parseFloat(focusReport.start_chainage_long) : null
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return
+
+    lastFocusIdRef.current = focusReport.id
+    mapRef.current.panTo({ lat, lng })
+    mapRef.current.setZoom(17)
+    setSelReport(focusReport)
+  }, [focusReport, mapLoaded, mapData])
 
   /* ── Render ─────────────────────────────────────────────── */
   const legendItems = colorBy === 'category' ? Object.entries(CAT_COLORS) : Object.entries(STATUS_COLORS)

@@ -165,7 +165,10 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
       "activity_type": "Excavation",
       "activity_status": "Completed",
       "comment_activity": "Completed 50m of cut",
-      "weather": "Sunny"
+      "weather": "Sunny",
+      "start_chainage": 1500, "end_chainage": 1550,
+      "start_chainage_lat": "5.603", "start_chainage_long": "-0.187",
+      "end_chainage_lat": "5.605", "end_chainage_long": "-0.185"
     }
   ],
   "filterOptions": {
@@ -408,6 +411,19 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-07-22 — Tap a report row → map pans/zooms to it and opens its popup
+
+**Files changed:** `src/app/api/dashboard/route.ts`, `src/app/dashboard/page.tsx`, `src/components/HitechMap.tsx`
+
+**What changed:**
+- `GET /api/dashboard`'s `recentReports` query now also selects `start_chainage`, `end_chainage`, `start_chainage_lat`, `start_chainage_long`, `end_chainage_lat`, `end_chainage_long` — previously the "Recent Activity Reports" table had no coordinates at all, so there was nothing to zoom to.
+- `HitechMap` gained a `focusReport?: ActivityReport | null` prop. A new effect pans the map to that report's `start_chainage_lat/long`, sets zoom to 17, and opens its popup (`setSelReport`) — guarded by `lastFocusIdRef` so it only fires once per distinct report `id`, not on every later unrelated `mapData` refresh (a normal viewport-driven refetch while the user freely pans afterward would otherwise re-trigger this and yank the camera back).
+- If the clicked report belongs to a different project than what's currently filtered, the effect waits for `mapData.project` to actually reflect that project before panning — `ActivityReport`'s `start_chainage`/`end_chainage`/`*_val`/`*_lat`/`*_long` fields were loosened from required-but-nullable to optional, since `recentReports` rows only carry a subset of what `mapData.reports` (from `/api/map`) has.
+- `ReportFeed` rows are now clickable (`onSelect` prop, `cursor: pointer`, `title="View on map"`). `DashboardPageInner.handleSelectReport`: if the report's project differs from the active filter, also calls `handleFilter('project', ...)` (reusing the existing click-to-filter mechanism — HitechMap's project-prop-driven refetch handles the ordering, the focus effect just waits); sets `focusReport`; and smooth-scrolls the map panel into view via a new `mapPanelRef`, since the report feed sits well below the map and a zoom the user can't see defeats the point.
+- Verified live via Playwright: clicking a report row ("21 Jul 26 · Coastal Road · Box culvert") scrolled the map into view, zoomed to chainage 19+440, and opened a popup with matching details (category, status, reporter, section, date, chainage) — confirmed against a real dev server, not just compiled. `tsc --noEmit` and `next build` both pass.
+
+**Why:** Direct ask — "I want to be able to tap on an activity and the map zooms in to that vicinity... I want it interactive." This was never built on either the Mapbox or Google Maps version; the map previously only responded to its own internal marker/line clicks (a popup, no navigation) and to the global chainage-range filter (`chFrom`/`chTo`), not to reports selected elsewhere on the page.
+
 ### 2026-07-22 — Switch `HitechMap` from Mapbox GL to Google Maps JS API
 
 **Files changed:** `src/components/HitechMap.tsx`, `.env.local`, `package.json`/`package-lock.json` (removed `mapbox-gl`/`@types/mapbox-gl`, added `@googlemaps/js-api-loader`, `@googlemaps/markerclusterer`, `@types/google.maps`)
@@ -423,6 +439,29 @@ Full documentation of every portal route, its request/response shape, and the un
 - `NEXT_PUBLIC_MAPBOX_TOKEN` is left in `.env.local` unused (harmless) — see Environment Variables above.
 
 **Why:** Direct consequence of losing Mapbox account access (see conversation, not a separate ticket). Scoped as a like-for-like provider swap — same interactivity, same data pipeline, same visual language — not an opportunity to also change functionality, per the user's steer earlier in the conversation not to over-scope this.
+
+### 2026-07-22 — Correction: restore dark-theme parity on the Google Maps switch above
+
+**Files changed:** `src/components/HitechMap.tsx`
+
+**What changed:** The initial Mapbox→Google switch (previous entry) picked `mapTypeId: 'hybrid'` (real satellite imagery) plus Google's default `mapTypeControl` (Map/Satellite toggle) and `MarkerClusterer`'s stock cluster styling — a genuine design change from what the dashboard looked like before, not something asked for. User flagged this: wanted the same look as the Mapbox version, not a new one. Corrected:
+- `mapTypeId: 'hybrid'` → `'roadmap'` with a new `DARK_MAP_STYLE` array (Google's mechanism for a custom-colored basemap — there's no dark satellite, since satellite tiles are photographic and can't be recolored) tuned to the same dark gunmetal palette (`D`) the rest of the dashboard uses, approximating Mapbox's `dark-v11`.
+- Removed `mapTypeControl` (the Map/Satellite toggle) — wasn't part of the original.
+- Added `scaleControl: true` and `zoomControlOptions: { position: RIGHT_TOP }` — equivalents of Mapbox's `ScaleControl`/`NavigationControl`, which the first pass dropped.
+- `MarkerClusterer` now takes a custom `renderer` reproducing the original amber, step-sized-by-count bubble design (14/18/24/30px) instead of the library's default cluster look.
+- Chainage tick-mark labels now use `labelOrigin` to sit above their (invisible) marker point, closer to Mapbox's `text-offset`/`text-anchor:'bottom'` behavior, instead of Google's default center-on-icon label placement.
+- **Not fully portable, inherent platform differences**: Google Maps requires its own attribution/logo (cannot be hidden or restyled, unlike Mapbox's compact attribution control) and renders its zoom control buttons in its own default white/gray style — Google's internal control DOM/class names aren't documented/stable enough to safely re-skin the way the old `.mapboxgl-ctrl-*` CSS overrides did for Mapbox. These are the only remaining visual differences from the original; flagged rather than papered over with fragile CSS.
+- Verified visually via the same Playwright-against-local-dev-server approach as the initial switch. `tsc --noEmit` passes.
+
+**Why:** Direct user feedback after the initial switch shipped — "I need the same code Mapbox was using, I don't want anything new."
+
+### 2026-07-22 — Re-correction: keep satellite imagery after all
+
+**Files changed:** `src/components/HitechMap.tsx`
+
+**What changed:** After seeing the dark-roadmap correction above, user asked to keep the satellite image style specifically. `mapTypeId` switched back `'roadmap'` → `'hybrid'`, and the now-unused `DARK_MAP_STYLE` array (it only applies to `'roadmap'` — Google can't recolor photographic satellite tiles) was deleted rather than left as dead code. Everything else from the dark-theme correction stays as-is: no `mapTypeControl` toggle, `scaleControl`/`zoomControlOptions` (top-right), the custom amber step-sized cluster renderer, and the `labelOrigin`-based tick-label positioning. Verified via `tsc --noEmit`, `next build`, and a Playwright screenshot against a local dev server — satellite imagery, amber clusters (34/6/61), and top-right zoom control all confirmed present together, zero console errors.
+
+**Why:** Direct user request, third pass on this same visual decision in one session (satellite → dark → satellite) — implemented as asked rather than second-guessed.
 
 ### 2026-07-22 — Fix the dashboard map freezing: level-of-detail chainage sampling + clustering
 

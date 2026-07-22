@@ -56,7 +56,13 @@ interface DashData {
   mediaItems:   MediaItem[]
   mapPoints:    MapPoint[]
   activityCalendar: CalDay[]
-  recentReports: Array<{ id: number; date_of_activity: string; reporter_name: string; project_name: string; section_name: string; activity_category: string; activity_type: string; activity_status: string; comment_activity: string; weather?: string }>
+  recentReports: Array<{
+    id: number; date_of_activity: string; reporter_name: string; project_name: string; section_name: string
+    activity_category: string; activity_type: string; activity_status: string; comment_activity: string; weather?: string
+    start_chainage?: number | null; end_chainage?: number | null
+    start_chainage_lat?: string | null; start_chainage_long?: string | null
+    end_chainage_lat?: string | null;   end_chainage_long?: string | null
+  }>
   filterOptions: { categories: string[]; projects: string[] }
   activeFilters: {
     filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
@@ -464,7 +470,7 @@ function MediaBox({ label, items, activeProject }: { label: string; items: Media
 }
 
 /* ── Report feed table ─────────────────────────────────────── */
-function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
+function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports']; onSelect?: (r: DashData['recentReports'][number]) => void }) {
   const SC: Record<string,string> = { Completed:D.green, Complete:D.green, 'In Progress':D.amber, Ongoing:D.amber, Pending:D.blue, Unknown:D.sub }
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 15
@@ -486,7 +492,8 @@ function ReportFeed({ reports }: { reports: DashData['recentReports'] }) {
               const sc = SC[r.activity_status] || D.sub
               const dt = r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'}) : '—'
               return (
-                <tr key={r.id} className="report-row" style={{ borderBottom:`1px solid rgba(255,255,255,0.03)`, opacity:0, animation:`fadeIn 0.4s ${EASE} ${Math.min(i,12)*0.04}s forwards` }}>
+                <tr key={r.id} className="report-row" onClick={() => onSelect?.(r)} title="View on map"
+                  style={{ borderBottom:`1px solid rgba(255,255,255,0.03)`, opacity:0, cursor: onSelect ? 'pointer' : 'default', animation:`fadeIn 0.4s ${EASE} ${Math.min(i,12)*0.04}s forwards` }}>
                   <td style={{ padding:'11px 14px', color:D.muted, fontFamily:'var(--font-mono)', whiteSpace:'nowrap' }}>{dt}</td>
                   <td style={{ padding:'11px 14px', color:D.text, fontWeight:600, maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.project_name||'—'}</td>
                   <td style={{ padding:'11px 14px', color:D.muted, maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.section_name||'—'}</td>
@@ -734,7 +741,9 @@ function DashboardPageInner() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
   const [firstName, setFirstName] = useState('')
+  const [focusReport, setFocusReport] = useState<DashData['recentReports'][number] | null>(null)
   const requestIdRef = useRef(0)
+  const mapPanelRef  = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => { if (d?.user?.first_name) setFirstName(d.user.first_name) }).catch(() => {})
@@ -765,6 +774,22 @@ function DashboardPageInner() {
       p.delete(key)
     }
     router.push(`/dashboard?${p.toString()}`)
+  }
+
+  // Tap a report row (in ReportFeed, below) → the map pans/zooms to that
+  // report's location and opens its popup. If the report belongs to a
+  // different project than what's currently filtered, also switch the
+  // project filter so the map actually has that report's chainage/road
+  // loaded — HitechMap waits for its `project` prop to catch up before
+  // acting on the focus request, so the ordering here doesn't matter.
+  function handleSelectReport(r: DashData['recentReports'][number]) {
+    const currentProject = data?.activeFilters.filterProject || 'Coastal Road'
+    const reportWord = (r.project_name || '').trim().split(' ')[0].toLowerCase()
+    if (reportWord && !currentProject.toLowerCase().includes(reportWord)) {
+      handleFilter('project', r.project_name)
+    }
+    setFocusReport(r)
+    mapPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   const allImages     = data?.mediaItems.filter(m => m.media_type !== 'video') ?? []
@@ -873,13 +898,16 @@ function DashboardPageInner() {
           )}
 
           <Reveal style={{ marginBottom:16 }}>
-            <Panel title="Activity Map — GPS coordinates by project">
-              <HitechMapComponent
-                project={data.activeFilters.filterProject || 'Coastal Road'}
-                chFrom={data.activeFilters.filterChFrom}
-                chTo={data.activeFilters.filterChTo}
-              />
-            </Panel>
+            <div ref={mapPanelRef}>
+              <Panel title="Activity Map — GPS coordinates by project">
+                <HitechMapComponent
+                  project={data.activeFilters.filterProject || 'Coastal Road'}
+                  chFrom={data.activeFilters.filterChFrom}
+                  chTo={data.activeFilters.filterChTo}
+                  focusReport={focusReport}
+                />
+              </Panel>
+            </div>
           </Reveal>
 
           <Reveal style={{ marginBottom:16 }}>
@@ -892,7 +920,7 @@ function DashboardPageInner() {
             <Reveal>
               <Panel title={data.activeFilters.filterSearch ? `Search Results for "${data.activeFilters.filterSearch}"` : 'Recent Activity Reports'}>
                 {data.recentReports.length > 0
-                  ? <ReportFeed reports={data.recentReports}/>
+                  ? <ReportFeed reports={data.recentReports} onSelect={handleSelectReport}/>
                   : <EmptyState label={data.activeFilters.filterSearch ? 'No reports match your search' : 'No reports match your filters'}/>}
               </Panel>
             </Reveal>

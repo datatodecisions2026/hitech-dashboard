@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
   const recent = recentIds.length
     ? ((await supabase
         .from('hitech_report_hitechreport')
-        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity, weather')
+        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity, weather, start_chainage, end_chainage, start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long')
         .in('id', recentIds)
         .order('date_of_activity', { ascending: false })
         .order('id', { ascending: false })
