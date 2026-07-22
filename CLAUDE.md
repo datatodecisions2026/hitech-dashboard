@@ -236,6 +236,7 @@ Returns chainage stations and geotagged activity reports for `HitechMap`, keyed 
 project                          — project display name (default "Coastal Road"), mapped to a numeric project_id via a hardcoded PROJECT_ID_MAP in the route file — add new projects there when onboarding a new road
 zoom                              — current map zoom level; chooses a chainage-sampling interval (coarser when zoomed out) via intervalForZoom() in the route file
 swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12 (at lower zoom the viewport already ≈ the whole road)
+category                          — matched via .ilike() on activity_category; filters the reports array only (not chainage stations) — used by HitechMap to also zoom to fit that category's reports
 ```
 
 `stations` is sampled, not exhaustive — see `hitech_report_chainage` below and the 2026-07-22 "map freezing" changelog entry for why (that table is one row per metre of road, up to 423k rows for one project).
@@ -410,6 +411,17 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-07-22 — Fix a stray report line cutting across open water; add category filter+zoom to the map
+
+**Files changed:** `src/components/HitechMap.tsx`, `src/app/api/map/route.ts`
+
+**What changed:**
+- **Stray line bug**: user spotted a line cutting across the sea on the Coastal Road map. Traced to report id 78630 ("Construction" / "Concrete work"), whose `end_chainage_lat` (6.422585) is identical to its `start_chainage_lat` but `end_chainage_long` is ~48km further east (3.86 vs 3.427967) — a straight line between the two is horizontal and cuts across the lagoon instead of following the actual curving coast. This is bad source data (a chainage-to-coordinate conversion that doesn't account for road curvature over a large span), not something introduced by the Mapbox→Google rewrite — the same two points would have produced the same straight line in the old Mapbox map too. Rather than edit report data directly, added a sanity guard in the rendering code: if a report's start/end coordinates are more than ~5-6km apart (`Math.hypot(...) > 0.05` degrees), treat it as bad end data and render a point at the start location instead of a line. Verified visually — the line is gone and the affected report now shows up correctly as a clustered point.
+- **Category filter + zoom**: clarified with the user that this meant the existing "Activity by Category" donut chart (which already filters KPIs/other charts via `handleFilter('category', ...)`) should also filter the map's own reports to that category and zoom to fit them — not a new control inside the map itself. `GET /api/map` now accepts a `category` param, applied via `.ilike('activity_category', ...)` on the reports query. `HitechMap` takes a new `category` prop, treated like a project change (full loading overlay, not a silent background refresh) since it's a deliberate content change. The fit-bounds effect now computes bounds from the category-filtered reports' coordinates (not the road's chainage stations) when a category is active, taking priority over the existing chainage-range (`chFrom`/`chTo`) zoom. `dashboard/page.tsx` also scrolls the map into view when a category is picked, same reasoning as the report-row click: a zoom nobody can see because it's off-screen doesn't deliver on the ask.
+- Verified live via Playwright: clicking "Earthworks" in the category legend set `?category=Earthworks` and the map re-panned to a completely different view showing only amber (Earthworks-colored) clusters, including a large cluster (305) near Lagos Island not prominent in the unfiltered view. `tsc --noEmit` and `next build` both pass.
+
+**Why:** Direct user report of a visual bug plus a feature request phrased as "the filter by category zoom function does not work" — investigation showed this had never actually been built (in either the Mapbox or Google Maps version of the map), so it needed a quick clarifying question on which of two possible designs was wanted before implementing.
 
 ### 2026-07-22 — Tap a report row → map pans/zooms to it and opens its popup
 

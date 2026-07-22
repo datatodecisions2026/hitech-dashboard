@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const project   = searchParams.get('project') || 'Coastal Road'
   const projectId = PROJECT_ID_MAP[project] ?? 1
+  const category  = searchParams.get('category') || ''
 
   const zoomParam = searchParams.get('zoom')
   const zoom      = zoomParam !== null && !isNaN(Number(zoomParam)) ? Number(zoomParam) : null
@@ -64,16 +65,20 @@ export async function GET(req: NextRequest) {
 
     // Report volume (currently ~9.7k total across all projects) is nowhere
     // near what chainage stations were — this bounded query is fine as-is.
-    supabase
-      .from('hitech_report_hitechreport')
-      .select(
-        'id, start_chainage, end_chainage, start_chainage_val, end_chainage_val, ' +
-        'activity_category, activity_type, activity_status, ' +
-        'reporter_name, date_of_activity, project_name, section_name, ' +
-        'start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long'
-      )
-      .ilike('project_name', `%${project.split(' ')[0]}%`)
-      .limit(5000),
+    (() => {
+      let q = supabase
+        .from('hitech_report_hitechreport')
+        .select(
+          'id, start_chainage, end_chainage, start_chainage_val, end_chainage_val, ' +
+          'activity_category, activity_type, activity_status, ' +
+          'reporter_name, date_of_activity, project_name, section_name, ' +
+          'start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long'
+        )
+        .ilike('project_name', `%${project.split(' ')[0]}%`)
+        .limit(5000)
+      if (category) q = q.ilike('activity_category', category)
+      return q
+    })(),
   ])
 
   return NextResponse.json({
@@ -81,5 +86,6 @@ export async function GET(req: NextRequest) {
     reports:   reportsRes.data ?? [],
     projectId,
     project,
+    category,
   })
 }

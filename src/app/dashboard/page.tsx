@@ -774,6 +774,13 @@ function DashboardPageInner() {
       p.delete(key)
     }
     router.push(`/dashboard?${p.toString()}`)
+
+    // Picking a category filters the map to that category and zooms to fit
+    // it (see HitechMap's `category` prop) — scroll it into view so that
+    // zoom is actually visible instead of happening off-screen.
+    if (key === 'category' && val) {
+      mapPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
   }
 
   // Tap a report row (in ReportFeed, below) → the map pans/zooms to that
@@ -904,6 +911,7 @@ function DashboardPageInner() {
                   project={data.activeFilters.filterProject || 'Coastal Road'}
                   chFrom={data.activeFilters.filterChFrom}
                   chTo={data.activeFilters.filterChTo}
+                  category={data.activeFilters.filterCategory}
                   focusReport={focusReport}
                 />
               </Panel>

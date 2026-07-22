@@ -74,6 +74,7 @@ interface MapData {
   stations: Station[]
   reports:  ActivityReport[]
   project:  string
+  category?: string
 }
 
 /* ── Props ─────────────────────────────────────────────────── */
@@ -81,6 +82,7 @@ interface Props {
   project: string
   chFrom?: string   // chainage filter from — zooms map when both set
   chTo?:   string   // chainage filter to
+  category?: string // filters the map's own reports to this category and zooms to fit them
   // Set this (e.g. from a click on a report row elsewhere on the dashboard)
   // to pan/zoom the map to that report's location and open its popup.
   focusReport?: ActivityReport | null
@@ -99,7 +101,7 @@ interface ViewState {
 setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '', v: 'weekly' })
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function HitechMap({ project, chFrom, chTo, focusReport }: Props) {
+export default function HitechMap({ project, chFrom, chTo, category, focusReport }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<google.maps.Map | null>(null)
   const [mapData,    setMapData]    = useState<MapData | null>(null)
@@ -110,7 +112,8 @@ export default function HitechMap({ project, chFrom, chTo, focusReport }: Props)
   const [selReport,  setSelReport]  = useState<ActivityReport | null>(null)
   const [mapLoaded,  setMapLoaded]  = useState(false)
   const [viewState,  setViewState]  = useState<ViewState | null>(null)
-  const prevProjectRef = useRef<string | null>(null)
+  const prevProjectRef  = useRef<string | null>(null)
+  const prevCategoryRef = useRef<string | undefined>(undefined)
   const lastFitKeyRef   = useRef<string>('')
   const lastFocusIdRef  = useRef<number | null>(null)
 
@@ -132,10 +135,13 @@ export default function HitechMap({ project, chFrom, chTo, focusReport }: Props)
      one shot: only the current view's detail tier is fetched.
   ─────────────────────────────────────────────────────────── */
   useEffect(() => {
-    const projectChanged = prevProjectRef.current !== project
-    prevProjectRef.current = project
+    const projectChanged  = prevProjectRef.current !== project
+    const categoryChanged = prevCategoryRef.current !== category
+    prevProjectRef.current  = project
+    prevCategoryRef.current = category
+    const isFreshFilter = projectChanged || categoryChanged
 
-    if (projectChanged) {
+    if (isFreshFilter) {
       setLoading(true)
       setSelReport(null)
     } else {
@@ -143,7 +149,8 @@ export default function HitechMap({ project, chFrom, chTo, focusReport }: Props)
     }
 
     const params = new URLSearchParams({ project })
-    if (viewState && !projectChanged) {
+    if (category) params.set('category', category)
+    if (viewState && !isFreshFilter) {
       params.set('zoom',  String(viewState.zoom))
       params.set('swLat', String(viewState.swLat))
       params.set('swLng', String(viewState.swLng))
@@ -155,7 +162,7 @@ export default function HitechMap({ project, chFrom, chTo, focusReport }: Props)
       .then(r => r.json())
       .then(d => { setMapData(d); setLoading(false); setRefreshing(false) })
       .catch(() => { setError('Failed to load map data'); setLoading(false); setRefreshing(false) })
-  }, [project, viewState])
+  }, [project, category, viewState])
 
   /* ── Initialise Google Maps once ─────────────────────────── */
   useEffect(() => {
@@ -306,7 +313,17 @@ export default function HitechMap({ project, chFrom, chTo, focusReport }: Props)
 
         if (!startLng || !startLat || isNaN(startLng) || isNaN(startLat)) return
 
-        const samePoint = !endLng || !endLat || (startLng === endLng && startLat === endLat)
+        // Some report rows have an implausibly distant end coordinate (data
+        // entry/conversion error — e.g. an end lat identical to the start
+        // lat but a longitude tens of km away, which draws a straight line
+        // that cuts across open water instead of following the actual
+        // road). A real single-activity segment is at most a few km; treat
+        // anything further as bad end data and fall back to a point at the
+        // start location rather than draw a nonsensical line.
+        const endTooFar = endLng != null && endLat != null && !isNaN(endLng) && !isNaN(endLat)
+          && Math.hypot(endLng - startLng, endLat - startLat) > 0.05 // ≈5-6km at this latitude
+
+        const samePoint = !endLng || !endLat || (startLng === endLng && startLat === endLat) || endTooFar
         const color = colorFor(r)
 
         if (samePoint) {
@@ -368,41 +385,63 @@ export default function HitechMap({ project, chFrom, chTo, focusReport }: Props)
     }
 
     /* ── Fit map bounds ─────────────────────────────────────
-       If chainage filter is active → zoom to that range.
+       If a category filter is active → zoom to that category's reports.
+       Else if a chainage filter is active → zoom to that range.
        Otherwise → fit the entire road.
-       Only runs once per distinct (project, chFrom, chTo) — NOT on every
-       mapData refresh. Panning/zooming triggers a viewport-scoped refetch
-       (see the data-fetch effect) that updates these overlays in place;
-       without this guard, that refresh would re-trigger fitBounds, which
-       fires another `idle`, which refetches again — an infinite loop.
+       Only runs once per distinct (project, category, chFrom, chTo) — NOT
+       on every mapData refresh. Panning/zooming triggers a viewport-scoped
+       refetch (see the data-fetch effect) that updates these overlays in
+       place; without this guard, that refresh would re-trigger fitBounds,
+       which fires another `idle`, which refetches again — an infinite loop.
     ────────────────────────────────────────────────────────── */
-    const fitKey = `${project}|${chFrom || ''}|${chTo || ''}`
+    const fitKey = `${project}|${category || ''}|${chFrom || ''}|${chTo || ''}`
     if (mapData.stations.length > 0 && lastFitKeyRef.current !== fitKey) {
       lastFitKeyRef.current = fitKey
-      const chFromNum = chFrom ? Number(chFrom) : null
-      const chToNum   = chTo   ? Number(chTo)   : null
-      const hasChFilter = chFromNum != null && chToNum != null &&
-                          !isNaN(chFromNum) && !isNaN(chToNum) &&
-                          chToNum > chFromNum
 
-      const bounds = new google.maps.LatLngBounds()
-      if (hasChFilter) {
-        const rangeStations = mapData.stations.filter(s => s.label >= chFromNum! && s.label <= chToNum!)
-        const target = rangeStations.length > 0 ? rangeStations : mapData.stations
-        target.forEach(s => bounds.extend({ lat: s.latitude, lng: s.longitude }))
-      } else {
-        mapData.stations.forEach(s => bounds.extend({ lat: s.latitude, lng: s.longitude }))
+      const categoryBounds = new google.maps.LatLngBounds()
+      let hasCategoryPoint = false
+      if (category) {
+        mapData.reports.forEach(r => {
+          const lat = r.start_chainage_lat  ? parseFloat(r.start_chainage_lat)  : null
+          const lng = r.start_chainage_long ? parseFloat(r.start_chainage_long) : null
+          if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+            categoryBounds.extend({ lat, lng })
+            hasCategoryPoint = true
+          }
+        })
       }
-      map.fitBounds(bounds, 70)
 
-      if (hasChFilter) {
-        // Google's fitBounds has no maxZoom option — clamp after the fact
+      if (hasCategoryPoint) {
+        map.fitBounds(categoryBounds, 80)
         google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
           if ((map.getZoom() ?? 0) > 16) map.setZoom(16)
         })
+      } else {
+        const chFromNum = chFrom ? Number(chFrom) : null
+        const chToNum   = chTo   ? Number(chTo)   : null
+        const hasChFilter = chFromNum != null && chToNum != null &&
+                            !isNaN(chFromNum) && !isNaN(chToNum) &&
+                            chToNum > chFromNum
+
+        const bounds = new google.maps.LatLngBounds()
+        if (hasChFilter) {
+          const rangeStations = mapData.stations.filter(s => s.label >= chFromNum! && s.label <= chToNum!)
+          const target = rangeStations.length > 0 ? rangeStations : mapData.stations
+          target.forEach(s => bounds.extend({ lat: s.latitude, lng: s.longitude }))
+        } else {
+          mapData.stations.forEach(s => bounds.extend({ lat: s.latitude, lng: s.longitude }))
+        }
+        map.fitBounds(bounds, 70)
+
+        if (hasChFilter) {
+          // Google's fitBounds has no maxZoom option — clamp after the fact
+          google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+            if ((map.getZoom() ?? 0) > 16) map.setZoom(16)
+          })
+        }
       }
     }
-  }, [mapLoaded, mapData, colorBy, project, chFrom, chTo])
+  }, [mapLoaded, mapData, colorBy, project, category, chFrom, chTo])
 
   /* ── Focus a specific report (e.g. clicked from a list elsewhere on the
      dashboard) ─────────────────────────────────────────────
