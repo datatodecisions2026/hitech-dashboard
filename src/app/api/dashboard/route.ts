@@ -216,11 +216,41 @@ export async function GET(req: NextRequest) {
   const hasFilters  = !!(filterProject || filterCategory || filterWeather || filterDateFrom || filterDateTo || applyChFilter || searchOr || hrRestrictIds)
   const inFilter    = (row: unknown) => !hasFilters ? true : filteredIds.has((row as any).report_id as number)
 
-  const byMachine    = groupCount(machines.filter(inFilter).map(m => (m as any).machine_name    as string)).slice(0, 15)
-  const byEmployee   = groupCount(employees.filter(inFilter).map(e => (e as any).employee_name   as string)).slice(0, 15)
-  const byEngineer   = groupCount(engineers.filter(inFilter).map(e => (e as any).engineer_name   as string)).slice(0, 15)
-  const bySupervisor = groupCount(supervisors.filter(inFilter).map(s => (s as any).supervisor_name as string)).slice(0, 15)
-  const byOwnership  = groupCount(machines.filter(inFilter).map(m => (m as any).ownership         as string))
+  const filteredMachines    = machines.filter(inFilter)
+  const filteredEmployees   = employees.filter(inFilter)
+  const filteredEngineers   = engineers.filter(inFilter)
+  const filteredSupervisors = supervisors.filter(inFilter)
+
+  const byMachine    = groupCount(filteredMachines.map(m => (m as any).machine_name    as string)).slice(0, 15)
+  const byEmployee   = groupCount(filteredEmployees.map(e => (e as any).employee_name   as string)).slice(0, 15)
+  const byEngineer   = groupCount(filteredEngineers.map(e => (e as any).engineer_name   as string)).slice(0, 15)
+  const bySupervisor = groupCount(filteredSupervisors.map(s => (s as any).supervisor_name as string)).slice(0, 15)
+  const byOwnership  = groupCount(filteredMachines.map(m => (m as any).ownership         as string))
+  const byDriver      = groupCount(filteredMachines.map(m => (m as any).driver_name  as string)).slice(0, 15)
+  const byEmployeeRole    = groupCount(filteredEmployees.map(e => (e as any).employee_role as string))
+  const byEngineerParty   = groupCount(filteredEngineers.map(e => (e as any).party as string))
+  const bySupervisorParty = groupCount(filteredSupervisors.map(s => (s as any).party as string))
+
+  const distinctCount = (rows: Record<string, unknown>[], field: string) =>
+    new Set(rows.map(r => toTitleCase(r[field] as string)).filter(Boolean)).size
+
+  const machineSummary = {
+    totalMentions:    filteredMachines.length,
+    distinctMachines: distinctCount(filteredMachines, 'machine_name'),
+    distinctDrivers:  distinctCount(filteredMachines, 'driver_name'),
+  }
+  const employeeSummary = {
+    totalMentions:     filteredEmployees.length,
+    distinctEmployees: distinctCount(filteredEmployees, 'employee_name'),
+  }
+  const engineerSummary = {
+    totalMentions:     filteredEngineers.length,
+    distinctEngineers: distinctCount(filteredEngineers, 'engineer_name'),
+  }
+  const supervisorSummary = {
+    totalMentions:       filteredSupervisors.length,
+    distinctSupervisors: distinctCount(filteredSupervisors, 'supervisor_name'),
+  }
 
   const mapPoints = all
     .filter(r => (r as any).start_chainage_lat && (r as any).start_chainage_long)
@@ -280,6 +310,8 @@ export async function GET(req: NextRequest) {
     },
     byCategory, byProject, byDay, byWeather, byStatus,
     byMachine, byEmployee, byEngineer, bySupervisor, byOwnership,
+    byDriver, byEmployeeRole, byEngineerParty, bySupervisorParty,
+    machineSummary, employeeSummary, engineerSummary, supervisorSummary,
     mediaItems, mapPoints, activityCalendar,
     recentReports: recent,
     filterOptions: { categories, projects },

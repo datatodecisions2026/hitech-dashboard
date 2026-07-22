@@ -866,48 +866,6 @@ function DashboardPageInner() {
             </div>
           </Reveal>
 
-          {(data.byMachine?.length > 0 || data.byEmployee?.length > 0) && (
-            <Reveal delay={60} style={{ marginBottom:16 }}>
-              <div className="grid-responsive" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-                {data.byMachine?.length  > 0 && (
-                  <Panel title="Machines Used">
-                    <HBarChart data={data.byMachine} color={D.amber} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)}/>
-                    {data.byOwnership?.length > 0 && (
-                      <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${D.border}` }}>
-                        <div style={{ fontSize:'0.58rem', color:D.muted, fontFamily:'var(--font-mono)', letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:10 }}>Ownership</div>
-                        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                          {data.byOwnership.map((o, i) => {
-                            const colors = [D.amber, D.blue, D.green, '#a78bfa']
-                            const c = colors[i % colors.length]
-                            const total = data.byOwnership.reduce((s, x) => s + x.count, 0)
-                            return (
-                              <div key={o.name} style={{ display:'flex', alignItems:'center', gap:6, background:`${c}10`, border:`1px solid ${c}25`, borderRadius:8, padding:'5px 10px' }}>
-                                <div style={{ width:7, height:7, borderRadius:2, background:c, flexShrink:0 }}/>
-                                <span style={{ fontSize:'0.65rem', color:D.muted, fontFamily:'var(--font-mono)' }}>{o.name}</span>
-                                <span style={{ fontSize:'0.65rem', color:c, fontFamily:'var(--font-mono)', fontWeight:700 }}>{o.count}</span>
-                                <span style={{ fontSize:'0.6rem', color:D.sub, fontFamily:'var(--font-mono)' }}>{Math.round(o.count/total*100)}%</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </Panel>
-                )}
-                {data.byEmployee?.length > 0 && <Panel title="Top Employees"><HBarChart data={data.byEmployee} color={D.green} activeName={data.activeFilters.filterEmployee} onBarClick={name => handleFilter('employee', name)}/></Panel>}
-              </div>
-            </Reveal>
-          )}
-
-          {(data.byEngineer?.length > 0 || data.bySupervisor?.length > 0) && (
-            <Reveal delay={60} style={{ marginBottom:16 }}>
-              <div className="grid-responsive" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-                {data.byEngineer?.length   > 0 && <Panel title="Engineers Activity"><HBarChart data={data.byEngineer} color={D.blue} activeName={data.activeFilters.filterEngineer} onBarClick={name => handleFilter('engineer', name)}/></Panel>}
-                {data.bySupervisor?.length > 0 && <Panel title="Supervisors Activity"><HBarChart data={data.bySupervisor} color="#a78bfa" activeName={data.activeFilters.filterSupervisor} onBarClick={name => handleFilter('supervisor', name)}/></Panel>}
-              </div>
-            </Reveal>
-          )}
-
           {data.activityCalendar.length > 0 && (
             <Reveal style={{ marginBottom:16 }}>
               <Panel title="Activity Calendar — full history"><ActivityCalendar data={data.activityCalendar}/></Panel>
