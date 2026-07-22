@@ -49,7 +49,19 @@
       "Bash(curl -s -o /dev/null -w \"dashboard responds: %{http_code} in %{time_total}s\\\\n\" http://localhost:3000/dashboard --max-time 10)",
       "Bash(node scripts/debug-recent.mjs)",
       "Bash(npm run *)",
-      "Bash(grep -c \"onMouseEnter={e => \\(e.currentTarget.style.background = 'rgba\\(212,160,64,0.03\\)'\\)} onMouseLeave={e => \\(e.currentTarget.style.background = 'transparent'\\)}\" src/app/progress/page.tsx)"
+      "Bash(grep -c \"onMouseEnter={e => \\(e.currentTarget.style.background = 'rgba\\(212,160,64,0.03\\)'\\)} onMouseLeave={e => \\(e.currentTarget.style.background = 'transparent'\\)}\" src/app/progress/page.tsx)",
+      "Bash(npm install *)",
+      "Bash(npm audit *)",
+      "Bash(curl -s -b hitech-dashboard-session=__TRACKED_VAR__ http://localhost:3000/api/dashboard -o /tmp/dash.json -w 'HTTP %{http_code}\\\\n')",
+      "Bash(cp \"/c/Users/UKPOWE~1/AppData/Local/Temp/claude/c--Users-Ukpoweh-Gift-Documents-hitech-dashboard/8fbf8bb7-00e9-4160-987a-d3aac839860b/scratchpad/dash.json\" .tmp-dash.json)",
+      "Bash(rm .tmp-dash.json)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 48112 //F)",
+      "Bash(taskkill //PID 37188 //F)",
+      "Bash(curl -s -b hitech-dashboard-session=__TRACKED_VAR__ http://localhost:3000/api/dashboard -o .tmp-dash.json -w 'HTTP %{http_code}\\\\n')",
+      "Bash(tail -40 /tmp/nextdev.log)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)"
     ]
   }
 }
