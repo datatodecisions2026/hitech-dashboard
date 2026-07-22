@@ -230,8 +230,12 @@ Returns chainage stations and geotagged activity reports for `HitechMap`, keyed 
 
 **Query params:**
 ```
-project   — project display name (default "Coastal Road"), mapped to a numeric project_id via a hardcoded PROJECT_ID_MAP in the route file — add new projects there when onboarding a new road
+project                          — project display name (default "Coastal Road"), mapped to a numeric project_id via a hardcoded PROJECT_ID_MAP in the route file — add new projects there when onboarding a new road
+zoom                              — current map zoom level; chooses a chainage-sampling interval (coarser when zoomed out) via intervalForZoom() in the route file
+swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12 (at lower zoom the viewport already ≈ the whole road)
 ```
+
+`stations` is sampled, not exhaustive — see `hitech_report_chainage` below and the 2026-07-22 "map freezing" changelog entry for why (that table is one row per metre of road, up to 423k rows for one project).
 
 **Response (200):**
 ```json
@@ -402,6 +406,21 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-07-22 — Fix the dashboard map freezing: level-of-detail chainage sampling + clustering
+
+**Files changed:** `src/app/api/map/route.ts`, `src/components/HitechMap.tsx`, Supabase migrations `add_map_chainage_line_rpc`, `fix_map_chainage_line_grant`, `make_map_chainage_line_self_limiting`, `fix_map_chainage_line_type_cast`
+
+**What changed:**
+- `hitech_report_chainage` is one row per metre of road — 423,696 rows for the SBS Sokoto Badagry highway project alone (553,588 total across all projects). `GET /api/map` was `fetchAll()`-paginating the *entire* table per project just to draw one road-alignment line and 1km tick marks, then `HitechMap.tsx` built one giant unclustered GeoJSON `FeatureCollection` from all of it — this is what was freezing the map, not Mapbox GL itself (which is built to handle far larger datasets via tiling — the problem was architectural, not the choice of library).
+- Added `map_chainage_line(p_project_id, p_interval, p_min_lat, p_max_lat, p_min_lng, p_max_lng, p_max_points)`: samples chainage rows at a metre interval instead of returning every row, always keeps the road's true start/end point (so an overview line is never chopped short), and optionally scopes to a lat/lng viewport box. Every interval tier `/api/map` requests (1000/250/100/25, chosen from the requested `zoom` param) is a divisor of 1000, so the existing client-side tick-mark filter (`label % 1000 === 0`) stays a correct subset of whatever's returned — no separate ticks query needed.
+- `/api/map` now accepts `zoom` (maps to a sampling interval — coarser when zoomed out) and `swLat/swLng/neLat/neLng` (only applied once `zoom >= 12`, since at lower zoom the viewport already ≈ the whole road). The reports query is untouched — at ~9.7k rows project-wide it was never the bottleneck.
+- **`HitechMap.tsx`**: first load (or a project switch) still fetches a coarse whole-road view and shows the existing full loading overlay. Once the map settles on that view, a new `moveend` listener reports the real zoom/bounds back to the data-fetch effect, which silently refetches at the appropriate detail tier for what's actually on screen (a small `· refining detail…` indicator, not the blocking overlay). A `lastFitKeyRef` guard was added so `fitBounds` only re-fires on an actual `(project, chFrom, chTo)` change, not on every viewport-driven data refresh — without it, a refresh triggers `fitBounds` → `moveend` → another refresh → infinite loop.
+- Report points (`report-points` source) now use Mapbox's native `cluster: true` — nearby points bundle into a bubble (sized by count) at low zoom and split apart on zoom/click-to-expand, instead of every point rendering as its own circle feature. Two new layers (`report-clusters-layer`, `report-cluster-count-layer`); the click handler checks for a cluster hit first and eases the camera into it via `getClusterExpansionZoom` before falling through to the existing point/line popup logic.
+- **Hit and fixed a real bug while testing at scale**: the first version of `map_chainage_line` could return more than 1000 rows at coarse intervals (1,696 rows at interval=250 on the 423k-row project). Discovered that Supabase's PostgREST layer hard-caps *every* query response at 1000 rows project-wide, and — confirmed empirically — this cannot be raised from the client even with an explicit `.range()` on the `rpc()` call. Silently truncating to the first 1000 rows in label order chopped off the tail of the road (lost the true end point, not just detail). Fixed by making the function self-limiting: it counts the candidate rows at the requested interval first and, if that would exceed a 900-row safety budget, scales the interval up before running the real query — self-correcting regardless of how coarse/fine the caller asks for or how large the underlying road data grows, rather than relying on `/api/map`'s hardcoded interval tiers alone to stay safe.
+- Verified via direct SQL (`EXPLAIN ANALYZE`) and live requests against a local dev server hitting the real Supabase project: the largest project (423,696 chainage rows) now returns 849 sampled points (endpoints preserved: label 0 to 423694) in ~1–2.5s depending on cache warmth, down from a full-table `fetchAll()` that never completed in testing. `tsc --noEmit` and `next build` both pass.
+
+**Also surfaced, not fixed (out of scope for this pass):** the same PostgREST 1000-row cap silently truncates two *pre-existing* queries that request more than 1000 rows and were already affected before this session — `/api/map`'s report query (`.limit(5000)`, confirmed only returning 1,000 of 9,704 matching reports for "Coastal Road") and `/api/progress`'s activity-reports query (`.limit(2000)`). Neither was touched here since fixing them means either raising Supabase's `db-max-rows` project setting or converting those queries to real server-side pagination — a decision for the user, not something to silently change.
 
 ### 2026-07-22 — Fix `/progress` timing out: move entity aggregation from Node into Postgres RPCs
 

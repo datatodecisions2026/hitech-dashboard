@@ -81,25 +81,62 @@ interface Props {
 }
 
 /* ── Component ─────────────────────────────────────────────── */
+interface ViewState {
+  zoom:  number
+  swLat: number
+  swLng: number
+  neLat: number
+  neLng: number
+}
+
 export default function HitechMap({ project, chFrom, chTo }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<any>(null)
-  const [mapData,   setMapData]   = useState<MapData | null>(null)
-  const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState('')
-  const [colorBy,   setColorBy]   = useState<'category' | 'status'>('category')
-  const [selReport, setSelReport] = useState<ActivityReport | null>(null)
-  const [mapLoaded, setMapLoaded] = useState(false)
+  const [mapData,    setMapData]    = useState<MapData | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error,      setError]      = useState('')
+  const [colorBy,    setColorBy]    = useState<'category' | 'status'>('category')
+  const [selReport,  setSelReport]  = useState<ActivityReport | null>(null)
+  const [mapLoaded,  setMapLoaded]  = useState(false)
+  const [viewState,  setViewState]  = useState<ViewState | null>(null)
+  const prevProjectRef = useRef<string | null>(null)
+  const lastFitKeyRef   = useRef<string>('')
 
-  /* ── Load data from API ─────────────────────────────────── */
+  /* ── Load data from API ──────────────────────────────────
+     First load (or a project switch) fetches a coarse, whole-road view and
+     shows the full loading overlay. Once the map settles on that view,
+     `moveend` reports the real zoom/bounds back here (see the map-init
+     effect below), which refetches at the appropriate detail level for
+     what's actually visible — silently, via `refreshing`, not the big
+     overlay. This is what keeps a 400k+-row chainage table from ever being
+     pulled in one shot: only the current view's detail tier is fetched.
+  ─────────────────────────────────────────────────────────── */
   useEffect(() => {
-    setLoading(true)
-    setSelReport(null)
-    fetch(`/api/map?project=${encodeURIComponent(project)}`)
+    const projectChanged = prevProjectRef.current !== project
+    prevProjectRef.current = project
+
+    if (projectChanged) {
+      setLoading(true)
+      setSelReport(null)
+    } else {
+      setRefreshing(true)
+    }
+
+    const params = new URLSearchParams({ project })
+    if (viewState && !projectChanged) {
+      params.set('zoom',  String(viewState.zoom))
+      params.set('swLat', String(viewState.swLat))
+      params.set('swLng', String(viewState.swLng))
+      params.set('neLat', String(viewState.neLat))
+      params.set('neLng', String(viewState.neLng))
+    }
+
+    fetch(`/api/map?${params.toString()}`)
       .then(r => r.json())
-      .then(d => { setMapData(d); setLoading(false) })
-      .catch(() => { setError('Failed to load map data'); setLoading(false) })
-  }, [project])
+      .then(d => { setMapData(d); setLoading(false); setRefreshing(false) })
+      .catch(() => { setError('Failed to load map data'); setLoading(false); setRefreshing(false) })
+  }, [project, viewState])
 
   /* ── Initialise Mapbox once ─────────────────────────────── */
   useEffect(() => {
@@ -140,6 +177,18 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
         localMap.on('load', () => {
           mapRef.current = localMap
           setMapLoaded(true)
+        })
+
+        // Reports the settled view back to the data-fetch effect above, so
+        // it can refetch chainage detail scoped to what's actually on screen
+        // instead of the whole road every time.
+        localMap.on('moveend', () => {
+          const b = localMap.getBounds()
+          setViewState({
+            zoom:  localMap.getZoom(),
+            swLat: b.getSouth(), swLng: b.getWest(),
+            neLat: b.getNorth(), neLng: b.getEast(),
+          })
         })
 
         localMap.on('error', (e: any) => {
@@ -235,14 +284,19 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
     const pointsGJ: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: allFeatures.filter(f => f.geometry.type === 'Point') }
 
     /* Add / update sources */
-    const upsertSource = (id: string, data: GeoJSON.FeatureCollection) => {
+    const upsertSource = (id: string, data: GeoJSON.FeatureCollection, extraOpts: Record<string, any> = {}) => {
       if (map.getSource(id)) (map.getSource(id) as any).setData(data)
-      else map.addSource(id, { type: 'geojson', data })
+      else map.addSource(id, { type: 'geojson', data, ...extraOpts })
     }
     upsertSource('station-line',  stationLineGJ)
     upsertSource('station-ticks', ticksGJ)
     upsertSource('report-lines',  linesGJ)
-    upsertSource('report-points', pointsGJ)
+    // Clustered: nearby report points bundle into a bubble at low zoom and
+    // split apart as you zoom in, instead of rendering every point as its
+    // own feature. cluster options only take effect on the initial
+    // addSource — later setData() calls (viewport refreshes, filter
+    // changes) keep reclustering the new data automatically.
+    upsertSource('report-points', pointsGJ, { cluster: true, clusterMaxZoom: 14, clusterRadius: 45 })
 
     /* Layers */
     const colorExpr = colorBy === 'category' ? ['get', 'catColor'] : ['get', 'statusColor']
@@ -264,8 +318,27 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
     } else {
       map.setPaintProperty('report-lines-layer', 'line-color', colorExpr)
     }
+    if (!map.getLayer('report-clusters-layer')) {
+      map.addLayer({ id: 'report-clusters-layer', type: 'circle', source: 'report-points',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color':        D.amber,
+          'circle-opacity':      0.85,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': 'rgba(0,0,0,0.5)',
+          'circle-radius':       ['step', ['get', 'point_count'], 14, 25, 18, 100, 24, 500, 30],
+        } })
+    }
+    if (!map.getLayer('report-cluster-count-layer')) {
+      map.addLayer({ id: 'report-cluster-count-layer', type: 'symbol', source: 'report-points',
+        filter: ['has', 'point_count'],
+        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 11,
+                  'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'] },
+        paint:  { 'text-color': '#000' } })
+    }
     if (!map.getLayer('report-points-layer')) {
       map.addLayer({ id: 'report-points-layer', type: 'circle', source: 'report-points',
+        filter: ['!', ['has', 'point_count']],
         paint: { 'circle-color': colorExpr as any, 'circle-radius': 7,
                  'circle-stroke-width': 2, 'circle-stroke-color': 'rgba(0,0,0,0.6)', 'circle-opacity': 0.9 } })
     } else {
@@ -274,6 +347,18 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
 
     /* Click handler */
     const onClick = (e: any) => {
+      // Cluster bubble → zoom in to expand it, don't try to show a popup
+      const clusterHit = map.queryRenderedFeatures(e.point, { layers: ['report-clusters-layer'] })
+      if (clusterHit.length) {
+        const clusterId = clusterHit[0].properties?.cluster_id
+        const src = map.getSource('report-points') as any
+        src.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
+          if (err) return
+          map.easeTo({ center: (clusterHit[0].geometry as any).coordinates, zoom, duration: 500 })
+        })
+        return
+      }
+
       const features = map.queryRenderedFeatures(e.point, { layers: ['report-lines-layer', 'report-points-layer'] })
       if (!features.length) { setSelReport(null); return }
       const p = features[0].properties
@@ -289,16 +374,25 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       })
     }
     map.on('click', onClick)
-    map.on('mouseenter', 'report-lines-layer',  () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'report-lines-layer',  () => { map.getCanvas().style.cursor = '' })
-    map.on('mouseenter', 'report-points-layer', () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'report-points-layer', () => { map.getCanvas().style.cursor = '' })
+    map.on('mouseenter', 'report-lines-layer',    () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', 'report-lines-layer',    () => { map.getCanvas().style.cursor = '' })
+    map.on('mouseenter', 'report-points-layer',   () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', 'report-points-layer',   () => { map.getCanvas().style.cursor = '' })
+    map.on('mouseenter', 'report-clusters-layer', () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', 'report-clusters-layer', () => { map.getCanvas().style.cursor = '' })
 
     /* ── Fit map bounds ─────────────────────────────────────
        If chainage filter is active → zoom to that range.
        Otherwise → fit the entire road.
+       Only runs once per distinct (project, chFrom, chTo) — NOT on every
+       mapData refresh. Panning/zooming triggers a viewport-scoped refetch
+       (see the data-fetch effect) that updates the same sources in place;
+       without this guard, that refresh would re-trigger fitBounds, which
+       fires another moveend, which refetches again — an infinite loop.
     ────────────────────────────────────────────────────────── */
-    if (mapData.stations.length > 0) {
+    const fitKey = `${project}|${chFrom || ''}|${chTo || ''}`
+    if (mapData.stations.length > 0 && lastFitKeyRef.current !== fitKey) {
+      lastFitKeyRef.current = fitKey
       const chFromNum = chFrom ? Number(chFrom) : null
       const chToNum   = chTo   ? Number(chTo)   : null
       const hasChFilter = chFromNum != null && chToNum != null &&
@@ -363,8 +457,9 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
         )}
 
         {mapData && (
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)' }}>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 8 }}>
             {mapData.reports.length} reports · {mapData.stations.length.toLocaleString()} chainage points
+            {refreshing && <span style={{ color: D.amber }}>· refining detail…</span>}
           </span>
         )}
       </div>
