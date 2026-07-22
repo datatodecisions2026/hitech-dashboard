@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
+import { MarkerClusterer } from '@googlemaps/markerclusterer'
 
 /* ── Design tokens ─────────────────────────────────────────── */
 const D = {
@@ -80,7 +82,6 @@ interface Props {
   chTo?:   string   // chainage filter to
 }
 
-/* ── Component ─────────────────────────────────────────────── */
 interface ViewState {
   zoom:  number
   swLat: number
@@ -89,9 +90,14 @@ interface ViewState {
   neLng: number
 }
 
+// setOptions() must run before any importLibrary() call — module scope
+// guarantees that regardless of render/mount order.
+setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '', v: 'weekly' })
+
+/* ── Component ─────────────────────────────────────────────── */
 export default function HitechMap({ project, chFrom, chTo }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const mapRef       = useRef<any>(null)
+  const mapRef       = useRef<google.maps.Map | null>(null)
   const [mapData,    setMapData]    = useState<MapData | null>(null)
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -103,14 +109,22 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
   const prevProjectRef = useRef<string | null>(null)
   const lastFitKeyRef   = useRef<string>('')
 
+  // Overlay objects have no Mapbox-style setData() — each rebuild clears and
+  // recreates them, so refs track what's currently on the map to clear.
+  const stationLineRef  = useRef<google.maps.Polyline | null>(null)
+  const tickMarkersRef  = useRef<google.maps.Marker[]>([])
+  const reportLinesRef  = useRef<google.maps.Polyline[]>([])
+  const reportMarkersRef = useRef<google.maps.Marker[]>([])
+  const clustererRef    = useRef<MarkerClusterer | null>(null)
+
   /* ── Load data from API ──────────────────────────────────
      First load (or a project switch) fetches a coarse, whole-road view and
      shows the full loading overlay. Once the map settles on that view,
-     `moveend` reports the real zoom/bounds back here (see the map-init
-     effect below), which refetches at the appropriate detail level for
-     what's actually visible — silently, via `refreshing`, not the big
-     overlay. This is what keeps a 400k+-row chainage table from ever being
-     pulled in one shot: only the current view's detail tier is fetched.
+     `idle` reports the real zoom/bounds back here (see the map-init effect
+     below), which refetches at the appropriate detail level for what's
+     actually visible — silently, via `refreshing`, not the big overlay.
+     This is what keeps a 400k+-row chainage table from ever being pulled in
+     one shot: only the current view's detail tier is fetched.
   ─────────────────────────────────────────────────────────── */
   useEffect(() => {
     const projectChanged = prevProjectRef.current !== project
@@ -138,31 +152,32 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       .catch(() => { setError('Failed to load map data'); setLoading(false); setRefreshing(false) })
   }, [project, viewState])
 
-  /* ── Initialise Mapbox once ─────────────────────────────── */
+  /* ── Initialise Google Maps once ─────────────────────────── */
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
 
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-    if (!token) {
-      setError('Mapbox token not set (NEXT_PUBLIC_MAPBOX_TOKEN missing)')
+    if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) {
+      setError('Google Maps API key not set (NEXT_PUBLIC_GOOGLE_MAPS_API_KEY missing)')
       setLoading(false)
       return
     }
 
-    let localMap: any = null
+    let cancelled = false
 
-    import('mapbox-gl')
-      .then(({ default: mapboxgl }) => {
-        if (!mapContainer.current) return
-        mapboxgl.accessToken = token
+    importLibrary('maps')
+      .then(({ Map }) => {
+        if (cancelled || !mapContainer.current) return
 
+        let localMap: google.maps.Map
         try {
-          localMap = new mapboxgl.Map({
-            container: mapContainer.current,
-            style:     'mapbox://styles/mapbox/dark-v11',
-            center:    [3.627, 6.432],
-            zoom:      11,
-            attributionControl: false,
+          localMap = new Map(mapContainer.current, {
+            center: { lat: 6.432, lng: 3.627 },
+            zoom: 11,
+            mapTypeId: 'hybrid', // satellite imagery + road/place labels
+            mapTypeControl: true,
+            streetViewControl: false,
+            fullscreenControl: false,
+            clickableIcons: false,
           })
         } catch (err: any) {
           setError(`Map init failed: ${err?.message || String(err)}`)
@@ -170,82 +185,98 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
           return
         }
 
-        localMap.addControl(new mapboxgl.NavigationControl(),              'top-right')
-        localMap.addControl(new mapboxgl.ScaleControl({ unit: 'metric' }), 'bottom-right')
-        localMap.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left')
+        mapRef.current = localMap
+        setMapLoaded(true)
 
-        localMap.on('load', () => {
-          mapRef.current = localMap
-          setMapLoaded(true)
-        })
+        // Clicking empty map area clears the selected-report popup — actual
+        // report markers/lines stopPropagation implicitly via their own
+        // click listeners (added in the layer-building effect below).
+        localMap.addListener('click', () => setSelReport(null))
 
         // Reports the settled view back to the data-fetch effect above, so
-        // it can refetch chainage detail scoped to what's actually on screen
-        // instead of the whole road every time.
-        localMap.on('moveend', () => {
+        // it can refetch chainage detail scoped to what's actually on
+        // screen instead of the whole road every time.
+        localMap.addListener('idle', () => {
           const b = localMap.getBounds()
+          if (!b) return
+          const sw = b.getSouthWest(), ne = b.getNorthEast()
           setViewState({
-            zoom:  localMap.getZoom(),
-            swLat: b.getSouth(), swLng: b.getWest(),
-            neLat: b.getNorth(), neLng: b.getEast(),
+            zoom:  localMap.getZoom() ?? 11,
+            swLat: sw.lat(), swLng: sw.lng(),
+            neLat: ne.lat(), neLng: ne.lng(),
           })
-        })
-
-        localMap.on('error', (e: any) => {
-          setError(`Map error: ${e?.error?.message || 'unknown'}`)
-          setLoading(false)
         })
       })
       .catch((err: any) => {
-        setError(`Failed to load Mapbox library: ${err?.message || String(err)}`)
-        setLoading(false)
+        if (!cancelled) {
+          setError(`Failed to load Google Maps: ${err?.message || String(err)}`)
+          setLoading(false)
+        }
       })
 
     return () => {
-      const m = localMap || mapRef.current
-      if (m) {
-        try { m.remove() } catch (_) {}
-      }
+      cancelled = true
+      stationLineRef.current?.setMap(null)
+      tickMarkersRef.current.forEach(m => m.setMap(null))
+      reportLinesRef.current.forEach(l => l.setMap(null))
+      clustererRef.current?.clearMarkers()
       mapRef.current = null
       setMapLoaded(false)
     }
   }, [])
 
-  /* ── Add / update layers when map + data ready ──────────── */
+  /* ── Add / update overlays when map + data ready ─────────── */
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !mapData) return
     const map = mapRef.current
 
+    // Full rebuild each time — report volume here is bounded (≤1000, see
+    // /api/map), so this is cheap; there's no Mapbox-style setData() to
+    // patch overlays in place.
+    stationLineRef.current?.setMap(null)
+    tickMarkersRef.current.forEach(m => m.setMap(null))
+    reportLinesRef.current.forEach(l => l.setMap(null))
+    clustererRef.current?.clearMarkers()
+
     /* Station road line */
     const sortedStations = [...mapData.stations].sort((a, b) => a.label - b.label)
-    const stationLineGJ: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: sortedStations.map(s => [s.longitude, s.latitude]) },
-        properties: {},
+    stationLineRef.current = new google.maps.Polyline({
+      path: sortedStations.map(s => ({ lat: s.latitude, lng: s.longitude })),
+      strokeColor:   '#ffffff',
+      strokeOpacity: 0.001, // near-invisible solid — the dashed look comes from the icons pattern below
+      strokeWeight:  1.5,
+      icons: [{
+        icon:   { path: 'M 0,-1 0,1', strokeOpacity: 0.35, strokeColor: '#ffffff', scale: 2 },
+        offset: '0',
+        repeat: '12px',
       }],
-    }
+      clickable: false,
+      zIndex: 1,
+      map,
+    })
 
     /* Chainage tick marks every 1 km */
-    const ticksGJ: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: mapData.stations
-        .filter(s => s.label % 1000 === 0)
-        .map(s => ({
-          type:       'Feature' as const,
-          geometry:   { type: 'Point' as const, coordinates: [s.longitude, s.latitude] },
-          properties: { chainage: s.chainage, label: s.label },
-        })),
-    }
+    tickMarkersRef.current = mapData.stations
+      .filter(s => s.label % 1000 === 0)
+      .map(s => new google.maps.Marker({
+        position: { lat: s.latitude, lng: s.longitude },
+        map,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0, strokeOpacity: 0, fillOpacity: 0 },
+        label: { text: s.chainage, color: D.amber, fontSize: '10px', fontFamily: 'var(--font-mono)', className: 'chainage-tick-label' },
+        clickable: false,
+        zIndex: 2,
+      }))
 
-    /* Build lookup: label → station */
+    /* Build lookup: label → station, for reports without direct lat/lng */
     const stMap = new Map(mapData.stations.map(s => [s.label, s]))
+    const colorFor = (r: ActivityReport) => colorBy === 'category' ? catColor(r.activity_category) : statusColor(r.activity_status)
 
-    /* Report segments + points */
-    const allFeatures: GeoJSON.Feature[] = mapData.reports
+    const reportLines: google.maps.Polyline[] = []
+    const reportMarkers: google.maps.Marker[] = []
+
+    mapData.reports
       .filter(r => r.start_chainage != null || r.start_chainage_lat != null)
-      .map(r => {
+      .forEach(r => {
         const startLng = r.start_chainage_long
           ? parseFloat(r.start_chainage_long)
           : stMap.get(Math.round(r.start_chainage ?? r.start_chainage_val ?? 0))?.longitude
@@ -259,136 +290,57 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
           ? parseFloat(r.end_chainage_lat)
           : stMap.get(Math.round(r.end_chainage ?? r.end_chainage_val ?? 0))?.latitude
 
-        if (!startLng || !startLat || isNaN(startLng) || isNaN(startLat)) return null
+        if (!startLng || !startLat || isNaN(startLng) || isNaN(startLat)) return
 
         const samePoint = !endLng || !endLat || (startLng === endLng && startLat === endLat)
-        const props = {
-          id: r.id, category: r.activity_category, type: r.activity_type,
-          status: r.activity_status, reporter: r.reporter_name,
-          date: r.date_of_activity, section: r.section_name,
-          start_ch: r.start_chainage, end_ch: r.end_chainage,
-          catColor: catColor(r.activity_category),
-          statusColor: statusColor(r.activity_status),
-        }
-        return {
-          type: 'Feature' as const,
-          geometry: samePoint
-            ? { type: 'Point' as const,      coordinates: [startLng, startLat] }
-            : { type: 'LineString' as const, coordinates: [[startLng, startLat], [endLng!, endLat!]] },
-          properties: props,
+        const color = colorFor(r)
+
+        if (samePoint) {
+          const marker = new google.maps.Marker({
+            position: { lat: startLat, lng: startLng },
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: color, fillOpacity: 0.9,
+              strokeColor: 'rgba(0,0,0,0.6)', strokeWeight: 2,
+              scale: 7,
+            },
+            zIndex: 5,
+          })
+          marker.addListener('click', () => setSelReport(r))
+          reportMarkers.push(marker)
+        } else {
+          const line = new google.maps.Polyline({
+            path: [{ lat: startLat, lng: startLng }, { lat: endLat!, lng: endLng! }],
+            strokeColor: color, strokeOpacity: 0.85, strokeWeight: 6,
+            clickable: true, zIndex: 4, map,
+          })
+          line.addListener('click', () => setSelReport(r))
+          line.addListener('mouseover', () => { if (mapContainer.current) mapContainer.current.style.cursor = 'pointer' })
+          line.addListener('mouseout',  () => { if (mapContainer.current) mapContainer.current.style.cursor = '' })
+          reportLines.push(line)
         }
       })
-      .filter(Boolean) as GeoJSON.Feature[]
 
-    const linesGJ:  GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: allFeatures.filter(f => f.geometry.type === 'LineString') }
-    const pointsGJ: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: allFeatures.filter(f => f.geometry.type === 'Point') }
+    reportLinesRef.current = reportLines
 
-    /* Add / update sources */
-    const upsertSource = (id: string, data: GeoJSON.FeatureCollection, extraOpts: Record<string, any> = {}) => {
-      if (map.getSource(id)) (map.getSource(id) as any).setData(data)
-      else map.addSource(id, { type: 'geojson', data, ...extraOpts })
-    }
-    upsertSource('station-line',  stationLineGJ)
-    upsertSource('station-ticks', ticksGJ)
-    upsertSource('report-lines',  linesGJ)
     // Clustered: nearby report points bundle into a bubble at low zoom and
-    // split apart as you zoom in, instead of rendering every point as its
-    // own feature. cluster options only take effect on the initial
-    // addSource — later setData() calls (viewport refreshes, filter
-    // changes) keep reclustering the new data automatically.
-    upsertSource('report-points', pointsGJ, { cluster: true, clusterMaxZoom: 14, clusterRadius: 45 })
-
-    /* Layers */
-    const colorExpr = colorBy === 'category' ? ['get', 'catColor'] : ['get', 'statusColor']
-
-    if (!map.getLayer('station-line-layer')) {
-      map.addLayer({ id: 'station-line-layer', type: 'line', source: 'station-line',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint:  { 'line-color': '#ffffff', 'line-width': 1.5, 'line-opacity': 0.2, 'line-dasharray': [4, 3] } })
-    }
-    if (!map.getLayer('station-ticks-layer')) {
-      map.addLayer({ id: 'station-ticks-layer', type: 'symbol', source: 'station-ticks',
-        layout: { 'text-field': ['get', 'chainage'], 'text-size': 10, 'text-offset': [0, -1.2], 'text-anchor': 'bottom' },
-        paint:  { 'text-color': '#d4a040', 'text-halo-color': 'rgba(0,0,0,0.85)', 'text-halo-width': 1.5 } })
-    }
-    if (!map.getLayer('report-lines-layer')) {
-      map.addLayer({ id: 'report-lines-layer', type: 'line', source: 'report-lines',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint:  { 'line-color': colorExpr as any, 'line-width': 6, 'line-opacity': 0.85 } })
+    // split apart on click/zoom, instead of every point rendering as its
+    // own marker. clearMarkers() above already emptied the previous set.
+    reportMarkersRef.current = reportMarkers
+    if (clustererRef.current) {
+      clustererRef.current.addMarkers(reportMarkers)
     } else {
-      map.setPaintProperty('report-lines-layer', 'line-color', colorExpr)
+      clustererRef.current = new MarkerClusterer({ map, markers: reportMarkers })
     }
-    if (!map.getLayer('report-clusters-layer')) {
-      map.addLayer({ id: 'report-clusters-layer', type: 'circle', source: 'report-points',
-        filter: ['has', 'point_count'],
-        paint: {
-          'circle-color':        D.amber,
-          'circle-opacity':      0.85,
-          'circle-stroke-width': 2,
-          'circle-stroke-color': 'rgba(0,0,0,0.5)',
-          'circle-radius':       ['step', ['get', 'point_count'], 14, 25, 18, 100, 24, 500, 30],
-        } })
-    }
-    if (!map.getLayer('report-cluster-count-layer')) {
-      map.addLayer({ id: 'report-cluster-count-layer', type: 'symbol', source: 'report-points',
-        filter: ['has', 'point_count'],
-        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 11,
-                  'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'] },
-        paint:  { 'text-color': '#000' } })
-    }
-    if (!map.getLayer('report-points-layer')) {
-      map.addLayer({ id: 'report-points-layer', type: 'circle', source: 'report-points',
-        filter: ['!', ['has', 'point_count']],
-        paint: { 'circle-color': colorExpr as any, 'circle-radius': 7,
-                 'circle-stroke-width': 2, 'circle-stroke-color': 'rgba(0,0,0,0.6)', 'circle-opacity': 0.9 } })
-    } else {
-      map.setPaintProperty('report-points-layer', 'circle-color', colorExpr)
-    }
-
-    /* Click handler */
-    const onClick = (e: any) => {
-      // Cluster bubble → zoom in to expand it, don't try to show a popup
-      const clusterHit = map.queryRenderedFeatures(e.point, { layers: ['report-clusters-layer'] })
-      if (clusterHit.length) {
-        const clusterId = clusterHit[0].properties?.cluster_id
-        const src = map.getSource('report-points') as any
-        src.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
-          if (err) return
-          map.easeTo({ center: (clusterHit[0].geometry as any).coordinates, zoom, duration: 500 })
-        })
-        return
-      }
-
-      const features = map.queryRenderedFeatures(e.point, { layers: ['report-lines-layer', 'report-points-layer'] })
-      if (!features.length) { setSelReport(null); return }
-      const p = features[0].properties
-      setSelReport({
-        id: p.id, start_chainage: p.start_ch, end_chainage: p.end_ch,
-        start_chainage_val: null, end_chainage_val: null,
-        activity_category: p.category, activity_type: p.type,
-        activity_status: p.status, reporter_name: p.reporter,
-        date_of_activity: p.date, project_name: project,
-        section_name: p.section,
-        start_chainage_lat: null, start_chainage_long: null,
-        end_chainage_lat: null,   end_chainage_long: null,
-      })
-    }
-    map.on('click', onClick)
-    map.on('mouseenter', 'report-lines-layer',    () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'report-lines-layer',    () => { map.getCanvas().style.cursor = '' })
-    map.on('mouseenter', 'report-points-layer',   () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'report-points-layer',   () => { map.getCanvas().style.cursor = '' })
-    map.on('mouseenter', 'report-clusters-layer', () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'report-clusters-layer', () => { map.getCanvas().style.cursor = '' })
 
     /* ── Fit map bounds ─────────────────────────────────────
        If chainage filter is active → zoom to that range.
        Otherwise → fit the entire road.
        Only runs once per distinct (project, chFrom, chTo) — NOT on every
        mapData refresh. Panning/zooming triggers a viewport-scoped refetch
-       (see the data-fetch effect) that updates the same sources in place;
+       (see the data-fetch effect) that updates these overlays in place;
        without this guard, that refresh would re-trigger fitBounds, which
-       fires another moveend, which refetches again — an infinite loop.
+       fires another `idle`, which refetches again — an infinite loop.
     ────────────────────────────────────────────────────────── */
     const fitKey = `${project}|${chFrom || ''}|${chTo || ''}`
     if (mapData.stations.length > 0 && lastFitKeyRef.current !== fitKey) {
@@ -399,30 +351,23 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
                           !isNaN(chFromNum) && !isNaN(chToNum) &&
                           chToNum > chFromNum
 
+      const bounds = new google.maps.LatLngBounds()
       if (hasChFilter) {
-        // Zoom to the filtered chainage range
-        const rangeStations = mapData.stations.filter(
-          s => s.label >= chFromNum! && s.label <= chToNum!
-        )
+        const rangeStations = mapData.stations.filter(s => s.label >= chFromNum! && s.label <= chToNum!)
         const target = rangeStations.length > 0 ? rangeStations : mapData.stations
-        const lngs = target.map(s => s.longitude)
-        const lats = target.map(s => s.latitude)
-        map.fitBounds(
-          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-          { padding: 80, duration: 1200, maxZoom: 16 }
-        )
+        target.forEach(s => bounds.extend({ lat: s.latitude, lng: s.longitude }))
       } else {
-        // Fit entire road
-        const lngs = mapData.stations.map(s => s.longitude)
-        const lats = mapData.stations.map(s => s.latitude)
-        map.fitBounds(
-          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-          { padding: 60, duration: 1200 }
-        )
+        mapData.stations.forEach(s => bounds.extend({ lat: s.latitude, lng: s.longitude }))
+      }
+      map.fitBounds(bounds, 70)
+
+      if (hasChFilter) {
+        // Google's fitBounds has no maxZoom option — clamp after the fact
+        google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+          if ((map.getZoom() ?? 0) > 16) map.setZoom(16)
+        })
       }
     }
-
-    return () => { map.off('click', onClick) }
   }, [mapLoaded, mapData, colorBy, project, chFrom, chTo])
 
   /* ── Render ─────────────────────────────────────────────── */
@@ -528,12 +473,6 @@ export default function HitechMap({ project, chFrom, chTo }: Props) {
       <style>{`
         @media (max-width: 640px) { .hitech-map-frame { height: 340px !important; } }
         @keyframes mapSpin { to { transform: rotate(360deg); } }
-        .mapboxgl-ctrl-group { background: rgba(30,30,34,0.95) !important; border: 1px solid rgba(255,255,255,0.08) !important; }
-        .mapboxgl-ctrl-group button { background: transparent !important; color: #848080 !important; }
-        .mapboxgl-ctrl-group button:hover { background: rgba(255,255,255,0.06) !important; }
-        .mapboxgl-ctrl-attrib { background: rgba(0,0,0,0.6) !important; color: #504e54 !important; font-size: 9px !important; }
-        .mapboxgl-ctrl-attrib a { color: #504e54 !important; }
-        .mapboxgl-ctrl-scale { background: rgba(0,0,0,0.5) !important; border-color: #504e54 !important; color: #848080 !important; font-size: 9px !important; }
       `}</style>
     </div>
   )

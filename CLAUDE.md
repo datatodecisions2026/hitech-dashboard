@@ -28,7 +28,7 @@ src/
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
     SideNav.tsx             # 64px icon rail (Dashboard/Progress), sticky below header, hidden on /login and <640px
-    HitechMap.tsx           # Mapbox GL map — chainage stations + report points, used on /dashboard
+    HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs
@@ -397,7 +397,8 @@ Full documentation of every portal route, its request/response shape, and the un
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only (API routes) |
 | `SESSION_SECRET` | Server only (iron-session) |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | Client (`HitechMap`) — without it, the map on `/dashboard` renders an inline "Mapbox token not set" error instead of failing silently |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Client (`HitechMap`) — without it, the map on `/dashboard` renders an inline "Google Maps API key not set" error instead of failing silently. Must have the Maps JavaScript API enabled and be restricted (HTTP referrer) to this app's actual domain(s) in the Google Cloud Console |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | **Unused as of 2026-07-22** — `HitechMap` no longer reads this (switched to Google Maps). Left in `.env.local` harmlessly; safe to remove once confirmed nothing else references it |
 
 > There is no `.env.local.example` file checked in — create `.env.local` directly with the variables above (and see `sync_progress.py`'s docstring for the two variables the Python sync scripts read from the same file).
 
@@ -406,6 +407,22 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-07-22 — Switch `HitechMap` from Mapbox GL to Google Maps JS API
+
+**Files changed:** `src/components/HitechMap.tsx`, `.env.local`, `package.json`/`package-lock.json` (removed `mapbox-gl`/`@types/mapbox-gl`, added `@googlemaps/js-api-loader`, `@googlemaps/markerclusterer`, `@types/google.maps`)
+
+**What changed:**
+- User lost administrative access to the Mapbox account behind `NEXT_PUBLIC_MAPBOX_TOKEN` (not a technical/performance issue — the token was still working — just no way to manage/rotate it). Rather than risk repeating that, moved to Google Maps JS API under a company-owned Google Cloud project.
+- `HitechMap.tsx` internals rewritten against the Google Maps API surface; the data-fetching effect (project/zoom/bbox-driven fetch from `GET /api/map`, the coarse-then-refined loading sequence, the `refreshing` indicator) is **unchanged** — that logic was always provider-agnostic.
+- Provider-specific mapping: `mapboxgl.Map` → `google.maps.Map` (`mapTypeId: 'hybrid'` for satellite + labels — Google's satellite imagery is bundled into the same Maps JS API product, no separate token/service); GeoJSON `line`/`circle`/`symbol` layers → `google.maps.Polyline` / `google.maps.Marker` objects built and torn down per render (Google has no `source.setData()` equivalent — refs track what's currently on the map so it can be cleared before each rebuild); Mapbox's GeoJSON `cluster: true` source → `@googlemaps/markerclusterer`'s `MarkerClusterer` (its default renderer includes click-to-expand-zoom for free, replacing the manual `getClusterExpansionZoom` call the Mapbox version needed); the `moveend` event → Google's `idle` event (fires once panning/zooming settles, same semantic).
+- **Incidental correctness fix**: the Mapbox version's click handler reconstructed the popup's `ActivityReport` from GeoJSON feature `properties` (a flat primitive bag), which meant `start_chainage_val`/`end_chainage_val`/lat/long fields were always hardcoded `null` regardless of actual data. The Google version's marker/line click handlers close over the real report object directly, so the popup now shows real chainage values.
+- Used `@googlemaps/js-api-loader` v2's functional API (`setOptions()` + `importLibrary()`) — the `Loader` class from v1 is deprecated in this version and doesn't have `.importLibrary()` as an instance method, which surfaced as a `tsc` error during this change (fixed by switching to the module-level functions).
+- Used legacy `google.maps.Marker` rather than the newer `AdvancedMarkerElement` — the latter requires a Map ID to be created in the Cloud Console as an extra one-time setup step; legacy `Marker` needs nothing beyond the API key and works fine with `MarkerClusterer`. Google logs a deprecation notice for `Marker` in the console but has given no discontinuation timeline.
+- **Verified in a real browser**, not just `tsc`/`next build`: used Playwright against a local dev server (mint-session cookie, same pattern as `scripts/visual-check.mjs`) to confirm the map actually renders (satellite imagery, dashed road-alignment line, clustered markers with real counts/colors), that clicking a marker opens the popup with correct data, and that zero console/page errors occur. First attempt showed a completely blank map panel — turned out to be a stale dev server left listening on the test port from earlier work in the same session (new server silently failed to start, so the check was hitting old code); killing that process and restarting resolved it. A second false alarm (`nextjs-portal` "error overlay" detected in the DOM) was the persistent Next.js DevTools indicator badge, present in dev mode regardless of errors — not an actual error.
+- `NEXT_PUBLIC_MAPBOX_TOKEN` is left in `.env.local` unused (harmless) — see Environment Variables above.
+
+**Why:** Direct consequence of losing Mapbox account access (see conversation, not a separate ticket). Scoped as a like-for-like provider swap — same interactivity, same data pipeline, same visual language — not an opportunity to also change functionality, per the user's steer earlier in the conversation not to over-scope this.
 
 ### 2026-07-22 — Fix the dashboard map freezing: level-of-detail chainage sampling + clustering
 
