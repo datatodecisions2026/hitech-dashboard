@@ -10,3 +10,5 @@ out/
 # Local scratch / QA artifacts
 .tmp-*
 *.xlsx
+
+docs/

@@ -61,6 +61,15 @@
       "Bash(curl -s -b hitech-dashboard-session=__TRACKED_VAR__ http://localhost:3000/api/dashboard -o .tmp-dash.json -w 'HTTP %{http_code}\\\\n')",
       "Bash(tail -40 /tmp/nextdev.log)",
       "Bash(git fetch *)",
+      "mcp__claude_ai_Supabase__get_project_url",
+      "mcp__claude_ai_Supabase__get_publishable_keys",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(npx next *)",
+      "Bash(cat /tmp/next-dev.log 2>&1 | tail -100)",
+      "Bash(time curl -s -o /tmp/progress-resp.json -w 'HTTP %{http_code}  total_time=%{time_total}s\\\\n' -H 'Cookie: hitech-dashboard-session=__TRACKED_VAR__' http://localhost:3579/api/progress?project=Coastal%20Road)",
       "Bash(git pull *)"
     ]
   }

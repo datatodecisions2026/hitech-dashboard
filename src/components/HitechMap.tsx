@@ -45,7 +45,7 @@ const statusColor = (s: string) => STATUS_COLORS[s] || '#848080'
 // so a road line is never mistaken for an activity marker/segment.
 const ROAD_PRIMARY   = '#ffffff' // active project's own road
 const ROAD_SECONDARY = '#7d8590' // the other known road, shown dimmed as background context
-const HL_FILTER      = '#fde047' // chainage range(s) covered by an active category/chainage filter
+const HL_FILTER      = '#6366f1' // chainage range(s) covered by an active category/chainage filter — deep indigo, deliberately deeper/more saturated than Construction's pastel blue or Surveying's pastel purple so it doesn't blend into either, and reads clearly against Google's gold-toned road rendering
 const HL_SELECTED    = '#ff2ec4' // the one currently-selected report's own segment
 
 // The two roads with dense-enough data to always show together (Coastal Road
@@ -142,6 +142,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
   // recreates them, so refs track what's currently on the map to clear.
   const primaryLineRef   = useRef<google.maps.Polyline | null>(null)
   const secondaryLineRef = useRef<google.maps.Polyline | null>(null)
+  const highlightLinesRef = useRef<google.maps.Polyline[]>([])
   const tickMarkersRef  = useRef<google.maps.Marker[]>([])
   const reportLinesRef  = useRef<google.maps.Polyline[]>([])
   const reportMarkersRef = useRef<google.maps.Marker[]>([])
@@ -243,6 +244,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
         }
 
         mapRef.current = localMap
+        ;(window as any).__debugMap = localMap
         setMapLoaded(true)
 
         // Clicking empty map area clears the selected-report popup — actual
@@ -275,6 +277,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
       cancelled = true
       primaryLineRef.current?.setMap(null)
       secondaryLineRef.current?.setMap(null)
+      highlightLinesRef.current.forEach(l => l.setMap(null))
       tickMarkersRef.current.forEach(m => m.setMap(null))
       reportLinesRef.current.forEach(l => l.setMap(null))
       clustererRef.current?.clearMarkers()
@@ -293,6 +296,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
     // patch overlays in place.
     primaryLineRef.current?.setMap(null)
     secondaryLineRef.current?.setMap(null)
+    highlightLinesRef.current.forEach(l => l.setMap(null))
     tickMarkersRef.current.forEach(m => m.setMap(null))
     reportLinesRef.current.forEach(l => l.setMap(null))
     clustererRef.current?.clearMarkers()
@@ -372,6 +376,72 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
       return null
     }
     const colorFor = (r: ActivityReport) => colorBy === 'category' ? catColor(r.activity_category) : statusColor(r.activity_status)
+
+    /* ── Filter highlight: paint the road line itself where the active
+       filter's reports fall ──────────────────────────────────────────
+       Category filter → merge every matching report's [start, end] chainage
+       into as few continuous stretches as possible (adjacent/overlapping
+       ranges combine), so a category matching hundreds or thousands of
+       reports still renders as a handful of polylines, not one per report.
+       Chainage-range filter → the range is already explicit, no merging
+       needed. Category takes priority when both are active, same order the
+       fitBounds zoom below already uses, so the zoom and the highlight
+       always agree on which one "wins". */
+    const HL_MERGE_GAP = 500 // metres — ranges within this of each other merge into one stretch
+    const mergeRanges = (ranges: [number, number][]): [number, number][] => {
+      if (ranges.length === 0) return []
+      const sorted = [...ranges].sort((a, b) => a[0] - b[0])
+      const merged: [number, number][] = [[...sorted[0]] as [number, number]]
+      for (let i = 1; i < sorted.length; i++) {
+        const [s, e] = sorted[i]
+        const last = merged[merged.length - 1]
+        if (s <= last[1] + HL_MERGE_GAP) last[1] = Math.max(last[1], e)
+        else merged.push([s, e])
+      }
+      return merged
+    }
+    const chainagePath = (fromCh: number, toCh: number) => {
+      const lo = Math.min(fromCh, toCh), hi = Math.max(fromCh, toCh)
+      const within = mapData!.stations.filter(s => s.label >= lo && s.label <= hi).sort((a, b) => a.label - b.label)
+      const startS = nearestStation(lo)
+      const endS   = nearestStation(hi)
+      const pts = [...within]
+      if (startS && pts[0]?.label !== startS.label) pts.unshift(startS)
+      if (endS && pts[pts.length - 1]?.label !== endS.label) pts.push(endS)
+      return pts.map(s => ({ lat: s.latitude, lng: s.longitude }))
+    }
+
+    let highlightRanges: [number, number][] = []
+    if (category) {
+      const raw: [number, number][] = []
+      mapData.reports.forEach(r => {
+        const s = chainageNum(r.start_chainage_val, r.start_chainage)
+        const e = chainageNum(r.end_chainage_val, r.end_chainage)
+        if (s != null && e != null) raw.push([Math.min(s, e), Math.max(s, e)])
+      })
+      highlightRanges = mergeRanges(raw)
+    } else {
+      const chFromNum = chFrom ? Number(chFrom) : null
+      const chToNum   = chTo   ? Number(chTo)   : null
+      if (chFromNum != null && chToNum != null && !isNaN(chFromNum) && !isNaN(chToNum) && chToNum > chFromNum) {
+        highlightRanges = [[chFromNum, chToNum]]
+      }
+    }
+
+    ;(window as any).__debugHighlightRanges = highlightRanges
+    highlightLinesRef.current = highlightRanges
+      .map(([lo, hi]) => chainagePath(lo, hi))
+      .filter(path => path.length >= 2)
+      .map(path => new google.maps.Polyline({
+        path,
+        strokeColor:   HL_FILTER,
+        strokeOpacity: 0.9,
+        strokeWeight:  6,
+        clickable: false,
+        zIndex: 3,
+        map,
+      }))
+    ;(window as any).__debugHighlightLines = highlightLinesRef.current.map(l => ({ onMap: !!l.getMap(), pathLen: l.getPath().getLength() }))
 
     const reportLines: google.maps.Polyline[] = []
     const reportMarkers: google.maps.Marker[] = []
