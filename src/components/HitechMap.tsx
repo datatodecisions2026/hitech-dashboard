@@ -41,6 +41,25 @@ const STATUS_COLORS: Record<string, string> = {
 const catColor    = (c: string) => CAT_COLORS[c]    || '#848080'
 const statusColor = (s: string) => STATUS_COLORS[s] || '#848080'
 
+// Road-alignment line colors — deliberately outside the activity palette above
+// so a road line is never mistaken for an activity marker/segment.
+const ROAD_PRIMARY   = '#ffffff' // active project's own road
+const ROAD_SECONDARY = '#7d8590' // the other known road, shown dimmed as background context
+const HL_FILTER      = '#fde047' // chainage range(s) covered by an active category/chainage filter
+const HL_SELECTED    = '#ff2ec4' // the one currently-selected report's own segment
+
+// The two roads with dense-enough data to always show together (Coastal Road
+// as the "home" project, Sokoto Badagry as its background pair) — matches
+// PROJECT_ID_MAP's Coastal Road / SBS Sokoto Badagry highway entries in
+// src/app/api/map/route.ts. Any other project shows on its own, no pairing.
+const COASTAL = 'Coastal Road'
+const SOKOTO  = 'SBS Sokoto Badagry highway'
+const isKnownRoad = (p: string) => {
+  const s = p.toLowerCase()
+  return s.includes('coastal') || s.includes('sokoto') || s.includes('sbs')
+}
+const matchRoad = (p: string): string => p.toLowerCase().includes('sokoto') || p.toLowerCase().includes('sbs') ? SOKOTO : COASTAL
+
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface Station {
@@ -105,6 +124,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<google.maps.Map | null>(null)
   const [mapData,    setMapData]    = useState<MapData | null>(null)
+  const [secondaryStations, setSecondaryStations] = useState<Station[]>([])
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error,      setError]      = useState('')
@@ -116,10 +136,12 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
   const prevCategoryRef = useRef<string | undefined>(undefined)
   const lastFitKeyRef   = useRef<string>('')
   const lastFocusIdRef  = useRef<number | null>(null)
+  const secondaryFetchedRef = useRef<string | null>(null)
 
   // Overlay objects have no Mapbox-style setData() — each rebuild clears and
   // recreates them, so refs track what's currently on the map to clear.
-  const stationLineRef  = useRef<google.maps.Polyline | null>(null)
+  const primaryLineRef   = useRef<google.maps.Polyline | null>(null)
+  const secondaryLineRef = useRef<google.maps.Polyline | null>(null)
   const tickMarkersRef  = useRef<google.maps.Marker[]>([])
   const reportLinesRef  = useRef<google.maps.Polyline[]>([])
   const reportMarkersRef = useRef<google.maps.Marker[]>([])
@@ -163,6 +185,26 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
       .then(d => { setMapData(d); setLoading(false); setRefreshing(false) })
       .catch(() => { setError('Failed to load map data'); setLoading(false); setRefreshing(false) })
   }, [project, category, viewState])
+
+  /* ── Load the "other" known road's line as static background context ────
+     Only fires when the active project is one of the two paired roads
+     (Coastal Road / Sokoto Badagry) — anything else shows on its own, no
+     pairing. Fetched once per distinct secondary road (a fixed coarse zoom,
+     not tied to the viewport — it's static context, not something the user
+     pans around on directly), so switching between the two paired projects
+     doesn't re-fetch a line already held in state. */
+  useEffect(() => {
+    if (!isKnownRoad(project)) { setSecondaryStations([]); secondaryFetchedRef.current = null; return }
+    const activeRoad    = matchRoad(project)
+    const secondaryRoad = activeRoad === COASTAL ? SOKOTO : COASTAL
+    if (secondaryFetchedRef.current === secondaryRoad) return
+    secondaryFetchedRef.current = secondaryRoad
+
+    fetch(`/api/map?${new URLSearchParams({ project: secondaryRoad, zoom: '9' }).toString()}`)
+      .then(r => r.json())
+      .then(d => setSecondaryStations(d.stations ?? []))
+      .catch(() => {})
+  }, [project])
 
   /* ── Initialise Google Maps once ─────────────────────────── */
   useEffect(() => {
@@ -231,7 +273,8 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
 
     return () => {
       cancelled = true
-      stationLineRef.current?.setMap(null)
+      primaryLineRef.current?.setMap(null)
+      secondaryLineRef.current?.setMap(null)
       tickMarkersRef.current.forEach(m => m.setMap(null))
       reportLinesRef.current.forEach(l => l.setMap(null))
       clustererRef.current?.clearMarkers()
@@ -248,30 +291,43 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
     // Full rebuild each time — report volume here is bounded (≤1000, see
     // /api/map), so this is cheap; there's no Mapbox-style setData() to
     // patch overlays in place.
-    stationLineRef.current?.setMap(null)
+    primaryLineRef.current?.setMap(null)
+    secondaryLineRef.current?.setMap(null)
     tickMarkersRef.current.forEach(m => m.setMap(null))
     reportLinesRef.current.forEach(l => l.setMap(null))
     clustererRef.current?.clearMarkers()
 
-    /* Station road line */
+    /* Secondary (background) road — the other of the two paired roads, drawn
+       first / lower zIndex so the active project's own line always sits on
+       top of it. Not shown at all for projects outside the known pair. */
+    if (secondaryStations.length > 0) {
+      const sortedSecondary = [...secondaryStations].sort((a, b) => a.label - b.label)
+      secondaryLineRef.current = new google.maps.Polyline({
+        path: sortedSecondary.map(s => ({ lat: s.latitude, lng: s.longitude })),
+        strokeColor:   ROAD_SECONDARY,
+        strokeOpacity: 0.75,
+        strokeWeight:  2.5,
+        clickable: false,
+        zIndex: 1,
+        map,
+      })
+    }
+
+    /* Primary (active project) road line */
     const sortedStations = [...mapData.stations].sort((a, b) => a.label - b.label)
-    stationLineRef.current = new google.maps.Polyline({
+    primaryLineRef.current = new google.maps.Polyline({
       path: sortedStations.map(s => ({ lat: s.latitude, lng: s.longitude })),
-      strokeColor:   '#ffffff',
-      strokeOpacity: 0.001, // near-invisible solid — the dashed look comes from the icons pattern below
-      strokeWeight:  1.5,
-      icons: [{
-        icon:   { path: 'M 0,-1 0,1', strokeOpacity: 0.2, strokeColor: '#ffffff', scale: 2 },
-        offset: '0',
-        repeat: '12px',
-      }],
+      strokeColor:   ROAD_PRIMARY,
+      strokeOpacity: 0.9,
+      strokeWeight:  3,
       clickable: false,
-      zIndex: 1,
+      zIndex: 2,
       map,
     })
 
     /* Chainage tick marks every 1 km — label sits above the point, matching
-       Mapbox's text-offset:[0,-1.2] / text-anchor:'bottom' */
+       Mapbox's text-offset:[0,-1.2] / text-anchor:'bottom'. Bold + slightly
+       larger than before so labels stay legible over satellite imagery. */
     tickMarkersRef.current = mapData.stations
       .filter(s => s.label % 1000 === 0)
       .map(s => new google.maps.Marker({
@@ -283,7 +339,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
           anchor: new google.maps.Point(0, 0),
           labelOrigin: new google.maps.Point(0, -8),
         },
-        label: { text: s.chainage, color: D.amber, fontSize: '10px', fontFamily: 'var(--font-mono)' },
+        label: { text: s.chainage, color: D.amber, fontSize: '13px', fontWeight: '700', fontFamily: 'var(--font-mono)' },
         clickable: false,
         zIndex: 2,
       }))
@@ -463,7 +519,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
         }
       }
     }
-  }, [mapLoaded, mapData, colorBy, project, category, chFrom, chTo])
+  }, [mapLoaded, mapData, secondaryStations, colorBy, project, category, chFrom, chTo])
 
   /* ── Focus a specific report (e.g. clicked from a list elsewhere on the
      dashboard) ─────────────────────────────────────────────
