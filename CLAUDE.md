@@ -412,6 +412,19 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-07-22 — Fix report markers not landing on their actual chainage
+
+**Files changed:** `src/components/HitechMap.tsx`
+
+**What changed:**
+- User reported report pins not matching their stated chainage. Investigation (direct SQL against `hitech_report_hitechreport`) found the raw `start_chainage_lat`/`start_chainage_long` GPS fields — which the map previously preferred over chainage-derived position — are unreliable at scale: on Coastal Road, one single coordinate (6.422598, 3.427533) is reused, unchanged, across **2,018 of ~9,704 reports** spanning completely different chainages; on SBS Sokoto Badagry highway, one coordinate is shared by 20 reports with 20 distinct chainages. This looks like a stuck/cached GPS fix in the field-collection app (or a default location used when a real fix wasn't available), not genuine per-report readings. 3,808 reports total have *some* direct lat/long; a large fraction of those are one of these reused "anchor" points.
+- Reversed the lookup priority: reports are now positioned by looking up their `start_chainage_val`/`end_chainage_val` (falling back to parsing `start_chainage`/`end_chainage` text if `_val` is missing) against `mapData.stations` — the same station table used to draw the road line, so a chainage-derived position always lands correctly on the actual road. Raw lat/long is now only used as a last resort when no chainage value exists at all.
+- Since `mapData.stations` is a *sampled* subset (see the 2026-07-22 "map freezing" entry below — LOD sampling, not exhaustive), an exact-label lookup (the old `Map.get(label)`) would miss almost every report. Replaced with `nearestStation()`, a nearest-by-label linear scan over the current (small, ≤~900-row) sampled set — cheap at this scale (≤1000 reports × ≤900 stations, single-digit ms) and self-improving: accuracy tightens as the user zooms in and the sampling interval shrinks.
+- The existing "endTooFar" sanity guard (previous changelog entry, for the stray-line-into-the-sea bug) is kept as a defensive fallback for the remaining raw-lat/long-only cases.
+- Verified live: for the specific report the user flagged (id 80852, "Set out - survey boreholes", chainage 165201→166401, previously plotted at a bogus GPS point ~40km off-road), the marker now sits directly on the road alignment. Zoomed into the affected cluster on SBS Sokoto Badagry highway — points that were previously all piled at one wrong location now correctly follow the road's actual curve through the terrain. `tsc --noEmit` and `next build` both pass.
+
+**Why:** Direct user report: "the chainages are not accurate with project, the points are not leading to the exact chainages, the chainages in the report are different from what's on the map." Root cause was a pre-existing data-reliability issue in the source GPS fields (present since the original Mapbox version too — not introduced by any prior change this session), surfaced now because the report-focus and category-zoom features added this session made mispositioned points much more visible/reachable than before.
+
 ### 2026-07-22 — Fix a stray report line cutting across open water; add category filter+zoom to the map
 
 **Files changed:** `src/components/HitechMap.tsx`, `src/app/api/map/route.ts`

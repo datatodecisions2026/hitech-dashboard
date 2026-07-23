@@ -288,28 +288,50 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
         zIndex: 2,
       }))
 
-    /* Build lookup: label → station, for reports without direct lat/lng */
-    const stMap = new Map(mapData.stations.map(s => [s.label, s]))
+    // Position reports by chainage (nearest sampled station) rather than by
+    // their raw GPS fields — those turn out to be unreliable at scale: e.g.
+    // one single coordinate on Coastal Road is reused, unchanged, across
+    // 2,018 reports spanning completely different chainages (looks like a
+    // stuck/cached GPS fix in the field-collection app, not a real per-
+    // report reading). Chainage values, by contrast, always land correctly
+    // on the road because they're looked up against the same station table
+    // used to draw the road line itself. `mapData.stations` is a sampled
+    // subset (see /api/map), so this is a nearest-label match, not exact —
+    // still far more accurate than a possibly-stale GPS pin.
+    const nearestStation = (targetLabel: number): Station | undefined => {
+      let best: Station | undefined
+      let bestDist = Infinity
+      for (const s of mapData!.stations) {
+        const d = Math.abs(s.label - targetLabel)
+        if (d < bestDist) { best = s; bestDist = d }
+      }
+      return best
+    }
+    const chainageNum = (val: number | null | undefined, text: number | null | undefined): number | null => {
+      if (val != null && !isNaN(val)) return val
+      if (text != null) {
+        const n = Number(String(text).replace('+', ''))
+        if (!isNaN(n)) return n
+      }
+      return null
+    }
     const colorFor = (r: ActivityReport) => colorBy === 'category' ? catColor(r.activity_category) : statusColor(r.activity_status)
 
     const reportLines: google.maps.Polyline[] = []
     const reportMarkers: google.maps.Marker[] = []
 
     mapData.reports
-      .filter(r => r.start_chainage != null || r.start_chainage_lat != null)
+      .filter(r => r.start_chainage != null || r.start_chainage_val != null || r.start_chainage_lat != null)
       .forEach(r => {
-        const startLng = r.start_chainage_long
-          ? parseFloat(r.start_chainage_long)
-          : stMap.get(Math.round(r.start_chainage ?? r.start_chainage_val ?? 0))?.longitude
-        const startLat = r.start_chainage_lat
-          ? parseFloat(r.start_chainage_lat)
-          : stMap.get(Math.round(r.start_chainage ?? r.start_chainage_val ?? 0))?.latitude
-        const endLng = r.end_chainage_long
-          ? parseFloat(r.end_chainage_long)
-          : stMap.get(Math.round(r.end_chainage ?? r.end_chainage_val ?? 0))?.longitude
-        const endLat = r.end_chainage_lat
-          ? parseFloat(r.end_chainage_lat)
-          : stMap.get(Math.round(r.end_chainage ?? r.end_chainage_val ?? 0))?.latitude
+        const startCh = chainageNum(r.start_chainage_val, r.start_chainage)
+        const startStation = startCh != null ? nearestStation(startCh) : undefined
+        const startLng = startStation?.longitude ?? (r.start_chainage_long ? parseFloat(r.start_chainage_long) : undefined)
+        const startLat = startStation?.latitude  ?? (r.start_chainage_lat  ? parseFloat(r.start_chainage_lat)  : undefined)
+
+        const endCh = chainageNum(r.end_chainage_val, r.end_chainage)
+        const endStation = endCh != null ? nearestStation(endCh) : undefined
+        const endLng = endStation?.longitude ?? (r.end_chainage_long ? parseFloat(r.end_chainage_long) : undefined)
+        const endLat = endStation?.latitude  ?? (r.end_chainage_lat  ? parseFloat(r.end_chainage_lat)  : undefined)
 
         if (!startLng || !startLat || isNaN(startLng) || isNaN(startLat)) return
 
