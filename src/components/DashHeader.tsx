@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { useTheme } from '@/lib/theme'
+import ThemeToggle from './ThemeToggle'
 
 interface SessionUser {
   first_name: string
@@ -12,6 +14,8 @@ interface SessionUser {
 export default function DashHeader() {
   const router   = useRouter()
   const pathname = usePathname()
+  const { theme, colors: D } = useTheme()
+  const isLight = theme === 'light'
   const [user, setUser]           = useState<SessionUser | null>(null)
   const [hovLogout, setHovLogout] = useState(false)
 
@@ -37,26 +41,40 @@ export default function DashHeader() {
     { label: 'Personnel', href: '/personnel' },
   ]
 
+  const headerBg = isLight ? '#ffffff' : '#1c1c1f'
+  const headerShadow = isLight
+    ? '0 2px 8px rgba(15,23,42,0.08), 0 1px 0 rgba(0,0,0,0.03)'
+    : '0 2px 8px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.5)'
+  const pillBg      = isLight ? '#eef1f5' : '#252528'
+  const pillRaised   = isLight
+    ? '2px 2px 6px rgba(15,23,42,0.07), -1px -1px 2px rgba(255,255,255,0.7)'
+    : '2px 2px 6px rgba(0,0,0,0.7), -1px -1px 2px rgba(255,255,255,0.045), inset 0 1px 0 rgba(255,255,255,0.055)'
+  const pillRaisedHov = isLight
+    ? '3px 3px 8px rgba(15,23,42,0.09), -1px -1px 3px rgba(255,255,255,0.75)'
+    : '3px 3px 10px rgba(0,0,0,0.78), -1px -1px 3px rgba(255,255,255,0.052), inset 0 1px 0 rgba(255,255,255,0.07)'
+  const hoverText = isLight ? D.text : '#848080'
+
   return (
     <header className="dash-header" style={{
       position: 'sticky', top: 0, zIndex: 100, height: 52,
-      background: '#1c1c1f',
-      backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.005) 5px, rgba(255,255,255,0.005) 6px)',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.5)',
+      backgroundColor: headerBg,
+      backgroundImage: isLight ? 'none' : 'repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.005) 5px, rgba(255,255,255,0.005) 6px)',
+      boxShadow: headerShadow,
       display: 'flex', alignItems: 'center',
       padding: '0 24px', gap: 14, flexShrink: 0, overflowX: 'auto',
+      transition: 'background-color 0.25s ease, box-shadow 0.25s ease',
     }}>
 
       {/* Logo */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo.jpg" alt="Hitech" style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, boxShadow: '0 0 0 1px rgba(255,255,255,0.08)' }} />
+      <img src="/logo.jpg" alt="Hitech" style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, boxShadow: isLight ? '0 0 0 1px rgba(15,23,42,0.1)' : '0 0 0 1px rgba(255,255,255,0.08)' }} />
 
       {/* Wordmark */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>
-        <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1rem', letterSpacing: '0.12em', color: '#d4a040' }}>
+        <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1rem', letterSpacing: '0.12em', color: D.amber }}>
           HITECH
         </span>
-        <span className="dh-subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', letterSpacing: '0.16em', color: '#504e54', textTransform: 'uppercase' }}>
+        <span className="dh-subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', letterSpacing: '0.16em', color: D.muted, textTransform: 'uppercase' }}>
           Analytics
         </span>
       </div>
@@ -72,17 +90,17 @@ export default function DashHeader() {
               style={{
                 fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em',
                 textTransform: 'uppercase', textDecoration: 'none',
-                color: isActive ? '#d4a040' : '#504e54',
-                background: isActive ? 'rgba(212,160,64,0.08)' : '#252528',
-                border: isActive ? '1px solid rgba(212,160,64,0.25)' : '1px solid transparent',
+                color: isActive ? D.amber : D.muted,
+                background: isActive ? `${D.amber}15` : pillBg,
+                border: isActive ? `1px solid ${D.amber}40` : '1px solid transparent',
                 borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
                 boxShadow: isActive
-                  ? '0 0 8px rgba(212,160,64,0.15), inset 0 1px 0 rgba(255,255,255,0.07)'
-                  : '2px 2px 6px rgba(0,0,0,0.7), -1px -1px 2px rgba(255,255,255,0.045), inset 0 1px 0 rgba(255,255,255,0.055)',
+                  ? `0 0 8px ${D.amber}28, inset 0 1px 0 rgba(255,255,255,${isLight ? 0.5 : 0.07})`
+                  : pillRaised,
                 transition: 'color 0.15s ease, background 0.15s ease, border-color 0.15s ease',
               }}
-              onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLAnchorElement).style.color = '#848080' }}
-              onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLAnchorElement).style.color = '#504e54' }}
+              onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLAnchorElement).style.color = hoverText }}
+              onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLAnchorElement).style.color = D.muted }}
             >
               {link.label}
             </a>
@@ -93,9 +111,11 @@ export default function DashHeader() {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
+      <ThemeToggle />
+
       {/* User name */}
       {user && (
-        <span className="dh-username" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: '#504e54', letterSpacing: '0.06em', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <span className="dh-username" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: D.muted, letterSpacing: '0.06em', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {user.first_name} {user.last_name}
         </span>
       )}
@@ -107,12 +127,10 @@ export default function DashHeader() {
         onMouseLeave={() => setHovLogout(false)}
         style={{
           fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: hovLogout ? '#848080' : '#504e54',
-          background: '#252528', border: 'none', borderRadius: 6,
+          textTransform: 'uppercase', color: hovLogout ? hoverText : D.muted,
+          background: pillBg, border: 'none', borderRadius: 6,
           padding: '4px 10px', cursor: 'pointer', flexShrink: 0,
-          boxShadow: hovLogout
-            ? '3px 3px 10px rgba(0,0,0,0.78), -1px -1px 3px rgba(255,255,255,0.052), inset 0 1px 0 rgba(255,255,255,0.07)'
-            : '2px 2px 6px rgba(0,0,0,0.7), -1px -1px 2px rgba(255,255,255,0.045), inset 0 1px 0 rgba(255,255,255,0.055)',
+          boxShadow: hovLogout ? pillRaisedHov : pillRaised,
           transition: 'box-shadow 0.15s ease, color 0.15s ease',
         }}
       >

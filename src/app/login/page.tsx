@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTheme } from '@/lib/theme'
 
 export default function LoginPage() {
+  const { theme, colors: D } = useTheme()
+  const isLight = theme === 'light'
   const router = useRouter()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword]     = useState('')
@@ -34,23 +37,23 @@ export default function LoginPage() {
 
   const inputBase: React.CSSProperties = {
     width: '100%', padding: '12px 14px',
-    background: '#1d1a16', border: '1px solid rgba(237,232,222,0.14)',
-    borderRadius: 11, color: '#ede8de', fontSize: '0.92rem',
+    background: D.panel2, border: `1px solid ${D.border}`,
+    borderRadius: 11, color: D.text, fontSize: '0.92rem',
     outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
     transition: 'border-color 0.25s, box-shadow 0.3s',
   }
 
   const focus = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.style.borderColor = '#d4a040'
-    e.target.style.boxShadow = '0 0 0 3px rgba(212,160,64,0.18)'
+    e.target.style.borderColor = D.amber
+    e.target.style.boxShadow = `0 0 0 3px ${D.amber}2e`
   }
   const blur = (e: React.FocusEvent<HTMLInputElement>) => {
-    e.target.style.borderColor = 'rgba(237,232,222,0.14)'
+    e.target.style.borderColor = D.border
     e.target.style.boxShadow = 'none'
   }
 
   return (
-    <main style={{ minHeight: 'calc(100vh - 52px)', background: '#080604', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', padding: '24px 16px' }}>
+    <main style={{ minHeight: 'calc(100vh - 52px)', background: D.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', padding: '24px 16px' }}>
       {/* Ambient glow */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
@@ -58,7 +61,7 @@ export default function LoginPage() {
         <div style={{
           position: 'absolute', top: '-20%', left: '50%', transform: 'translateX(-50%)',
           width: '70vw', height: '70vw', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(212,160,64,0.07) 0%, transparent 70%)',
+          background: `radial-gradient(circle, ${D.amber}12 0%, transparent 70%)`,
           filter: 'blur(40px)',
         }} />
       </div>
@@ -74,34 +77,34 @@ export default function LoginPage() {
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div style={{
               position: 'absolute', inset: -12, borderRadius: 28,
-              background: 'radial-gradient(circle, rgba(212,160,64,0.18) 0%, transparent 80%)',
+              background: `radial-gradient(circle, ${D.amber}2e 0%, transparent 80%)`,
               filter: 'blur(8px)', pointerEvents: 'none',
             }} />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.jpg" alt="Hitech" style={{
               position: 'relative', width: 88, height: 88, borderRadius: 18,
-              boxShadow: '0 0 0 2px rgba(212,160,64,0.22), 0 12px 40px rgba(0,0,0,0.6)',
+              boxShadow: `0 0 0 2px ${D.amber}38, 0 12px 40px rgba(0,0,0,${isLight ? 0.12 : 0.6})`,
               display: 'block', marginBottom: 14,
             }} />
           </div>
-          <div style={{ fontFamily: 'var(--font-loader)', fontSize: '1.5rem', letterSpacing: '0.2em', color: '#d4a040' }}>
+          <div style={{ fontFamily: 'var(--font-loader)', fontSize: '1.5rem', letterSpacing: '0.2em', color: D.amber }}>
             HITECH
           </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.2em', color: '#504e54', textTransform: 'uppercase', marginTop: 2 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.2em', color: D.muted, textTransform: 'uppercase', marginTop: 2 }}>
             Analytics Dashboard
           </div>
         </div>
 
         {/* Card */}
         <div style={{
-          background: 'linear-gradient(160deg, #181410 0%, #110f0c 100%)',
-          border: '1px solid rgba(237,232,222,0.09)',
+          background: `linear-gradient(160deg, ${D.panel} 0%, ${D.bg} 100%)`,
+          border: `1px solid ${D.border}`,
           borderRadius: 20, padding: '28px 24px',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+          boxShadow: `0 24px 80px rgba(0,0,0,${isLight ? 0.1 : 0.6})`,
         }}>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
-              <label style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9e9387', marginBottom: 7 }}>
+              <label style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: D.muted, marginBottom: 7 }}>
                 Email
               </label>
               <input
@@ -113,7 +116,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9e9387', marginBottom: 7 }}>
+              <label style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: D.muted, marginBottom: 7 }}>
                 Password
               </label>
               <div style={{ position: 'relative' }}>
@@ -124,7 +127,7 @@ export default function LoginPage() {
                   onFocus={focus} onBlur={blur}
                 />
                 <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: showPw ? '#d4a040' : '#655d53', fontSize: '1rem', lineHeight: 1 }}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: showPw ? D.amber : D.sub, fontSize: '1rem', lineHeight: 1 }}
                   aria-label={showPw ? 'Hide password' : 'Show password'}>
                   {showPw ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -144,9 +147,9 @@ export default function LoginPage() {
 
             {error && (
               <div style={{
-                background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)',
+                background: `${D.red}14`, border: `1px solid ${D.red}40`,
                 borderRadius: 10, padding: '10px 14px',
-                fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: '#f87171',
+                fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: D.red,
               }}>
                 ⚠ {error}
               </div>
@@ -154,12 +157,12 @@ export default function LoginPage() {
 
             <button type="submit" disabled={loading} style={{
               width: '100%', padding: '14px',
-              background: loading ? 'rgba(212,160,64,0.5)' : '#d4a040',
+              background: loading ? `${D.amber}80` : D.amber,
               color: '#1a1410', border: 'none', borderRadius: 11,
               fontFamily: 'var(--font-loader)', fontWeight: 400, fontSize: '1rem',
               cursor: loading ? 'not-allowed' : 'pointer',
               letterSpacing: '0.12em',
-              boxShadow: loading ? 'none' : '0 4px 24px rgba(212,160,64,0.28)',
+              boxShadow: loading ? 'none' : `0 4px 24px ${D.amber}48`,
               transition: 'background 0.2s, box-shadow 0.2s',
               marginTop: 4,
             }}>

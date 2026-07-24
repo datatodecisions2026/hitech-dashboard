@@ -22,6 +22,38 @@ async function fetchAll<T = Record<string, unknown>>(query: any): Promise<T[]> {
   return all
 }
 
+// Root cause (found via a standalone concurrency test, scripts/concurrency-test.mjs,
+// that isolated this from the Next.js/dev-server layer entirely): under this
+// app's real concurrent load (5+ simultaneous progress_* RPC calls per
+// request via Promise.all, against a DB instance with a tiny parallel/CPU
+// budget), an individual query occasionally runs long enough to exceed the
+// `authenticator` role's `statement_timeout` (8s, a Supabase-wide default —
+// deliberately NOT overridden here; that's a platform-level guardrail
+// against runaway queries for every route, not something to loosen for one
+// endpoint) and gets canceled by Postgres with error 57014. The bug that
+// actually reached users wasn't the timeout itself — it's that this route
+// never checked `.error` on any RPC result, so a canceled query's `data:
+// null` silently became `(data?.[0] ?? {})` → every count reads back as an
+// honest-looking 0 (a fully-built, HTTP 200 response) instead of a visible
+// failure. Retrying once on error is a reasonable mitigation (the retry
+// isn't competing with the same 8-way concurrent burst that caused the
+// original contention, since 4 of that burst's siblings have often already
+// resolved by the time one straggler needs a retry) — but if the retry
+// ALSO fails, that's a real, sustained problem and must be surfaced, not
+// silently zeroed again.
+async function rpcWithRetry<T = any>(
+  name: string,
+  params: Record<string, unknown>
+): Promise<{ data: T | null; error: any }> {
+  let result = await supabase.rpc(name, params)
+  if (result.error) {
+    console.error(`[progress] ${name} failed, retrying once:`, result.error.message)
+    result = await supabase.rpc(name, params)
+    if (result.error) console.error(`[progress] ${name} failed again on retry:`, result.error.message)
+  }
+  return result
+}
+
 export async function GET(req: NextRequest) {
   const res = NextResponse.json({})
   const session = await getIronSession<AppSession>(req, res, sessionOptions)
@@ -34,7 +66,6 @@ export async function GET(req: NextRequest) {
   const filterMonth  = searchParams.get('month')   || ''
   const filterChFrom = searchParams.get('ch_from') || ''
   const filterChTo   = searchParams.get('ch_to')   || ''
-  const projectLike  = `%${project.split(' ')[0]}%`
 
   const chFromNum = Number(filterChFrom)
   const chToNum   = Number(filterChTo)
@@ -44,8 +75,18 @@ export async function GET(req: NextRequest) {
   // entity-level aggregation below runs in Postgres via RPC (see migration
   // add_progress_aggregation_rpcs) instead of pulling the whole table into
   // Node and reducing it in JS, which is what was timing out.
+  //
+  // project_name is matched via ilike(project) with NO wildcards — a
+  // case-insensitive EXACT match (needed because hitech_report_hitechreport
+  // has inconsistent casing, e.g. "Coastal road" vs "Coastal Road"). This
+  // used to be `ilike('%' + firstWord + '%')`, a substring wildcard that's
+  // meaningfully more expensive per-row than an exact comparison — measured
+  // ~30% slower in EXPLAIN ANALYZE — and was never actually needed for
+  // partial/fuzzy matching in practice (there's no project whose name is a
+  // superset of another's here, and the frontend always requests the
+  // literal name "Coastal Road").
   const rpcFilters = {
-    p_project_like: projectLike,
+    p_project: project,
     p_entity:  filterEntity || null,
     p_side:    filterSide   || null,
     p_month:   filterMonth  || null,
@@ -65,7 +106,7 @@ export async function GET(req: NextRequest) {
   let blocksQuery = supabase
     .from('hitech_construction_blocks')
     .select('entity_name, side, date_started, date_completed, total_segments, planned_start, block_start, block_end, completion_global_id, report_id')
-    .ilike('project_name', projectLike)
+    .ilike('project_name', project)
     .order('date_started', { ascending: true })
 
   if (filterEntity) blocksQuery = (blocksQuery as any).eq('entity_name', filterEntity)
@@ -81,7 +122,7 @@ export async function GET(req: NextRequest) {
     let q = supabase
       .from('hitech_construction_boq')
       .select('description, activity_category, activity_type, qty, unit, rate, amount')
-      .ilike('project_name', projectLike)
+      .ilike('project_name', project)
       .order('activity_category', { ascending: true })
     if (filterEntity) q = (q as any).ilike('activity_type', `%${filterEntity}%`)
     return q
@@ -91,7 +132,7 @@ export async function GET(req: NextRequest) {
     let q = supabase
       .from('hitech_construction_boq')
       .select('activity_category, activity_type, qty, amount')
-      .ilike('project_name', projectLike)
+      .ilike('project_name', project)
     if (filterEntity) q = (q as any).ilike('activity_type', `%${filterEntity}%`)
     return q
   })()
@@ -109,7 +150,7 @@ export async function GET(req: NextRequest) {
       let q = supabase
         .from('hitech_report_hitechreport')
         .select('id, activity_type, activity_category, activity_status, date_of_activity, reporter_name, project_name, section_name, start_chainage, start_chainage_val, globalid')
-        .ilike('project_name', projectLike)
+        .ilike('project_name', project)
         .order('date_of_activity', { ascending: false })
         .limit(2000)
       if (filterEntity) q = (q as any).ilike('activity_type', `%${filterEntity}%`)
@@ -120,12 +161,28 @@ export async function GET(req: NextRequest) {
       return q
     })(),
 
-    supabase.rpc('progress_summary_counts', rpcFilters),
-    supabase.rpc('progress_unique_entity_names', { p_project_like: projectLike }),
-    supabase.rpc('progress_monthly_breakdown', rpcFilters),
-    supabase.rpc('progress_curve', rpcFilters),
-    supabase.rpc('progress_delay_rows', { ...rpcFilters, p_limit: 1000 }),
+    rpcWithRetry('progress_summary_counts', rpcFilters),
+    rpcWithRetry('progress_unique_entity_names', { p_project: project }),
+    rpcWithRetry('progress_monthly_breakdown', rpcFilters),
+    rpcWithRetry('progress_curve', rpcFilters),
+    rpcWithRetry('progress_delay_rows', { ...rpcFilters, p_limit: 1000 }),
   ])
+
+  // Surface a real failure instead of silently building a response full of
+  // convincing-looking zeros — see the rpcWithRetry comment above for why
+  // this matters here specifically (a canceled query used to look exactly
+  // like "0% complete, 0 delayed" instead of an error).
+  const rpcErrors = [
+    ['progress_summary_counts', summaryCountsRes.error],
+    ['progress_unique_entity_names', uniqueEntitiesRes.error],
+    ['progress_monthly_breakdown', monthlyRes.error],
+    ['progress_curve', curveRes.error],
+    ['progress_delay_rows', delayRowsRes.error],
+  ].filter(([, err]) => err) as [string, any][]
+  if (rpcErrors.length) {
+    console.error('[progress] giving up after retry:', rpcErrors.map(([name, err]) => `${name}: ${err.message}`).join('; '))
+    return NextResponse.json({ error: 'Failed to load progress data, please retry.' }, { status: 503 })
+  }
 
   const blocksArr   = blocks   as any[]
   const boqArr      = boqItemsRes.data ?? []
@@ -155,7 +212,7 @@ export async function GET(req: NextRequest) {
     let lq = supabase
       .from('hitech_construction_entities')
       .select('global_id')
-      .ilike('project_name', projectLike)
+      .ilike('project_name', project)
       .in('global_id', reportGlobalIds)
       .not('report_id', 'is', null)
     if (filterEntity) lq = (lq as any).eq('entity_name', filterEntity)

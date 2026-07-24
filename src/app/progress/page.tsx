@@ -1,35 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
-
-/* ── Design tokens ─────────────────────────────────────────── */
-const D = {
-  bg:     '#0e0e10',
-  panel:  '#141416',
-  panel2: '#1a1a1e',
-  border: 'rgba(255,255,255,0.06)',
-  text:   '#e8e2d8',
-  muted:  '#7a7570',
-  sub:    '#3d3b42',
-  amber:  '#d4a040',
-  amberL: '#f0c060',
-  amberD: '#8a6018',
-  green:  '#34d399',
-  blue:   '#60a5fa',
-  red:    '#f87171',
-  purple: '#a78bfa',
-  gold:   'linear-gradient(135deg, #d4a040 0%, #f0c060 50%, #b8860b 100%)',
-}
-
-const GLOW_AMBER  = '0 0 20px rgba(212,160,64,0.15), 0 0 60px rgba(212,160,64,0.05)'
-const GLOW_GREEN  = '0 0 20px rgba(52,211,153,0.15)'
-const GLOW_RED    = '0 0 20px rgba(248,113,113,0.15)'
-const SH_PANEL    = '0 4px 24px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)'
-const SH_PANELLG  = '0 10px 36px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 32px rgba(212,160,64,0.05)'
-const SH_CARD     = '0 2px 12px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.05)'
-const SH_CARDLG   = '0 10px 36px rgba(0,0,0,0.82), 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(212,160,64,0.08)'
-const SH_INSET    = 'inset 0 2px 8px rgba(0,0,0,0.6), inset 0 1px 0 rgba(0,0,0,0.3)'
-const BORDER_GLOW = '1px solid rgba(212,160,64,0.15)'
+import { useTheme } from '@/lib/theme'
 
 /* ── Shared motion tokens ──────────────────────────────────── */
 const EASE        = 'cubic-bezier(0.16,1,0.3,1)'
@@ -98,16 +70,17 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
 
 /* ── Panel ─────────────────────────────────────────────────── */
 function Panel({ children, title, style: st }: { children: React.ReactNode; title: string; style?: React.CSSProperties }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [hov, setHov] = useState(false)
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? BORDER_GLOW : `1px solid ${D.border}`, boxShadow: hov ? SH_PANELLG : SH_PANEL, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
+      style={{ background: D.panel, borderRadius: 16, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? SH.borderGlow : `1px solid ${D.border}`, boxShadow: hov ? SH.panelLg : SH.panel, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 8px ${D.amber}` }} />
         </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: D.muted, background: '#0e0e10', padding: '2px 10px', borderRadius: 4, border: `1px solid ${D.border}` }}>{title}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: D.muted, background: D.bg, padding: '2px 10px', borderRadius: 4, border: `1px solid ${D.border}` }}>{title}</span>
       </div>
       {children}
     </div>
@@ -115,7 +88,9 @@ function Panel({ children, title, style: st }: { children: React.ReactNode; titl
 }
 
 /* ── KPI Card ──────────────────────────────────────────────── */
-function KPICard({ label, value, color = D.amber, icon, suffix = '', delay = 0, glow }: { label: string; value: number; color?: string; icon: React.ReactNode; suffix?: string; delay?: number; glow?: string }) {
+function KPICard({ label, value, color, icon, suffix = '', delay = 0, glow }: { label: string; value: number; color?: string; icon: React.ReactNode; suffix?: string; delay?: number; glow?: string }) {
+  const { colors: D, shadows: SH } = useTheme()
+  const col = color ?? D.amber
   const [vis, setVis] = useState(false)
   const [hov, setHov] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -129,15 +104,15 @@ function KPICard({ label, value, color = D.amber, icon, suffix = '', delay = 0, 
 
   return (
     <div ref={ref} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s`, border: hov ? `1px solid rgba(212,160,64,0.2)` : `1px solid ${D.border}`, boxShadow: hov ? `${SH_CARDLG}, ${glow || GLOW_AMBER}` : SH_CARD }}>
+      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s`, border: hov ? `1px solid rgba(212,160,64,0.2)` : `1px solid ${D.border}`, boxShadow: hov ? `${SH.cardLg}, ${glow || SH.glowAmber}` : SH.card }}>
       {/* Accent line */}
-      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s ease' }} />
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${col}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s ease' }} />
       {/* Corner glow */}
-      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: `radial-gradient(circle, ${color}${hov ? '28' : '18'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
+      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: `radial-gradient(circle, ${col}${hov ? '28' : '18'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${color}20`, border: `1px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, boxShadow: `inset 0 1px 0 ${color}20`, transform: hov ? 'scale(1.08)' : 'scale(1)', transition: `transform 0.3s ${EASE_SPRING}` }}>{icon}</div>
+        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${col}20`, border: `1px solid ${col}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col, boxShadow: `inset 0 1px 0 ${col}20`, transform: hov ? 'scale(1.08)' : 'scale(1)', transition: `transform 0.3s ${EASE_SPRING}` }}>{icon}</div>
       </div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2.4rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.02em', color, textShadow: hov ? `0 0 20px ${color}44` : 'none', transition: 'text-shadow 0.3s ease' }}>{displayed.toLocaleString()}{suffix}</div>
+      <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2.4rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.02em', color: col, textShadow: hov ? `0 0 20px ${col}44` : 'none', transition: 'text-shadow 0.3s ease' }}>{displayed.toLocaleString()}{suffix}</div>
       <div style={{ fontSize: '0.58rem', color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
     </div>
   )
@@ -145,6 +120,7 @@ function KPICard({ label, value, color = D.amber, icon, suffix = '', delay = 0, 
 
 /* ── Progress Curve ────────────────────────────────────────── */
 function ProgressCurve({ data }: { data: Array<{ date: string; pct: number }> }) {
+  const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
@@ -241,6 +217,7 @@ function ProgressCurve({ data }: { data: Array<{ date: string; pct: number }> })
 
 /* ── Gantt ─────────────────────────────────────────────────── */
 function GanttChart({ data }: { data: Array<{ entity: string; start: string; end: string }> }) {
+  const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<string | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 200); return () => clearTimeout(t) }, [])
@@ -296,6 +273,7 @@ function GanttChart({ data }: { data: Array<{ entity: string; start: string; end
 
 /* ── Monthly Progress Table ────────────────────────────────── */
 function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyProgress']; months: string[] }) {
+  const { colors: D } = useTheme()
   const entityGroups = data.reduce((acc, row) => { if (!acc[row.entity]) acc[row.entity] = []; acc[row.entity].push(row); return acc }, {} as Record<string, typeof data>)
   const [expanded, setExpanded] = useState<Set<string>>(new Set(Object.keys(entityGroups)))
   const displayMonths = months.slice(-8)
@@ -365,6 +343,7 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
 
 /* ── Delay Donut ───────────────────────────────────────────── */
 function DelayDonut({ delayed, onSchedule }: { delayed: number; onSchedule: number }) {
+  const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 400); return () => clearTimeout(t) }, [])
   const total = delayed + onSchedule; if (!total) return null
@@ -396,6 +375,7 @@ function DelayDonut({ delayed, onSchedule }: { delayed: number; onSchedule: numb
 
 /* ── Days by Entity ────────────────────────────────────────── */
 function DaysByEntityChart({ data }: { data: ProgressData['daysByEntity'] }) {
+  const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<string | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 500); return () => clearTimeout(t) }, [])
@@ -433,6 +413,7 @@ function DaysByEntityChart({ data }: { data: ProgressData['daysByEntity'] }) {
 
 /* ── Delay Table ───────────────────────────────────────────── */
 function DelayTable({ data }: { data: ProgressData['delayData'] }) {
+  const { colors: D } = useTheme()
   const [page, setPage] = useState(0)
   const PAGE = 20, total = data.length
   const pageData = data.slice(page * PAGE, page * PAGE + PAGE)
@@ -470,6 +451,7 @@ function DelayTable({ data }: { data: ProgressData['delayData'] }) {
 
 /* ── BOQ Table ─────────────────────────────────────────────── */
 function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCategory: ProgressData['boqByCategory'] }) {
+  const { colors: D } = useTheme()
   const [view, setView] = useState<'summary' | 'detail'>('summary')
   const [page, setPage] = useState(0)
   const PAGE = 20
@@ -528,6 +510,7 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
 
 /* ── Activity Reports ──────────────────────────────────────── */
 function ActivityReportsPanel({ reportsByType, recentReports }: { reportsByType: ProgressData['reportsByType']; recentReports: ProgressData['recentReports'] }) {
+  const { colors: D } = useTheme()
   const [view, setView] = useState<'by_type' | 'recent'>('by_type')
   return (
     <div>
@@ -574,6 +557,7 @@ function ActivityReportsPanel({ reportsByType, recentReports }: { reportsByType:
 
 /* ── Skeleton ──────────────────────────────────────────────── */
 function Skeleton({ h }: { h: number }) {
+  const { colors: D } = useTheme()
   return (
     <div style={{ height: h, borderRadius: 16, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
       <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, rgba(212,160,64,0.04) 50%, transparent 100%)`, animation: 'shimmer 2s ease-in-out infinite' }} />
@@ -588,6 +572,7 @@ const IconList  = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="no
 
 /* ── Main Page ─────────────────────────────────────────────── */
 function ProgressPageInner() {
+  const { colors: D, shadows: SH } = useTheme()
   const [data, setData]           = useState<ProgressData | null>(null)
   const [loading, setLoading]     = useState(true)
   const [filtering, setFiltering] = useState(false)
@@ -609,9 +594,13 @@ function ProgressPageInner() {
     if (params.month)  qs.set('month',  params.month)
     if (params.chFrom && params.chTo) { qs.set('ch_from', params.chFrom); qs.set('ch_to', params.chTo) }
     fetch(`/api/progress?${qs.toString()}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); setFiltering(false) })
-      .catch(() => { setError('Failed to load data'); setLoading(false); setFiltering(false) })
+      .then(async r => {
+        const d = await r.json()
+        if (!r.ok) throw new Error(d?.error || `Failed to load data (${r.status})`)
+        setError(''); setData(d)
+      })
+      .catch((e: Error) => { setError(e.message || 'Failed to load data') })
+      .finally(() => { setLoading(false); setFiltering(false) })
   }, [])
 
   useEffect(() => { loadData({ entity: '', side: '', month: '', chFrom: '', chTo: '' }) }, [loadData])
@@ -630,7 +619,7 @@ function ProgressPageInner() {
 
   const hasFilters = !!(applied.entity || applied.side || applied.month || applied.chFrom)
 
-  const selectStyle: React.CSSProperties = { background: '#0e0e10', color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer', minWidth: 148, outline: 'none' }
+  const selectStyle: React.CSSProperties = { background: D.bg, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer', minWidth: 148, outline: 'none' }
   const inputStyle:  React.CSSProperties = { ...selectStyle, minWidth: 108 }
   const labelStyle:  React.CSSProperties = { fontSize: 10, color: D.muted, letterSpacing: 1.5, fontFamily: 'var(--font-mono)', textTransform: 'uppercase' as const, marginBottom: 5 }
 
@@ -648,7 +637,7 @@ function ProgressPageInner() {
       </div>
 
       {/* Sub-header */}
-      <div className="sub-header-bar" style={{ position: 'sticky', top: 52, zIndex: 50, background: 'rgba(14,14,16,0.95)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${D.border}`, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 20, height: 46, overflowX: 'auto' }}>
+      <div className="sub-header-bar" style={{ position: 'sticky', top: 52, zIndex: 50, background: `${D.bg}f2`, backdropFilter: 'blur(12px)', borderBottom: `1px solid ${D.border}`, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 20, height: 46, overflowX: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1.05rem', letterSpacing: '0.14em', color: D.amber, textShadow: `0 0 20px ${D.amber}44` }}>PROGRESS</span>
           <span className="sub-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', letterSpacing: '0.14em', color: D.sub, textTransform: 'uppercase', background: D.panel, padding: '2px 8px', borderRadius: 4, border: `1px solid ${D.border}` }}>Coastal Road · 1b&c</span>
@@ -676,7 +665,7 @@ function ProgressPageInner() {
         {error && <div style={{ background: 'rgba(248,113,113,0.06)', border: `1px solid rgba(248,113,113,0.2)`, borderRadius: 12, padding: '14px 18px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', marginBottom: 20 }}>{error}</div>}
 
         {/* ── Filter Bar ── */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px 20px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, marginBottom: 24, boxShadow: SH_PANEL, opacity: filtering ? 0.75 : 1, transition: `opacity 0.3s ${EASE}` }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px 20px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, marginBottom: 24, boxShadow: SH.panel, opacity: filtering ? 0.75 : 1, transition: `opacity 0.3s ${EASE}` }}>
           {[
             { label: 'Entity', el: <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select> },
             { label: 'Side',   el: <select value={filterSide}   onChange={e => setFilterSide(e.target.value)}   style={{ ...selectStyle, minWidth: 110 }}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select> },
@@ -719,10 +708,10 @@ function ProgressPageInner() {
             {activeTab === 'overview' && (
               <>
                 <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 20 }}>
-                  <KPICard label="Overall Completion"   value={data.summary.overallPct}    suffix="%" color={D.amber}  icon={<IconCheck />} delay={0}   glow={GLOW_AMBER} />
-                  <KPICard label="Completed Activities" value={data.summary.totalCompleted}             color={D.green}  icon={<IconCheck />} delay={80}  glow={GLOW_GREEN} />
-                  <KPICard label="Delayed Activities"   value={data.summary.delayed}                    color={D.red}    icon={<IconAlert />} delay={160} glow={GLOW_RED} />
-                  <KPICard label="On Schedule"          value={data.summary.onSchedule}                 color={D.green}  icon={<IconClock />} delay={240} glow={GLOW_GREEN} />
+                  <KPICard label="Overall Completion"   value={data.summary.overallPct}    suffix="%" color={D.amber}  icon={<IconCheck />} delay={0}   glow={SH.glowAmber} />
+                  <KPICard label="Completed Activities" value={data.summary.totalCompleted}             color={D.green}  icon={<IconCheck />} delay={80}  glow={SH.glowGreen} />
+                  <KPICard label="Delayed Activities"   value={data.summary.delayed}                    color={D.red}    icon={<IconAlert />} delay={160} glow={SH.glowRed} />
+                  <KPICard label="On Schedule"          value={data.summary.onSchedule}                 color={D.green}  icon={<IconClock />} delay={240} glow={SH.glowGreen} />
                   <KPICard label="Total Entity Types"   value={data.summary.totalEntities}              color={D.purple} icon={<IconList  />} delay={320} />
                 </div>
                 <Reveal style={{ marginBottom: 16 }}><Panel title="Progress Curve — Cumulative Completion %"><ProgressCurve data={data.progressCurve} /></Panel></Reveal>
@@ -769,7 +758,7 @@ function ProgressPageInner() {
         @keyframes pulse     { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
         @keyframes chipIn    { from { opacity:0; transform:scale(0.85) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }
         select:focus, input:focus { outline: none; border-color: rgba(212,160,64,0.4) !important; box-shadow: 0 0 0 2px rgba(212,160,64,0.1); }
-        select option { background: #0e0e10; }
+        select option { background: ${D.bg}; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity: 0.3; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -812,8 +801,9 @@ function ProgressPageInner() {
 }
 
 export default function ProgressPage() {
+  const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0e0e10' }} />}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg }} />}>
       <ProgressPageInner />
     </Suspense>
   )

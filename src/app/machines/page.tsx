@@ -2,27 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useTheme } from '@/lib/theme'
 
-/* ── Design tokens (subset ported from /dashboard) ─────────── */
-const D = {
-  bg:     '#0e0e10',
-  panel:  '#141416',
-  panel2: '#1a1a1e',
-  border: 'rgba(255,255,255,0.06)',
-  text:   '#e8e2d8',
-  muted:  '#8c867e',
-  sub:    '#3d3b42',
-  amber:  '#d4a040',
-  amberL: '#f0c060',
-  red:    '#f87171',
-  green:  '#34d399',
-  blue:   '#60a5fa',
-  purple: '#a78bfa',
-}
-const SH_CARD    = '0 4px 20px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05)'
-const SH_CARDLG  = '0 10px 36px rgba(0,0,0,0.82), 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(212,160,64,0.08)'
-const SH_PANEL   = '0 4px 24px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)'
-const SH_PANELLG = '0 10px 36px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 32px rgba(212,160,64,0.05)'
 const EASE        = 'cubic-bezier(0.16,1,0.3,1)'
 const EASE_SPRING = 'cubic-bezier(0.34,1.56,0.64,1)'
 const CAT_COLORS  = ['#d4a040','#60a5fa','#34d399','#a78bfa','#f87171','#f472b6','#e87040']
@@ -76,16 +57,17 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
 
 /* ── Panel ──────────────────────────────────────────────────── */
 function Panel({ children, title, style: st }: { children: React.ReactNode; title: string; style?: React.CSSProperties }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [hov, setHov] = useState(false)
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.16)' : `1px solid ${D.border}`, boxShadow: hov ? SH_PANELLG : SH_PANEL, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
+      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.16)' : `1px solid ${D.border}`, boxShadow: hov ? SH.panelLg : SH.panel, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
           <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 6px ${D.amber}` }} />
         </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: hov ? D.text : D.muted, background: '#0e0e10', padding: '2px 10px', borderRadius: 4, border: `1px solid ${hov ? 'rgba(212,160,64,0.25)' : D.border}`, transition: `color 0.3s ${EASE}, border-color 0.3s ${EASE}` }}>{title}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: hov ? D.text : D.muted, background: D.bg, padding: '2px 10px', borderRadius: 4, border: `1px solid ${hov ? 'rgba(212,160,64,0.25)' : D.border}`, transition: `color 0.3s ${EASE}, border-color 0.3s ${EASE}` }}>{title}</span>
       </div>
       {children}
     </div>
@@ -93,7 +75,9 @@ function Panel({ children, title, style: st }: { children: React.ReactNode; titl
 }
 
 /* ── KPI Card ──────────────────────────────────────────────── */
-function KPICard({ label, value, icon, delay = 0, color = D.amber }: { label: string; value: number; icon: React.ReactNode; delay?: number; color?: string }) {
+function KPICard({ label, value, icon, delay = 0, color: colorProp }: { label: string; value: number; icon: React.ReactNode; delay?: number; color?: string }) {
+  const { colors: D, shadows: SH } = useTheme()
+  const color = colorProp ?? D.amber
   const [vis, setVis] = useState(false)
   const [hov, setHov] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
@@ -102,7 +86,7 @@ function KPICard({ label, value, icon, delay = 0, color = D.amber }: { label: st
   const hoverY    = hov ? -3 : 0
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, border-color 0.3s, box-shadow 0.3s, background 0.3s`, border: hov ? `1px solid ${color}33` : `1px solid ${D.border}`, boxShadow: hov ? SH_CARDLG : SH_CARD }}>
+      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, border-color 0.3s, box-shadow 0.3s, background 0.3s`, border: hov ? `1px solid ${color}33` : `1px solid ${D.border}`, boxShadow: hov ? SH.cardLg : SH.card }}>
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s' }} />
       <div style={{ position: 'absolute', top: -24, right: -24, width: 90, height: 90, borderRadius: '50%', background: `radial-gradient(circle, ${color}${hov ? '22' : '15'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
@@ -115,7 +99,9 @@ function KPICard({ label, value, icon, delay = 0, color = D.amber }: { label: st
 }
 
 /* ── Horizontal bar chart ───────────────────────────────────── */
-function HBarChart({ data, color = D.amber, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; color?: string; activeName?: string; onBarClick?: (name: string) => void }) {
+function HBarChart({ data, color: colorProp, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; color?: string; activeName?: string; onBarClick?: (name: string) => void }) {
+  const { colors: D } = useTheme()
+  const color = colorProp ?? D.amber
   const [ready, setReady] = useState(false)
   const [hov, setHov]     = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
@@ -151,6 +137,7 @@ function HBarChart({ data, color = D.amber, activeName, onBarClick }: { data: Ar
 
 /* ── Donut chart ───────────────────────────────────────────── */
 function DonutChart({ data }: { data: Array<{ name: string; count: number }> }) {
+  const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 200); return () => clearTimeout(t) }, [])
@@ -205,6 +192,7 @@ function DonutChart({ data }: { data: Array<{ name: string; count: number }> }) 
 
 /* ── Empty state ────────────────────────────────────────────── */
 function EmptyState({ label }: { label: string }) {
+  const { colors: D } = useTheme()
   return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, padding:'32px 0', animation:`fadeIn 0.4s ${EASE}` }}>
       <div style={{ width:34, height:34, borderRadius:9, background:'rgba(255,255,255,0.03)', border:`1px solid ${D.border}`, display:'flex', alignItems:'center', justifyContent:'center', color:D.sub }}>
@@ -223,6 +211,7 @@ const IconTag    = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="n
 
 /* ── Filter bar (ported as-is from /dashboard — generic, keyed by onFilter) ── */
 function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
   const hasFilters = !!(active.filterCategory||active.filterProject||active.filterDateFrom||active.filterDateTo||active.filterChFrom||active.filterChTo||active.filterSearch||active.filterWeather||active.filterMachine||active.filterEmployee||active.filterEngineer||active.filterSupervisor)
   const [chFrom, setChFrom] = useState(active.filterChFrom||'')
@@ -243,12 +232,12 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
       onFilter('__ch_range__', `${from},${to}`)
   }
 
-  const sel: React.CSSProperties = { background:'#0e0e10', color:D.text, border:`1px solid ${D.border}`, borderRadius:8, padding:'7px 12px', fontSize:12, fontFamily:'var(--font-mono)', cursor:'pointer', minWidth:155, outline:'none' }
+  const sel: React.CSSProperties = { background:D.bg, color:D.text, border:`1px solid ${D.border}`, borderRadius:8, padding:'7px 12px', fontSize:12, fontFamily:'var(--font-mono)', cursor:'pointer', minWidth:155, outline:'none' }
   const inp: React.CSSProperties = { ...sel, minWidth:110 }
   const lbl: React.CSSProperties = { fontSize:10, color:D.muted, letterSpacing:1.5, fontFamily:'var(--font-mono)', textTransform:'uppercase' as const, marginBottom:5 }
 
   return (
-    <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'flex-end', padding:'16px 20px', background:D.panel, border:`1px solid ${D.border}`, borderRadius:14, marginBottom:24, boxShadow:SH_PANEL }}>
+    <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'flex-end', padding:'16px 20px', background:D.panel, border:`1px solid ${D.border}`, borderRadius:14, marginBottom:24, boxShadow:SH.panel }}>
       <div style={{ display:'flex', flexDirection:'column', flex:'1 1 220px', minWidth:180 }}>
         <div style={lbl}>Search</div>
         <div style={{ position:'relative' }}>
@@ -282,6 +271,7 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
 
 /* ── Skeleton ───────────────────────────────────────────────── */
 function Skel({ h }: { h: number }) {
+  const { colors: D } = useTheme()
   return (
     <div style={{ height:h, borderRadius:16, background:D.panel, position:'relative', overflow:'hidden', border:`1px solid ${D.border}` }}>
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg, transparent 0%, rgba(212,160,64,0.04) 50%, transparent 100%)', animation:'shimmer 2s ease-in-out infinite' }} />
@@ -299,6 +289,7 @@ function PageSkeleton() {
 
 /* ── Main page ──────────────────────────────────────────────── */
 function MachinesPageInner() {
+  const { colors: D } = useTheme()
   const router       = useRouter()
   const searchParams = useSearchParams()
   const [data, setData]       = useState<DashData | null>(null)
@@ -384,7 +375,7 @@ function MachinesPageInner() {
         @keyframes shimmer   { 0% { transform:translateX(-100%); } 100% { transform:translateX(600%); } }
         @keyframes pingAnim  { 0% { transform:scale(1); opacity:0.5; } 75%,100% { transform:scale(2.8); opacity:0; } }
         select:focus, input:focus { outline:none; border-color:rgba(212,160,64,0.4) !important; box-shadow:0 0 0 2px rgba(212,160,64,0.1) !important; }
-        select option { background:#0e0e10; }
+        select option { background:${D.bg}; }
         input[type='date']::-webkit-calendar-picker-indicator { filter:invert(0.5) sepia(0.3); cursor:pointer; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
         .btn-ghost { transition: background 0.2s ${EASE}, border-color 0.2s ${EASE}, color 0.2s ${EASE}, transform 0.2s ${EASE} !important; }
@@ -399,8 +390,9 @@ function MachinesPageInner() {
 }
 
 export default function MachinesPage() {
+  const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight:'100vh', background:'#0e0e10', padding:'28px 32px 60px' }}><PageSkeleton/></div>}>
+    <Suspense fallback={<div style={{ minHeight:'100vh', background:D.bg, padding:'28px 32px 60px' }}><PageSkeleton/></div>}>
       <MachinesPageInner/>
     </Suspense>
   )

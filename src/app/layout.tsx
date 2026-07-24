@@ -1,8 +1,17 @@
 import type { Metadata } from 'next'
+import Script from 'next/script'
 import { DM_Sans, DM_Mono, Bebas_Neue } from 'next/font/google'
 import './globals.css'
 import DashHeader from '@/components/DashHeader'
 import SideNav from '@/components/SideNav'
+import { ThemeProvider } from '@/lib/theme'
+import { THEME_STORAGE_KEY } from '@/lib/theme-constants'
+
+// Sets data-theme on <html> before hydration so there's no flash of the
+// wrong theme on load. Deliberately does NOT fall back to the OS's
+// prefers-color-scheme — the user's saved choice (or dark, the app's
+// original default) always wins.
+const THEME_INIT_SCRIPT = `try{var t=localStorage.getItem('${THEME_STORAGE_KEY}');document.documentElement.dataset.theme=(t==='light'||t==='dark')?t:'dark';}catch(e){document.documentElement.dataset.theme='dark';}`
 
 const dmSans = DM_Sans({
   variable: '--font-dm-sans',
@@ -30,16 +39,19 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link href='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css' rel='stylesheet' />
+        <Script id="theme-init" strategy="beforeInteractive">{THEME_INIT_SCRIPT}</Script>
       </head>
-      <body className={`${dmSans.variable} ${dmMono.variable} ${bebasNeue.variable}`}>
-        <DashHeader />
-        <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 52px)' }}>
-          <SideNav />
-          <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
-        </div>
+      <body className={`${dmSans.variable} ${dmMono.variable} ${bebasNeue.variable}`} suppressHydrationWarning>
+        <ThemeProvider>
+          <DashHeader />
+          <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 52px)' }}>
+            <SideNav />
+            <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   )

@@ -5,26 +5,7 @@ const HitechMapComponent = dynamic(() => import('@/components/HitechMap'), { ssr
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-
-const D = {
-  bg:     '#0e0e10',
-  panel:  '#141416',
-  panel2: '#1a1a1e',
-  border: 'rgba(255,255,255,0.06)',
-  text:   '#e8e2d8',
-  muted:  '#8c867e',
-  sub:    '#3d3b42',
-  amber:  '#d4a040',
-  amberL: '#f0c060',
-  red:    '#f87171',
-  green:  '#34d399',
-  blue:   '#60a5fa',
-}
-
-const SH_CARD   = '0 4px 20px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05)'
-const SH_CARDLG = '0 10px 36px rgba(0,0,0,0.82), 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(212,160,64,0.08)'
-const SH_PANEL  = '0 4px 24px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)'
-const SH_PANELLG = '0 10px 36px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 32px rgba(212,160,64,0.05)'
+import { useTheme } from '@/lib/theme'
 
 /* ── Shared motion tokens ──────────────────────────────────── */
 const EASE        = 'cubic-bezier(0.16,1,0.3,1)'   // decelerate — entrances, growth
@@ -90,6 +71,7 @@ function useCountUp(target: number, duration = 1200, delay = 0) {
 
 /* ── Empty state ───────────────────────────────────────────── */
 function EmptyState({ label }: { label: string }) {
+  const { colors: D, shadows: SH } = useTheme()
   return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, padding:'32px 0', animation:`fadeIn 0.4s ${EASE}` }}>
       <div style={{ width:34, height:34, borderRadius:9, background:'rgba(255,255,255,0.03)', border:`1px solid ${D.border}`, display:'flex', alignItems:'center', justifyContent:'center', color:D.sub }}>
@@ -118,17 +100,18 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
 
 /* ── Panel ─────────────────────────────────────────────────── */
 function Panel({ children, title, action, style: st }: { children: React.ReactNode; title: string; action?: React.ReactNode; style?: React.CSSProperties }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [hov, setHov] = useState(false)
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.16)' : `1px solid ${D.border}`, boxShadow: hov ? SH_PANELLG : SH_PANEL, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
+      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.16)' : `1px solid ${D.border}`, boxShadow: hov ? SH.panelLg : SH.panel, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
             <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 6px ${D.amber}` }} />
           </div>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: hov ? D.text : D.muted, background: '#0e0e10', padding: '2px 10px', borderRadius: 4, border: `1px solid ${hov ? 'rgba(212,160,64,0.25)' : D.border}`, transition: `color 0.3s ${EASE}, border-color 0.3s ${EASE}` }}>{title}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: hov ? D.text : D.muted, background: D.bg, padding: '2px 10px', borderRadius: 4, border: `1px solid ${hov ? 'rgba(212,160,64,0.25)' : D.border}`, transition: `color 0.3s ${EASE}, border-color 0.3s ${EASE}` }}>{title}</span>
         </div>
         {action}
       </div>
@@ -138,7 +121,9 @@ function Panel({ children, title, action, style: st }: { children: React.ReactNo
 }
 
 /* ── KPI Card ──────────────────────────────────────────────── */
-function KPICard({ label, value, sub, color = D.amber, icon, delay = 0, primary = false }: { label: string; value: number; sub?: string; color?: string; icon: React.ReactNode; delay?: number; primary?: boolean }) {
+function KPICard({ label, value, sub, color, icon, delay = 0, primary = false }: { label: string; value: number; sub?: string; color?: string; icon: React.ReactNode; delay?: number; primary?: boolean }) {
+  const { colors: D, shadows: SH } = useTheme()
+  color = color ?? D.amber
   const [vis, setVis] = useState(false)
   const [hov, setHov] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
@@ -147,7 +132,7 @@ function KPICard({ label, value, sub, color = D.amber, icon, delay = 0, primary 
   const hoverY    = hov ? -3 : 0
   return (
     <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, border-color 0.3s, box-shadow 0.3s, background 0.3s`, border: hov ? `1px solid ${color}33` : primary ? `1px solid ${color}22` : `1px solid ${D.border}`, boxShadow: hov ? SH_CARDLG : SH_CARD }}>
+      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, border-color 0.3s, box-shadow 0.3s, background 0.3s`, border: hov ? `1px solid ${color}33` : primary ? `1px solid ${color}22` : `1px solid ${D.border}`, boxShadow: hov ? SH.cardLg : SH.card }}>
       {/* Left accent */}
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: primary ? 3 : 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : primary ? 0.75 : 0.5, transition: 'opacity 0.3s, width 0.3s' }} />
       {/* Corner glow */}
@@ -164,6 +149,7 @@ function KPICard({ label, value, sub, color = D.amber, icon, delay = 0, primary 
 
 /* ── Donut chart ───────────────────────────────────────────── */
 function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onSliceClick?: (name: string) => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 200); return () => clearTimeout(t) }, [])
@@ -222,7 +208,9 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
 }
 
 /* ── Ring stat (radial progress) ──────────────────────────── */
-function RingStat({ label, pct, color = D.amber }: { label: string; pct: number; color?: string }) {
+function RingStat({ label, pct, color }: { label: string; pct: number; color?: string }) {
+  const { colors: D, shadows: SH } = useTheme()
+  color = color ?? D.amber
   const [ready, setReady] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
   const r = 52, sw = 12, circ = 2 * Math.PI * r
@@ -243,6 +231,7 @@ function RingStat({ label, pct, color = D.amber }: { label: string; pct: number;
 
 /* ── Timeline bar chart ────────────────────────────────────── */
 function TimelineChart({ data }: { data: Array<{ date: string; count: number }> }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 400); return () => clearTimeout(t) }, [])
@@ -295,7 +284,9 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
 }
 
 /* ── Horizontal bar chart ──────────────────────────────────── */
-function HBarChart({ data, color = D.amber, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; color?: string; activeName?: string; onBarClick?: (name: string) => void }) {
+function HBarChart({ data, color, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; color?: string; activeName?: string; onBarClick?: (name: string) => void }) {
+  const { colors: D, shadows: SH } = useTheme()
+  color = color ?? D.amber
   const [ready, setReady] = useState(false)
   const [hov, setHov]     = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
@@ -331,6 +322,7 @@ function HBarChart({ data, color = D.amber, activeName, onBarClick }: { data: Ar
 
 /* ── Weather bars ──────────────────────────────────────────── */
 function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onBarClick?: (name: string) => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 500); return () => clearTimeout(t) }, [])
@@ -378,6 +370,7 @@ function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProj
 
 /* ── Media box (independent grid + pagination + lightbox, used per media type) ── */
 function MediaBox({ label, items, activeProject }: { label: string; items: MediaItem[]; activeProject: string }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [lightbox, setLightbox] = useState<MediaItem | null>(null)
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 12
@@ -471,6 +464,7 @@ function MediaBox({ label, items, activeProject }: { label: string; items: Media
 
 /* ── Report feed table ─────────────────────────────────────── */
 function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports']; onSelect?: (r: DashData['recentReports'][number]) => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const SC: Record<string,string> = { Completed:D.green, Complete:D.green, 'In Progress':D.amber, Ongoing:D.amber, Pending:D.blue, Unknown:D.sub }
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 15
@@ -522,6 +516,7 @@ function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports'];
 
 /* ── Activity Calendar ─────────────────────────────────────── */
 function ActivityCalendar({ data }: { data: CalDay[] }) {
+  const { colors: D, shadows: SH } = useTheme()
   const [hovDay, setHovDay] = useState<(CalDay & { x: number; y: number }) | null>(null)
   if (!data.length) return <EmptyState label="No activity data"/>
   const calMap   = new Map(data.map(d => [d.date, d]))
@@ -599,35 +594,43 @@ function useCrossfade(count: number, intervalMs = 7000) {
 
 /** Full-bleed, heavily dimmed/blurred crossfading photo layer for the fixed ambient background. */
 function PhotoBackdrop({ photos }: { photos: MediaItem[] }) {
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
   const idx = useCrossfade(photos.length, 10000)
   if (!photos.length) return null
   return (
     <>
       {photos.map((p, i) => (
-        <div key={p.file} style={{ position: 'absolute', inset: 0, backgroundImage: `url(${p.file})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.06)', opacity: i === idx ? 1 : 0, filter: 'brightness(0.24) blur(7px) saturate(1.05)', transition: 'opacity 2.5s ease' }} />
+        <div key={p.file} style={{ position: 'absolute', inset: 0, backgroundImage: `url(${p.file})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.06)', opacity: i === idx ? 1 : 0, filter: isLight ? 'brightness(1.5) blur(7px) saturate(0.35)' : 'brightness(0.24) blur(7px) saturate(1.05)', transition: 'opacity 2.5s ease' }} />
       ))}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,14,16,0.5)' }} />
+      <div style={{ position: 'absolute', inset: 0, background: isLight ? 'rgba(238,241,245,0.75)' : 'rgba(14,14,16,0.5)' }} />
     </>
   )
 }
 
 /* ── Hero welcome banner ───────────────────────────────────── */
 function HeroBanner({ firstName, totalReports, reportsThisMonth, photos, weather }: { firstName: string; totalReports: number; reportsThisMonth: number; photos: MediaItem[]; weather?: string }) {
+  const { colors: D, shadows: SH, theme } = useTheme()
+  const isLight = theme === 'light'
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const idx = useCrossfade(photos.length, 6500)
   const weatherIcon = weather ? (WEATHER_ICON[weather] || '🌡') : null
+  const scrimGradient = isLight
+    ? 'linear-gradient(100deg, rgba(238,241,245,0.95) 15%, rgba(238,241,245,0.68) 55%, rgba(238,241,245,0.38) 100%)'
+    : 'linear-gradient(100deg, rgba(14,14,16,0.94) 15%, rgba(14,14,16,0.55) 55%, rgba(14,14,16,0.25) 100%)'
+  const weatherChipBg = isLight ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)'
   return (
     <div style={{
       position: 'relative', overflow: 'hidden', borderRadius: 22, padding: '26px 30px', marginBottom: 20, minHeight: 150,
-      background: photos.length ? undefined : `linear-gradient(120deg, ${D.panel} 0%, #1c1810 100%)`,
-      border: `1px solid ${D.border}`, boxShadow: SH_PANELLG,
+      background: photos.length ? undefined : `linear-gradient(120deg, ${D.panel} 0%, ${isLight ? '#f0e2bd' : '#1c1810'} 100%)`,
+      border: `1px solid ${D.border}`, boxShadow: SH.panelLg,
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap',
     }}>
       {photos.map((p, i) => (
-        <div key={p.file} style={{ position: 'absolute', inset: 0, backgroundImage: `url(${p.file})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: i === idx ? 1 : 0, filter: 'brightness(0.55) saturate(1.05)', transition: 'opacity 2s ease' }} />
+        <div key={p.file} style={{ position: 'absolute', inset: 0, backgroundImage: `url(${p.file})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: i === idx ? 1 : 0, filter: isLight ? 'brightness(1.1) saturate(0.85)' : 'brightness(0.55) saturate(1.05)', transition: 'opacity 2s ease' }} />
       ))}
-      {photos.length > 0 && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(14,14,16,0.94) 15%, rgba(14,14,16,0.55) 55%, rgba(14,14,16,0.25) 100%)' }} />}
+      {photos.length > 0 && <div style={{ position: 'absolute', inset: 0, background: scrimGradient }} />}
 
       <div style={{ position: 'relative', zIndex: 1, minWidth: 220 }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: D.amber, marginBottom: 8 }}>{greeting}</div>
@@ -640,7 +643,7 @@ function HeroBanner({ firstName, totalReports, reportsThisMonth, photos, weather
       </div>
 
       {weather && (
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(0,0,0,0.4)', border: `1px solid ${D.border}`, borderRadius: 16, padding: '10px 20px', backdropFilter: 'blur(6px)' }}>
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, background: weatherChipBg, border: `1px solid ${D.border}`, borderRadius: 16, padding: '10px 20px', backdropFilter: 'blur(6px)' }}>
           <span style={{ fontSize: '1.7rem', lineHeight: 1 }}>{weatherIcon}</span>
           <div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: D.text, fontWeight: 700 }}>{weather}</div>
@@ -656,6 +659,7 @@ function HeroBanner({ firstName, totalReports, reportsThisMonth, photos, weather
 
 /* ── Filter Bar ────────────────────────────────────────────── */
 function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
   const hasFilters = !!(active.filterCategory||active.filterProject||active.filterDateFrom||active.filterDateTo||active.filterChFrom||active.filterChTo||active.filterSearch||active.filterWeather||active.filterMachine||active.filterEmployee||active.filterEngineer||active.filterSupervisor)
   const [chFrom, setChFrom] = useState(active.filterChFrom||'')
@@ -676,12 +680,12 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
       onFilter('__ch_range__', `${from},${to}`)
   }
 
-  const sel: React.CSSProperties = { background:'#0e0e10', color:D.text, border:`1px solid ${D.border}`, borderRadius:8, padding:'7px 12px', fontSize:12, fontFamily:'var(--font-mono)', cursor:'pointer', minWidth:155, outline:'none' }
+  const sel: React.CSSProperties = { background:D.bg, color:D.text, border:`1px solid ${D.border}`, borderRadius:8, padding:'7px 12px', fontSize:12, fontFamily:'var(--font-mono)', cursor:'pointer', minWidth:155, outline:'none' }
   const inp: React.CSSProperties = { ...sel, minWidth:110 }
   const lbl: React.CSSProperties = { fontSize:10, color:D.muted, letterSpacing:1.5, fontFamily:'var(--font-mono)', textTransform:'uppercase' as const, marginBottom:5 }
 
   return (
-    <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'flex-end', padding:'16px 20px', background:D.panel, border:`1px solid ${D.border}`, borderRadius:14, marginBottom:24, boxShadow:SH_PANEL }}>
+    <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'flex-end', padding:'16px 20px', background:D.panel, border:`1px solid ${D.border}`, borderRadius:14, marginBottom:24, boxShadow:SH.panel }}>
       <div style={{ display:'flex', flexDirection:'column', flex:'1 1 220px', minWidth:180 }}>
         <div style={lbl}>Search</div>
         <div style={{ position:'relative' }}>
@@ -715,6 +719,7 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
 
 /* ── Skeleton ──────────────────────────────────────────────── */
 function Skel({ h, style: st }: { h: number; style?: React.CSSProperties }) {
+  const { colors: D, shadows: SH } = useTheme()
   return (
     <div style={{ height:h, borderRadius:16, background:D.panel, position:'relative', overflow:'hidden', border:`1px solid ${D.border}`, ...st }}>
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg, transparent 0%, rgba(212,160,64,0.04) 50%, transparent 100%)', animation:'shimmer 2s ease-in-out infinite' }} />
@@ -735,6 +740,7 @@ function DashSkeleton() {
 
 /* ── Main Page ─────────────────────────────────────────────── */
 function DashboardPageInner() {
+  const { colors: D, shadows: SH } = useTheme()
   const router       = useRouter()
   const searchParams = useSearchParams()
   const [data, setData]     = useState<DashData | null>(null)
@@ -805,7 +811,7 @@ function DashboardPageInner() {
   const latestWeather  = data?.recentReports.find(r => r.weather)?.weather
 
   return (
-    <div style={{ minHeight:'100vh', background:D.bg, color:D.text, fontFamily:'var(--font-dm-sans)', backgroundImage:'linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)', backgroundSize:'60px 60px', position:'relative' }}>
+    <div style={{ minHeight:'100vh', backgroundColor:D.bg, color:D.text, fontFamily:'var(--font-dm-sans)', backgroundImage:'linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)', backgroundSize:'60px 60px', position:'relative' }}>
 
       {/* Ambient */}
       <div style={{ position:'fixed', inset:0, zIndex:0, pointerEvents:'none', overflow:'hidden' }}>
@@ -819,7 +825,7 @@ function DashboardPageInner() {
       </div>
 
       {/* Sub-header */}
-      <div className="sub-header-bar" style={{ position:'sticky', top:52, zIndex:50, background:'rgba(14,14,16,0.95)', backdropFilter:'blur(12px)', borderBottom:`1px solid ${D.border}`, padding:'0 32px', display:'flex', alignItems:'center', gap:18, height:46, overflow:'hidden' }}>
+      <div className="sub-header-bar" style={{ position:'sticky', top:52, zIndex:50, background:`${D.bg}f2`, backdropFilter:'blur(12px)', borderBottom:`1px solid ${D.border}`, padding:'0 32px', display:'flex', alignItems:'center', gap:18, height:46, overflow:'hidden' }}>
         <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
           <span style={{ fontFamily:'var(--font-loader)', fontSize:'1.05rem', letterSpacing:'0.12em', color:D.amber, textShadow:`0 0 20px ${D.amber}44` }}>ANALYTICS</span>
           <span className="sub-badge" style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', letterSpacing:'0.14em', color:D.sub, textTransform:'uppercase', background:D.panel, padding:'2px 8px', borderRadius:4, border:`1px solid ${D.border}` }}>Site Command</span>
@@ -879,7 +885,7 @@ function DashboardPageInner() {
             <KPICard label="Total Activity Reports" value={data.summary.totalReports}     icon={<IconDoc/>}      delay={0}   color={D.amber} primary />
             <KPICard label="Reports This Month"     value={data.summary.reportsThisMonth} icon={<IconCalendar/>} delay={80}  color={D.blue}  sub="MTD" />
             <KPICard label="Active Projects (30d)"  value={data.summary.activeProjects}   icon={<IconPin/>}      delay={160} color={D.green} />
-            <KPICard label="Site Photos"            value={data.summary.totalPhotos}      icon={<IconImage/>}    delay={240} color="#a78bfa" />
+            <KPICard label="Site Photos"            value={data.summary.totalPhotos}      icon={<IconImage/>}    delay={240} color={D.purple} />
             <KPICard label="Unique Reporters"       value={data.summary.uniqueReporters}  icon={<IconPeople/>}   delay={320} color={D.amber} />
           </div>
 
@@ -946,7 +952,7 @@ function DashboardPageInner() {
         @keyframes ticker    { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
         @keyframes pulse     { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
         select:focus, input:focus { outline:none; border-color:rgba(212,160,64,0.4) !important; box-shadow:0 0 0 2px rgba(212,160,64,0.1) !important; }
-        select option { background:#0e0e10; }
+        select option { background:${D.bg}; }
         input[type='date']::-webkit-calendar-picker-indicator { filter:invert(0.5) sepia(0.3); cursor:pointer; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
         ::-webkit-scrollbar { width:6px; height:6px; }
@@ -989,8 +995,9 @@ function DashboardPageInner() {
 }
 
 export default function DashboardPage() {
+  const { colors: D, shadows: SH } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight:'100vh', background:'#0e0e10', padding:'96px 32px 60px' }}><DashSkeleton/></div>}>
+    <Suspense fallback={<div style={{ minHeight:'100vh', background:D.bg, padding:'96px 32px 60px' }}><DashSkeleton/></div>}>
       <DashboardPageInner/>
     </Suspense>
   )

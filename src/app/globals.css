@@ -12,11 +12,17 @@ html, body {
 }
 
 body {
-  background: #212124;
-  color: #cac6be;
+  background: #0e0e10;
+  color: #e8e2d8;
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+:root[data-theme='light'] body {
+  background: #eef1f5;
+  color: #1e293b;
 }
 
 * {
