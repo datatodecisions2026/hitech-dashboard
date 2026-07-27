@@ -108,7 +108,11 @@
       "Bash(grep -n *)",
       "Bash(grep -rn *)",
       "Bash(git reset *)",
-      "Bash(grep -rln *)"
+      "Bash(grep -rln *)",
+      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" status)",
+      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" log --oneline -10)",
+      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff --stat HEAD)",
+      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff HEAD -- .claude/settings.local.json)"
     ]
   }
 }
