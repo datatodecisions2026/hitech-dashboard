@@ -112,7 +112,9 @@
       "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" status)",
       "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" log --oneline -10)",
       "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff --stat HEAD)",
-      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff HEAD -- .claude/settings.local.json)"
+      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff HEAD -- .claude/settings.local.json)",
+      "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" add .claude/settings.local.json)",
+      "Bash(git -C .claude/worktrees/agent-ad70f5bf14a443431 commit -m ' *)"
     ]
   }
 }
