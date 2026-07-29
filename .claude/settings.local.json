@@ -114,7 +114,23 @@
       "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff --stat HEAD)",
       "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" diff HEAD -- .claude/settings.local.json)",
       "Bash(git -C \".claude/worktrees/agent-ad70f5bf14a443431\" add .claude/settings.local.json)",
-      "Bash(git -C .claude/worktrees/agent-ad70f5bf14a443431 commit -m ' *)"
+      "Bash(git -C .claude/worktrees/agent-ad70f5bf14a443431 commit -m ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/ --max-time 3)",
+      "Bash(break)",
+      "Bash(node \"C:\\\\Users\\\\UKPOWE~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Ukpoweh-Gift-Documents-hitech-dashboard\\\\89f58af1-fe78-4156-8dea-b42f9473cc64\\\\scratchpad\\\\light-check.mjs\")",
+      "Bash(node scripts/__tmp-light-check.mjs)",
+      "Bash(cd \"c:\\\\Users\\\\Ukpoweh Gift\\\\Documents\\\\hitech-dashboard\" && rm -f scripts/__tmp-light-check.mjs .tmp-session-cookie.txt .tmp-light-*.png)",
+      "Bash(taskkill //PID 9416 //F)",
+      "Bash(npx playwright *)",
+      "Bash(taskkill //PID 440 //F)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s http://localhost:3000/api/dashboard -H 'Cookie: hitech-dashboard-session=__TRACKED_VAR__' -o /tmp/base.json)",
+      "Bash(cp \"C:/Users/UKPOWE~1/AppData/Local/Temp/claude/c--Users-Ukpoweh-Gift-Documents-hitech-dashboard/999fcb71-6bed-4407-8b10-c468283139a6/scratchpad/check-clickfilter.mjs\" \"c:\\\\Users\\\\Ukpoweh Gift\\\\Documents\\\\hitech-dashboard\\\\scripts\\\\_tmp-check-clickfilter.mjs\")",
+      "Bash(node scripts/_tmp-check-clickfilter.mjs)",
+      "Bash(taskkill //PID 24136 //F)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Ukpoweh Gift\\Documents\\hitech-dashboard"
     ]
   }
 }

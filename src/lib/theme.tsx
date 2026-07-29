@@ -47,10 +47,10 @@ const DARK_COLORS: ColorTokens = {
 }
 
 const LIGHT_COLORS: ColorTokens = {
-  bg:     '#eef1f5',
-  panel:  '#ffffff',
-  panel2: '#f6f8fa',
-  border: 'rgba(15,23,42,0.08)',
+  bg:     '#dde3ea',
+  panel:  '#f8f9fb',
+  panel2: '#eef1f5',
+  border: 'rgba(15,23,42,0.10)',
   text:   '#1e293b',
   muted:  '#64748b',
   sub:    '#94a3b8',
