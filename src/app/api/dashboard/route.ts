@@ -56,6 +56,11 @@ export async function GET(req: NextRequest) {
   const filterEmployee   = searchParams.get('employee')   || ''
   const filterEngineer   = searchParams.get('engineer')   || ''
   const filterSupervisor = searchParams.get('supervisor') || ''
+  const filterOwnership       = searchParams.get('ownership')        || ''
+  const filterDriver          = searchParams.get('driver')           || ''
+  const filterEmployeeRole    = searchParams.get('employee_role')    || ''
+  const filterEngineerParty   = searchParams.get('engineer_party')   || ''
+  const filterSupervisorParty = searchParams.get('supervisor_party') || ''
 
   // Strip characters that would break PostgREST .or() filter syntax
   const searchTerm = filterSearch.replace(/[,()%*]/g, '')
@@ -160,6 +165,11 @@ export async function GET(req: NextRequest) {
     matchReportIds(employees,   'employee_name',   filterEmployee),
     matchReportIds(engineers,   'engineer_name',   filterEngineer),
     matchReportIds(supervisors, 'supervisor_name', filterSupervisor),
+    matchReportIds(machines,    'ownership',       filterOwnership),
+    matchReportIds(machines,    'driver_name',     filterDriver),
+    matchReportIds(employees,   'employee_role',   filterEmployeeRole),
+    matchReportIds(engineers,   'party',           filterEngineerParty),
+    matchReportIds(supervisors, 'party',           filterSupervisorParty),
   ].filter((s): s is Set<number> => s !== null)
   const hrRestrictIds = hrIdSets.length
     ? hrIdSets.reduce((acc, s) => new Set([...acc].filter(id => s.has(id))))
@@ -318,6 +328,7 @@ export async function GET(req: NextRequest) {
     activeFilters: {
       filterCategory, filterProject, filterDateFrom, filterDateTo, filterChFrom, filterChTo, filterSearch,
       filterWeather, filterMachine, filterEmployee, filterEngineer, filterSupervisor,
+      filterOwnership, filterDriver, filterEmployeeRole, filterEngineerParty, filterSupervisorParty,
     },
   })
 }

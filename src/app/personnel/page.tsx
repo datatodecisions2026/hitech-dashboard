@@ -23,6 +23,7 @@ interface DashData {
   activeFilters: {
     filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
     filterWeather: string; filterMachine: string; filterEmployee: string; filterEngineer: string; filterSupervisor: string
+    filterOwnership: string; filterDriver: string; filterEmployeeRole: string; filterEngineerParty: string; filterSupervisorParty: string
   }
 }
 
@@ -141,7 +142,7 @@ function HBarChart({ data, color: colorProp, activeName, onBarClick }: { data: A
 }
 
 /* ── Donut chart ───────────────────────────────────────────── */
-function DonutChart({ data }: { data: Array<{ name: string; count: number }> }) {
+function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onSliceClick?: (name: string) => void }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
@@ -157,17 +158,20 @@ function DonutChart({ data }: { data: Array<{ name: string; count: number }> }) 
     return s
   })
   const hovSeg = hov !== null ? segments[hov] : null
+  const hasActive = !!activeName
+  const handleClick = (name: string) => onSliceClick?.(name === activeName ? '' : name)
   return (
     <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap' }}>
       <svg width={160} height={160} viewBox="-80 -80 160 160" style={{ flexShrink: 0 }} onMouseLeave={() => setHov(null)}>
         <circle r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={sw} />
         {segments.map((seg, i) => {
           const isHov = hov === i
-          return <circle key={i} r={r} fill="none" stroke={seg.color} strokeWidth={isHov ? sw + 5 : sw}
+          const isActive = seg.name === activeName
+          return <circle key={i} r={r} fill="none" stroke={seg.color} strokeWidth={isHov || isActive ? sw + 5 : sw}
             strokeDasharray={`${ready ? seg.len : 0} ${circ}`} strokeDashoffset={-(seg.offset)} strokeLinecap="butt"
-            strokeOpacity={hov !== null && !isHov ? 0.25 : 1}
-            style={{ transition: `stroke-dasharray 0.85s ${EASE} ${i * 0.07}s, stroke-width 0.25s ${EASE_SPRING}, stroke-opacity 0.2s`, filter: isHov ? `drop-shadow(0 0 6px ${seg.color}88)` : 'none' }}
-            onMouseEnter={() => setHov(i)} />
+            strokeOpacity={hasActive ? (isActive ? 1 : 0.2) : (hov !== null && !isHov ? 0.25 : 1)}
+            style={{ transition: `stroke-dasharray 0.85s ${EASE} ${i * 0.07}s, stroke-width 0.25s ${EASE_SPRING}, stroke-opacity 0.2s`, cursor: onSliceClick ? 'pointer' : 'default', filter: isHov || isActive ? `drop-shadow(0 0 6px ${seg.color}88)` : 'none' }}
+            onMouseEnter={() => setHov(i)} onClick={() => handleClick(seg.name)} />
         })}
         {hovSeg ? (<>
           <text x="0" y="-8" textAnchor="middle" fill={hovSeg.color} fontFamily="var(--font-loader)" fontSize="20">{hovSeg.count}</text>
@@ -180,11 +184,12 @@ function DonutChart({ data }: { data: Array<{ name: string; count: number }> }) 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, flex: 1, minWidth: 120 }}>
         {segments.map((seg, i) => {
           const isHov = hov === i
+          const isActive = seg.name === activeName
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: hov !== null && !isHov ? 0.4 : 1, transform: isHov ? 'translateX(3px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}
-              onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
-              <div style={{ width: 8, height: 8, borderRadius: 2, background: seg.color, flexShrink: 0, transform: isHov ? 'scale(1.4)' : 'scale(1)', boxShadow: isHov ? `0 0 8px ${seg.color}` : 'none', transition: `transform 0.3s ${EASE_SPRING}, box-shadow 0.2s` }} />
-              <span style={{ fontSize: '0.7rem', color: isHov ? D.text : D.muted, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'var(--font-mono)', transition: 'color 0.2s' }}>{seg.name}</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: onSliceClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.4 : 1), transform: isHov || isActive ? 'translateX(3px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}
+              onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={() => handleClick(seg.name)}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: seg.color, flexShrink: 0, transform: isHov || isActive ? 'scale(1.4)' : 'scale(1)', boxShadow: isHov || isActive ? `0 0 8px ${seg.color}` : 'none', transition: `transform 0.3s ${EASE_SPRING}, box-shadow 0.2s` }} />
+              <span style={{ fontSize: '0.7rem', color: isHov || isActive ? D.text : D.muted, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'var(--font-mono)', transition: 'color 0.2s' }}>{seg.name}</span>
               <span style={{ fontSize: '0.7rem', color: D.text, fontWeight: 600, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{seg.count}</span>
               <span style={{ fontSize: '0.62rem', color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{Math.round(seg.count / total * 100)}%</span>
             </div>
@@ -218,7 +223,7 @@ const IconUsers  = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="n
 function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
   const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
-  const hasFilters = !!(active.filterCategory||active.filterProject||active.filterDateFrom||active.filterDateTo||active.filterChFrom||active.filterChTo||active.filterSearch||active.filterWeather||active.filterMachine||active.filterEmployee||active.filterEngineer||active.filterSupervisor)
+  const hasFilters = !!(active.filterCategory||active.filterProject||active.filterDateFrom||active.filterDateTo||active.filterChFrom||active.filterChTo||active.filterSearch||active.filterWeather||active.filterMachine||active.filterEmployee||active.filterEngineer||active.filterSupervisor||active.filterOwnership||active.filterDriver||active.filterEmployeeRole||active.filterEngineerParty||active.filterSupervisorParty)
   const [chFrom, setChFrom] = useState(active.filterChFrom||'')
   const [chTo,   setChTo]   = useState(active.filterChTo  ||'')
   const [search, setSearch] = useState(active.filterSearch||'')
@@ -317,7 +322,7 @@ function PersonnelPageInner() {
   function handleFilter(key: string, val: string) {
     const p = new URLSearchParams(searchParams.toString())
     if (key === '__clear__') {
-      ['category','project','date_from','date_to','ch_from','ch_to','search','weather','machine','employee','engineer','supervisor'].forEach(k => p.delete(k))
+      ['category','project','date_from','date_to','ch_from','ch_to','search','weather','machine','employee','engineer','supervisor','ownership','driver','employee_role','engineer_party','supervisor_party'].forEach(k => p.delete(k))
     } else if (key === '__ch_range__') {
       const [from, to] = val.split(',')
       p.set('ch_from', from); p.set('ch_to', to)
@@ -363,7 +368,7 @@ function PersonnelPageInner() {
                 </Panel>
                 <Panel title="Employees by Role">
                   {data.byEmployeeRole?.length > 0
-                    ? <DonutChart data={data.byEmployeeRole}/>
+                    ? <DonutChart data={data.byEmployeeRole} activeName={data.activeFilters.filterEmployeeRole} onSliceClick={name => handleFilter('employee_role', name)}/>
                     : <EmptyState label="No role data matches your filters"/>}
                 </Panel>
                 <Panel title="Engineers Activity">
@@ -373,7 +378,7 @@ function PersonnelPageInner() {
                 </Panel>
                 <Panel title="Engineers by Party">
                   {data.byEngineerParty?.length > 0
-                    ? <DonutChart data={data.byEngineerParty}/>
+                    ? <DonutChart data={data.byEngineerParty} activeName={data.activeFilters.filterEngineerParty} onSliceClick={name => handleFilter('engineer_party', name)}/>
                     : <EmptyState label="No party data matches your filters"/>}
                 </Panel>
                 <Panel title="Supervisors Activity">
@@ -383,7 +388,7 @@ function PersonnelPageInner() {
                 </Panel>
                 <Panel title="Supervisors by Party">
                   {data.bySupervisorParty?.length > 0
-                    ? <DonutChart data={data.bySupervisorParty}/>
+                    ? <DonutChart data={data.bySupervisorParty} activeName={data.activeFilters.filterSupervisorParty} onSliceClick={name => handleFilter('supervisor_party', name)}/>
                     : <EmptyState label="No party data matches your filters"/>}
                 </Panel>
               </div>
