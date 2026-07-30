@@ -17,6 +17,9 @@ src/
     login/page.tsx          # Login page (amber theme, dark card)
     dashboard/page.tsx      # Main dashboard (skeuomorphic, ~990 lines, self-contained)
     progress/page.tsx       # Construction progress dashboard (~820 lines, self-contained — own Panel/KPICard/Reveal, not shared with dashboard/page.tsx)
+    machines/page.tsx       # Machines-focused view of dashboard data, self-contained (own Panel/KPICard/FilterBar)
+    personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx)
+    streetlights/page.tsx   # 3M-row streetlights map/scale-test page, self-contained — own Panel/KPICard/Reveal, own useTheme() usage. See 2026-07-30 changelog
     api/
       auth/
         login/route.ts      # POST — authenticate against Supabase auth_user table
@@ -25,10 +28,13 @@ src/
       dashboard/route.ts    # GET  — aggregate all dashboard data from Supabase (session-guarded)
       progress/route.ts     # GET  — aggregate construction-progress data from Supabase (session-guarded)
       map/route.ts          # GET  — chainage stations + geotagged reports for HitechMap (no session guard)
+      streetlights/route.ts # GET  — clustered streetlight points + summary/sections/images from Supabase (session-guarded). See 2026-07-30 changelog
+      road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
-    SideNav.tsx             # 64px icon rail (Dashboard/Progress), sticky below header, hidden on /login and <640px
-    HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
+    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights), sticky below header, hidden on /login and <640px
+    HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points + ArcGIS road-design CAD overlay, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
+    StreetlightsMap.tsx     # Google Maps JS API map for the 3M-row streetlights table — clustered points only, no polylines/chainage. Uses useTheme() (unlike HitechMap). See 2026-07-30 changelog
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs
@@ -265,6 +271,77 @@ Reads `hitech_report_chainage` (station markers) and `hitech_report_hitechreport
 
 ---
 
+### `GET /api/streetlights`
+
+Returns clustered streetlight points (never raw rows — the underlying table is 3M rows) plus summary KPIs, the section dropdown list, and the 5 canonical images, for `/streetlights` / `StreetlightsMap`. Session-guarded (unlike `/api/map`). See the 2026-07-30 changelog entry for the full design rationale and real measured query timings.
+
+**Query params (all optional):**
+```
+zoom                              — current map zoom; chooses a 2D grid size (coarser when zoomed out) via gridDegForZoom() in the route file
+swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12
+section                           — exact match on streetlights.section — any value routes to the live per-request RPC path (see below), regardless of zoom/bbox
+```
+
+**Routing logic**: zoomed-out / no-bbox / no-section requests hit the pre-existing `streetlights_clusters` RPC (reads `streetlights_grid_mv`, a materialized view refreshed every 10 minutes — sub-millisecond). Any bbox at zoom≥12, or any section filter, hits `streetlights_cluster` (new RPC, added this pass) — a 2D grid-snap query against the live table, self-limiting to ≤900 output rows, index-assisted via `idx_streetlights_latlon`/`idx_streetlights_section`. Both shapes are normalized into one `clusters` array before returning; `clusterMode` (`'live'` or `'mv'`) tells the frontend which path served the request.
+
+**Response (200):**
+```json
+{
+  "clusters": [
+    { "lat": 6.43, "lng": 3.63, "count": 342 },
+    { "lat": 6.431, "lng": 3.629, "count": 1, "objectid": 80852, "side": "LHS", "section": "Coastal Road", "station": "2+003", "imageVariant": 0, "isSynthetic": true, "imageUrl": "https://…webp", "imageLabel": "Coastal highway - day - lit" }
+  ],
+  "clusterMode": "live",
+  "summary": { "total_estimate": 2993138, "lhs_count": 1207060, "rhs_count": 1158946, "median_count": 633994, "section_count": 153, "refreshed_at": "2026-07-30T09:18:04Z" },
+  "sections": [{ "section": "Kebbi", "point_count": 45516 }],
+  "imageVariants": [{ "variant": 0, "label": "Coastal highway - day - lit", "image_url": "https://…webp" }],
+  "queryMs": 293
+}
+```
+
+A `clusters` entry only carries `objectid`/`side`/`section`/`station`/`imageVariant`/`imageUrl`/etc. when it resolved to exactly one real point (`clusterMode: 'live'` and the grid cell had a single row) — `mv`-mode entries and multi-point `live`-mode cells only carry `lat`/`lng`/`count`. `queryMs` is server-side wall time (DB query + route compute), shown alongside a client-measured `fetch()` duration in the UI so real load performance at scale is directly observable, per the page's actual purpose.
+
+---
+
+### `GET /api/road-design`
+
+Returns the road-design CAD geometry (pavement, slope, drainage, culverts, ducts, road markings) for `HitechMap`'s road-design overlay, sourced from an external ArcGIS Online FeatureServer the user's team publishes to — not Supabase. Session-guarded.
+
+**Query params (all optional):**
+```
+project                          — project display name (default "Coastal Road"); looked up in ROAD_DESIGN_LAYERS in the route file — a project with no entry returns { layers: [] }, not an error
+zoom                              — current map zoom; only used to decide whether to apply the viewport bbox below (requires zoom >= 12, same gate /api/map uses)
+swLat, swLng, neLat, neLng        — current map viewport bounds; used once zoomed in enough, else the query falls back to the project's configured defaultBounds
+```
+
+`ROAD_DESIGN_LAYERS` (in the route file) maps project name → an ArcGIS FeatureServer base URL, a list of sub-layer ids with display label/color/line-style/weight, and a `defaultBounds` envelope. **Add new road sections there when onboarding them** — a config edit, not a code change (mirrors `PROJECT_ID_MAP`'s convention in `src/app/api/map/route.ts`). Only `'Coastal Road'` is configured as of this writing (Section 1c's FeatureServer, 6 layers). The ArcGIS org's content is fully public/anonymous-readable as of this writing — no API key/token needed; if that ever changes, the single `fetch()` call inside `queryLayer()` in the route file is the one place to add `&token=`.
+
+Every ArcGIS query is always bbox-scoped (never unbounded) and paginated (`resultOffset`/`resultRecordCount`, capped at 5 pages/10,000 features per layer as a defensive ceiling) — the underlying FeatureServer's `maxRecordCount` is 2000. Field names are **not** consistent across a FeatureServer's own sub-layers (found the hard way: some layers use `Entity_Name`/`Road_Section`, others use a completely different `SJ_*` spatial-join schema — `SJ_project`/`SJ_section`/`SJ_item`/`SJ_Side`/`SJ_Status`/`SJ_Chainag`) — the route always requests `outFields=*` and tries a list of candidate field names per logical field (`pickField()` in the route file) rather than assuming one schema, so a newly onboarded section's layers work without per-layer field configuration.
+
+**Response (200):**
+```json
+{
+  "project": "Coastal Road",
+  "source": "viewport",
+  "layers": [
+    {
+      "id": 75, "label": "Pavement (CRCP)", "color": "#a8a29e", "dash": "solid", "weight": 4, "zIndex": 2.6,
+      "features": [
+        {
+          "objectId": 1, "entityName": "CRCP", "roadSection": "Section 1C", "shapeLength": 7622.89,
+          "side": null, "status": null, "chainage": null,
+          "paths": [[{ "lat": 6.428, "lng": 3.577 }, { "lat": 6.428, "lng": 3.576 }]]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`source` is `"viewport"` (bbox from the map's current view), `"default-extent"` (project's configured `defaultBounds`, used pre-`idle`/at low zoom), or `"none"` (no config for this project). `paths` is already flattened from GeoJSON `LineString`/`MultiLineString` to `{lat,lng}[][]` server-side — `HitechMap` builds `google.maps.Polyline`s directly from it, no GeoJSON handling on the client.
+
+---
+
 ## Database Tables (Supabase / PostgreSQL)
 
 The dashboard's core data lives in two tables, cross-referenced by four HR join tables and a few progress/mapping tables added later:
@@ -333,6 +410,15 @@ Bill of quantities line items — backs `/progress`'s BOQ tab. Key columns: `des
 ### `hitech_ogun_entities`
 Populated by `sync_ogun.py` (append-only, checks row count before inserting). Not currently read by any route in this app — data-ingestion-only as of this writing; confirm before assuming it's dead.
 
+### `streetlights`
+3,000,000 rows — a synthetic/stress-test dataset (98% flagged `is_synthetic`) backing `/streetlights`, not populated by any script in this repo (pre-existed in the shared Supabase project before this app's `/streetlights` page was built — see 2026-07-30 changelog). One row per streetlight point. Key columns: `objectid` (PK), `lat`/`lon` (double precision), `geom` (PostGIS geometry, SRID 4326, kept in sync via the `streetlights_set_geom` trigger), `side` (`LHS`/`RHS`/`Median` — note mixed case on the third value, not `MEDIAN`), `section` (153 distinct values, road/region names — indexed via `idx_streetlights_section`), `station`/`station_m` (chainage), `image_variant` (0–4, FK-like to `streetlight_image_variants`). Also indexed on `(lat, lon)` (`idx_streetlights_latlon`, btree — measured faster than the GIST `geom` index for bbox queries on this table) and `geom` (GIST). Never query this table's full 3M rows directly in a request path — see `GET /api/streetlights` below.
+
+### `streetlight_image_variants`
+5 rows only. `variant` (smallint, 0–4), `label` (e.g. "Coastal highway - day - lit"), `image_url` (full https URL). Every `streetlights` row points to one of these 5 canned images via `image_variant` — there is no per-light unique photo.
+
+### `streetlights_summary_cache` / `streetlights_section_stats`
+Cache tables refreshed every 10 minutes by the `refresh_streetlights_summary_cache` `pg_cron` job (calling `streetlights_refresh_summary_cache()`), not queried live — the underlying full-table aggregates (`GROUP BY side`, `COUNT(DISTINCT section)`) measured 8–10s against the live `streetlights` table, at/past the `authenticator` role's 8s `statement_timeout`. `streetlights_summary_cache` is a one-row singleton (`total_estimate` from `pg_class.reltuples`, `lhs_count`/`rhs_count`/`median_count`, `section_count`). `streetlights_section_stats` is one row per section with `point_count`, doubling as the `/streetlights` section-dropdown data source.
+
 ---
 
 ## Auth Flow
@@ -341,7 +427,7 @@ Populated by `sync_ogun.py` (append-only, checks row count before inserting). No
 2. `POST /api/auth/login` verifies against `auth_user.password` (Django pbkdf2_sha256)
 3. On success: iron-session sets `hitech-dashboard-session` cookie
 4. `DashHeader` calls `GET /api/auth/me` on mount — redirects to `/login` on 401
-5. `GET /api/dashboard` and `GET /api/progress` also guard with a session check — return 401 if unauthenticated. `GET /api/map` does **not** guard — it's fetched client-side by `HitechMap` and returns no user-identifying data, but keep that in mind if its response shape ever changes
+5. `GET /api/dashboard`, `GET /api/progress`, `GET /api/streetlights`, and `GET /api/road-design` also guard with a session check — return 401 if unauthenticated. `GET /api/map` does **not** guard — it's fetched client-side by `HitechMap` and returns no user-identifying data, but keep that in mind if its response shape ever changes
 6. Logout: `POST /api/auth/logout` destroys the cookie, redirect to `/login`
 
 `SideNav` hides itself on `/login` (pathname check) and on screens <640px; `DashHeader`'s text nav links are the mobile fallback in that case. Neither component gates on auth state beyond the `/login` pathname check — the actual redirect-if-unauthenticated logic lives in `DashHeader`'s `GET /api/auth/me` call and each page's own data fetch.
@@ -411,6 +497,38 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-07-30 — ArcGIS road-design CAD overlay on the main dashboard map
+
+**Files changed:** `src/app/api/road-design/route.ts` (new), `src/components/HitechMap.tsx`
+
+**What changed:**
+- User asked for `/dashboard`'s map to show the actual road DESIGN geometry (pavement, slope, drainage, culverts, ducts, road markings) — not just the chainage points/activity-report pins it already draws — sourced from CAD data the user's team publishes to ArcGIS Online. First raised as a general "can we bring ArcGIS web map data into Google Maps" question; investigated and answered generically (vector-overlay-via-FeatureServer-query vs. raster-tile-overlay, recommending the former) before the user supplied a real web map URL to work from.
+- **Investigated the live ArcGIS org directly (curl against the sharing/REST APIs) rather than guessing**: the org ("melhem") has all 81 of its public items set to fully public, anonymous, unauthenticated read access, with open CORS — no API key needed for reads. The web map the user sent ("Section 1c Entities_") turned out to be one of several overlapping/near-duplicate items in the org (also found `total_entities`/`total_entities_new`, a differently-shaped consolidated pavement-only dataset, and ~75 unrelated items — settlement surveys, geotechnical tests, drone missions, other projects). Rather than guess which was authoritative, asked the user directly; they chose to scope this pass to just Section 1c's data and provide more sections later — so the config (`ROAD_DESIGN_LAYERS` in the new route, keyed by project name) is built to make adding a section a config edit, not a code change, mirroring `PROJECT_ID_MAP`'s existing convention in `src/app/api/map/route.ts`.
+- **Two real data-shape surprises found via direct querying, not assumed from the web map's popup config**: (1) the web map's `popupInfo` implied a uniform `Entity_name`/`Road_section` schema across all 6 of its layers, but querying each layer's own metadata showed only 3 of the 6 (`top_slope`/`CRCP`/`road marking`) use that schema (capitalized differently — `Entity_Name`/`Road_Section`) — the other 3 (`Discharge_`/`Culverts`/`Ducts_`) use a completely different `SJ_*` spatial-join schema (`SJ_project`/`SJ_section`/`SJ_item`/`SJ_Side`/`SJ_Status`/`SJ_Chainag`), actually richer (side, status, chainage) than the first 3. Fixed by requesting `outFields=*` unconditionally and adding `pickField()` — a per-logical-field list of candidate real field names, checked case-insensitively — rather than configuring field names per layer, so a newly onboarded section's layers work regardless of which schema they happen to use. (2) The 6 layers don't share one geographic extent — `top_slope`/`CRCP`/`road marking` span a much wider stretch of road (~100km) than the `SJ_*` layers (~26km) — an initial `defaultBounds` guessed from one layer's sample coordinate returned 0 features for 3 of the 6 layers; fixed by computing the real union extent across all 6 layers' own metadata and verifying every layer returns data against it before shipping.
+- **New `GET /api/road-design`**: session-guarded (matching the majority-of-routes convention, unlike `/api/map`'s deliberate exception), queries the 6 configured ArcGIS layers via `Promise.all`, paginates each on `exceededTransferLimit` (capped at 5 pages/10,000 features as a defensive ceiling — the FeatureServer's real `maxRecordCount` is 2000), and flattens GeoJSON `LineString`/`MultiLineString` geometry to `{lat,lng}[][]` paths server-side so `HitechMap` never has to handle GeoJSON shapes directly. Always sends ArcGIS a bounding envelope (real viewport once zoomed in past `zoom>=12`, same gate `/api/map` uses; else the verified `defaultBounds`) — never an unbounded query, even though today's single-section dataset is small.
+- **`HitechMap.tsx`**: entirely additive — a new, independent fetch effect (`[project, viewState]`, reuses the map's existing `idle`-driven `viewState` rather than adding a second map listener, deduped via a `lastFitKeyRef`-style ref) and a new, separate render effect (`[mapLoaded, designData, showDesign]`) that clears/rebuilds `google.maps.Polyline`s styled per layer (6 new colors + dash/dot/dashdot line styles via Google's documented `IconSequence` technique, chosen to avoid colliding with the existing palette — notably avoided cream/near-white for pavement/road-marking, since the existing primary road alignment line is already pure white and a similar color would visually blend into it). Deliberately kept as a **separate** effect from the existing big overlay effect specifically so toggling/refetching the design overlay never re-clears/rebuilds the primary road line, tick marks, highlight lines, report lines/markers, or clusterer — verified live (see below) that none of that regressed. A new sibling `selDesignFeature` popup state (not an extension of `selReport` — different data shape entirely) shows `Entity`/`Section`/`Chainage`/`Side`/`Status`/`Length` on click, positioned top-right so it can never visually collide with the existing top-left report popup. New "Design On/Off" toggle button next to the existing "Color By" controls, and a second legend row for the 6 design layers.
+- **Real bug found and fixed during verification**: the render effect's debug-state exposure (`window.__debugDesignLines`, same convention as the existing `__debugHighlightLines`) was only updated on the branch that builds lines, not on the early-return branch that clears them (`showDesign` toggled off) — so toggling the overlay off left the debug snapshot showing stale "still on map" data even though the actual `Polyline`s were correctly removed. Caught by a scripted verification pass checking the debug snapshot before/after toggling, not by eye. Fixed by moving the snapshot assignment to run on both branches.
+- **Verified live** via `scripts/mint-session.mjs` + a scripted Chromium/Playwright pass against a local dev server: `GET /api/road-design` returns 401 with no cookie, real per-layer feature data with a valid cookie (309/195/136/89/62/24 features respectively for Slope/CRCP/Road Marking/Culverts/Discharge/Ducts against the verified default extent), and `{layers:[]}` (not an error) for an unconfigured project; on `/dashboard` with `project=Coastal Road`, confirmed 1067 design lines render, the 6-item legend is present, toggling off/on correctly clears/restores lines (post-fix), a programmatically-triggered click on a real line opens the popup with real data (`Slope / Entity: Top Slope / Section: Section 1C / Length: 1366.9 m`), zooming into Section 1c visually shows the design geometry (a dashed amber slope line, a blue drainage line) following the actual road alignment in the satellite imagery, and — the explicit regression check — the existing report-row-click-to-map-popup flow, `/api/map` request count (no reintroduced `fitBounds`→`idle`→refetch loop), and zero console/page errors all held up unchanged. `tsc --noEmit` and `next build` both pass (confirmed no `google.maps.*` reference leaked to module scope, which would have broken `/dashboard`'s static prerender — the same failure mode already hit once this session while building `StreetlightsMap`).
+
+**Why:** Direct ask, arrived at through a short back-and-forth: user first asked generally whether ArcGIS web map data could be layered under Google Maps as a base (answered with the two viable technical approaches and their tradeoffs), then supplied a real web map URL once the "how" was established. Investigating that URL directly against the live ArcGIS REST API — rather than assuming its `popupInfo` metadata was authoritative — is what surfaced both real bugs (inconsistent field schema, inconsistent per-layer extents) before they shipped; CLAUDE.md's own established pattern of measuring against live systems rather than trusting documentation/config at face value (see the 2026-07-22/07-30 `/progress`/`/streetlights` entries) applied just as directly to an external third-party API as it has to this project's own Supabase queries.
+
+### 2026-07-30 — New `/streetlights` page: 3M-row map/scale test, and a real PL/pgSQL performance bug found and fixed along the way
+
+**Files changed:** `src/app/streetlights/page.tsx` (new), `src/components/StreetlightsMap.tsx` (new), `src/app/api/streetlights/route.ts` (new), `src/components/SideNav.tsx`, `src/components/DashHeader.tsx`, Supabase migrations `add_streetlights_section_index`, `add_streetlights_cluster_rpc`, `add_streetlights_summary_cache`, `fix_streetlights_summary_cache_side_case`, `lock_down_legacy_streetlights_rpc_grants`, `fix_streetlights_cluster_bbox_index_usage`, `fix_streetlights_cluster_parallel_safety`
+
+**What changed:**
+- A new `streetlights` table (3,000,000 rows, national coverage, 153 `section`s) appeared in the shared Supabase project — a synthetic stress-test dataset (98% flagged `is_synthetic`), each row pointing at one of only 5 canned images in `streetlight_image_variants` via `image_variant`. User asked for a new page to visualize it on a map with images, explicitly to test dashboard load performance at millions-of-rows scale. User confirmed Google Maps (not ArcGIS, discussed earlier in the same session) to stay consistent with the existing `/dashboard` map stack.
+- **Not a greenfield build**: investigation found real infra already existed in the DB ahead of this — `streetlights_grid_mv` (a materialized view pre-aggregating all 3M rows into a 0.02° grid, 1,743 cells, refreshed every 10 minutes by an existing `pg_cron` job), and two RPCs (`streetlights_clusters` reading the MV, `streetlights_detail` doing a raw bbox query). Both RPCs had wide-open `EXECUTE` grants (`PUBLIC`/`anon`/`authenticated`) — fixed to `service_role`-only via `lock_down_legacy_streetlights_rpc_grants`, matching this project's own convention for every other RPC. Both `streetlights` and `streetlight_image_variants` have RLS enabled with a `USING (true)` public-read policy — left alone (low-sensitivity synthetic geometry data, and locking it down would be a separate decision from this pass); `/api/streetlights` still sits behind the standard session guard for app-level consistency with `/dashboard`/`/progress`.
+- **New `streetlights_cluster(p_min_lat, p_max_lat, p_min_lng, p_max_lng, p_section, p_grid_deg, p_max_points)` RPC**: a 2D grid-snap (`round(lon/grid)*grid`) clustering query for the zoomed-in/section-filtered case the existing MV-backed RPC can't serve (no section filter, no per-point representative row). Self-limiting via a pre-count-then-scale pass (same technique as `map_chainage_line`, adapted from 1D to 2D — first 2D spatial RPC in this codebase), with the final `ORDER BY count DESC LIMIT 900` as the hard cap against skewed density (measured: one grid cell alone has 232,413 points). Representative row per cluster picked via `min(objectid)` + a primary-key join-back (not `array_agg`/`DISTINCT ON` — cheaper at this density). New `idx_streetlights_section` btree index added — a filtered `GROUP BY section` on the unindexed table measured 8.01s (full seq scan), same order as the "must never run inline in a request" full-table queries below.
+- **`streetlights_summary_cache` + `streetlights_section_stats`** cache tables, refreshed every 10 minutes by a new `pg_cron` job (`refresh_streetlights_summary_cache`, piggybacking the same cadence the grid MV already uses) rather than queried live: `GROUP BY side` and `COUNT(DISTINCT section)` on the full table measured **8.01s** and **9.66s** respectively (52MB on-disk sort spill for the latter) — both at or past the `authenticator` role's 8s `statement_timeout`, the exact failure boundary that shipped the silent-all-zeros bug in `/api/progress` (2026-07-22 entry below) when an RPC's `.error` went unchecked. `/api/streetlights` checks `.error` on every query explicitly, learning that lesson forward rather than repeating it.
+- **Real bug found and fixed during verification, not present in the final state**: the first version of `streetlights_cluster` used a single query shape gated by `(not v_has_bbox or (lat between … and lon between …))` so one function body could serve both the bbox and no-bbox cases. `EXPLAIN ANALYZE` against the live table showed this **defeats `idx_streetlights_latlon` entirely** — for a 270k-row bbox, the equivalent raw SQL (via `PREPARE`/`EXECUTE` with identical bind values) ran in ~150–230ms using an index-only scan, while the RPC took **2.36s**, touching ~130k buffers (≈the whole table). Splitting into two explicit `IF v_has_bbox THEN … ELSE …` branches didn't fix it (still 3.87s) — the actual root cause, isolated by testing the same query shape at the top level via `PREPARE`/`EXECUTE` (fast) versus inside the function (slow) versus with `PARALLEL SAFE` toggled: marking the function `PARALLEL SAFE` led the planner to cost the internal queries assuming parallel workers would be available, picking a plan that performed badly when that assumption didn't hold up in this execution context — `ALTER FUNCTION ... PARALLEL UNSAFE` alone cut the same query from 3.87s to 305ms. Baked permanently into the function definition (`fix_streetlights_cluster_parallel_safety`) with a comment explaining why, since it inverts this project's usual "always mark aggregate RPCs `PARALLEL SAFE`" guidance (2026-07-22 `/progress` entry) — here it was a measured net negative, not an oversight to fix. Re-verified after the fix: 293ms (dense mid-zoom bbox, previously 2.36–3.87s), 4ms (high-zoom small bbox), 428ms (largest section, "Kebbi", no bbox) — all comfortably under the 8s timeout.
+- **Also caught during verification**: the summary cache's first `count(*) filter (where side = 'MEDIAN')` returned 0 — the actual stored value is `"Median"` (mixed case), not `"MEDIAN"`. Fixed via `upper(side) = 'MEDIAN'` (`fix_streetlights_summary_cache_side_case`); the three side counts now sum to exactly 3,000,000 (1,207,060 LHS / 1,158,946 RHS / 633,994 Median).
+- **`StreetlightsMap.tsx`**: modeled only on `HitechMap.tsx`'s generic reusable core (Google Maps loader at module scope, map-init effect skeleton, `idle`→viewport→refetch cycle, a `lastFitKeyRef`-equivalent guard against the `fitBounds → idle → refetch → fitBounds` infinite-loop failure mode, `MarkerClusterer` with a custom step-sized bubble renderer, div-based click popup) — explicitly excludes everything road/chainage-specific (no `Polyline`, no tick marks, no `focusReport`, no nearest-station lookup), none of which applies to point data. Unlike `HitechMap`, uses `useTheme()` for colors (a new component, so it doesn't need to carry forward `HitechMap`'s still-open theme-system gap noted in the 2026-07-24 entry). Cluster cells resolve to a small green single-light marker (only possible on the live path, count===1) with a real popup image, versus the standard amber `MarkerClusterer` bubble for everything else (MV-mode cells, or live-mode cells still representing more than one point) — that popup shows the representative point's image captioned "showing 1 of N."
+- **`StreetlightsPage`**: self-contained per this project's established per-page convention (own `Panel`/`KPICard`/`Reveal`/`useCountUp`, copied from `machines/page.tsx`, not shared). KPI row includes Total (labeled "(est.)" — `pg_class.reltuples`, not a live `COUNT(*)`), Sections, Points Rendered, and a **Load Time** card showing both server `queryMs` and a client-measured `fetch()` duration side by side, updating on every map fetch (not just first load) — this directly serves the user's stated goal of observing real load performance, not just shipping a working map. An always-visible 5-image legend strip (from `streetlight_image_variants`) answers "with the images also" independent of what's currently clustered/zoomed on the map. `StreetlightsMap` is dynamically imported with `ssr: false` (same as `HitechMapComponent` in `dashboard/page.tsx`) — omitting this broke `next build` with `ReferenceError: window is not defined` during static prerendering, since `@googlemaps/js-api-loader`'s `setOptions()` call at module scope runs during the server-side prerender pass otherwise.
+- Verified live via a scripted Chromium/Playwright pass (`scripts/mint-session.mjs` for a session cookie, same pattern as this project's other verification passes) against a local dev server: map renders and clusters in both themes, section filter refetches and correctly switches `clusterMode` from `'mv'` to `'live'` (confirmed visually via the Load Time card's mode label), nav entry present and correctly styled in both `SideNav` (icon rail, desktop) and `DashHeader`'s mobile text fallback, zero console/page errors across both themes. `tsc --noEmit` and `next build` both pass.
+
+**Why:** Direct ask: visualize the new 3M-row table on a map with images, explicitly framed as a dashboard-scale/load-time test — not just "build a page," which is why the Load Time KPI card and both server- and client-measured timings were treated as a required deliverable rather than nice-to-have polish, and why every design decision in the RPC (grid-snap cap, index choice, parallel-safety) was validated against real `EXPLAIN ANALYZE` numbers on the live 1.1GB table rather than assumed. The PARALLEL SAFE and mixed-case-side bugs were caught specifically because the plan's verification step required re-running `EXPLAIN ANALYZE` after building, not just once during design — consistent with this project's established "verify against real data, iterate" pattern (see the 2026-07-22 `/progress` timeout entry for the prior instance of this same discipline paying off).
 
 ### 2026-07-24 — Site-wide light/dark theme toggle, and a hydration-mismatch bug it shipped with
 

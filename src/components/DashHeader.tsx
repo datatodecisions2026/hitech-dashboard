@@ -35,10 +35,11 @@ export default function DashHeader() {
   }
 
   const NAV_LINKS = [
-    { label: 'Dashboard', href: '/dashboard' },
-    { label: 'Progress',  href: '/progress'  },
-    { label: 'Machines',  href: '/machines'  },
-    { label: 'Personnel', href: '/personnel' },
+    { label: 'Dashboard',    href: '/dashboard'    },
+    { label: 'Progress',     href: '/progress'     },
+    { label: 'Machines',     href: '/machines'     },
+    { label: 'Personnel',    href: '/personnel'    },
+    { label: 'Streetlights', href: '/streetlights' },
   ]
 
   const headerBg = isLight ? '#ffffff' : '#1c1c1f'

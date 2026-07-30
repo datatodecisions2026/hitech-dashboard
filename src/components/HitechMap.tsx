@@ -96,6 +96,34 @@ interface MapData {
   category?: string
 }
 
+/* ── Road design (ArcGIS CAD overlay) ─────────────────────────
+   See src/app/api/road-design/route.ts — mirrors that route's response
+   shape exactly. */
+interface DesignFeature {
+  objectId:    number | null
+  entityName:  string | null
+  roadSection: string | null
+  shapeLength: number | null
+  side:        string | null
+  status:      string | null
+  chainage:    string | null
+  paths: { lat: number; lng: number }[][]
+}
+interface DesignLayer {
+  id: number
+  label: string
+  color: string
+  dash: 'solid' | 'dash' | 'dot' | 'dashdot'
+  weight: number
+  zIndex: number
+  features: DesignFeature[]
+}
+interface RoadDesignData {
+  project: string
+  source:  string
+  layers:  DesignLayer[]
+}
+
 /* ── Props ─────────────────────────────────────────────────── */
 interface Props {
   project: string
@@ -137,6 +165,17 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
   const lastFitKeyRef   = useRef<string>('')
   const lastFocusIdRef  = useRef<number | null>(null)
   const secondaryFetchedRef = useRef<string | null>(null)
+
+  // Road design (ArcGIS CAD) overlay — independent of the primary chainage/
+  // report data above (own fetch effect, own render effect, own popup
+  // state), so a slow/failing/absent design overlay never blocks or
+  // interferes with the map's core content.
+  const [designData,    setDesignData]    = useState<RoadDesignData | null>(null)
+  const [designLoading, setDesignLoading] = useState(false)
+  const [showDesign,    setShowDesign]    = useState(true)
+  const [selDesignFeature, setSelDesignFeature] = useState<{ feature: DesignFeature; layer: DesignLayer } | null>(null)
+  const designReqKeyRef = useRef<string>('')
+  const designLinesRef  = useRef<google.maps.Polyline[]>([])
 
   // Overlay objects have no Mapbox-style setData() — each rebuild clears and
   // recreates them, so refs track what's currently on the map to clear.
@@ -207,6 +246,44 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
       .catch(() => {})
   }, [project])
 
+  /* ── Load ArcGIS road-design overlay (CAD geometry) ──────────────────────
+     Independent of the primary chainage/report fetch above — its own
+     effect/state, so a slow or failing design-overlay request never blocks
+     or interferes with `loading`/`refreshing` (the map's core content must
+     keep working even if this optional overlay errors or a project has no
+     design data). Reuses the same `viewState` the `idle` listener already
+     produces (see the map-init effect below) — no second map listener.
+     Deduped via designReqKeyRef the same way lastFitKeyRef dedupes
+     fitBounds, so repeated `idle` events with an unchanged effective bbox
+     don't refetch. /api/road-design always scopes its ArcGIS query to a
+     bounding envelope (the real viewport once zoomed in, else a
+     per-project default extent) — it never issues an unbounded query. ── */
+  useEffect(() => {
+    const zoom = viewState?.zoom ?? null
+    const useViewport = zoom !== null && zoom >= 12 && !!viewState
+    const key = useViewport
+      ? `${project}|${zoom}|${viewState!.swLat.toFixed(3)}|${viewState!.swLng.toFixed(3)}|${viewState!.neLat.toFixed(3)}|${viewState!.neLng.toFixed(3)}`
+      : `${project}|default`
+    if (designReqKeyRef.current === key) return
+    designReqKeyRef.current = key
+
+    const params = new URLSearchParams({ project })
+    if (useViewport) {
+      params.set('zoom',  String(viewState!.zoom))
+      params.set('swLat', String(viewState!.swLat))
+      params.set('swLng', String(viewState!.swLng))
+      params.set('neLat', String(viewState!.neLat))
+      params.set('neLng', String(viewState!.neLng))
+    }
+
+    setDesignLoading(true)
+    fetch(`/api/road-design?${params.toString()}`)
+      .then(r => r.json())
+      .then(d => setDesignData(d))
+      .catch(() => {}) // optional overlay — fail silently
+      .finally(() => setDesignLoading(false))
+  }, [project, viewState])
+
   /* ── Initialise Google Maps once ─────────────────────────── */
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return
@@ -247,10 +324,11 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
         ;(window as any).__debugMap = localMap
         setMapLoaded(true)
 
-        // Clicking empty map area clears the selected-report popup — actual
-        // report markers/lines stopPropagation implicitly via their own
-        // click listeners (added in the layer-building effect below).
-        localMap.addListener('click', () => setSelReport(null))
+        // Clicking empty map area clears both popups — actual report
+        // markers/lines and design-overlay lines stopPropagation implicitly
+        // via their own click listeners (added in the layer-building
+        // effects below).
+        localMap.addListener('click', () => { setSelReport(null); setSelDesignFeature(null) })
 
         // Reports the settled view back to the data-fetch effect above, so
         // it can refetch chainage detail scoped to what's actually on
@@ -280,6 +358,7 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
       highlightLinesRef.current.forEach(l => l.setMap(null))
       tickMarkersRef.current.forEach(m => m.setMap(null))
       reportLinesRef.current.forEach(l => l.setMap(null))
+      designLinesRef.current.forEach(l => l.setMap(null))
       clustererRef.current?.clearMarkers()
       mapRef.current = null
       setMapLoaded(false)
@@ -591,6 +670,69 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
     }
   }, [mapLoaded, mapData, secondaryStations, colorBy, project, category, chFrom, chTo])
 
+  /* ── Add / update the road-design (ArcGIS CAD) overlay ───────────────────
+     Deliberately a SEPARATE effect from the one above: designData/
+     showDesign changing must never re-clear/rebuild the primary/secondary
+     road lines, tick marks, highlight lines, report lines/markers, or
+     clusterer — that effect's own deps list and its lastFitKeyRef
+     fitBounds guard are untouched by this one. This effect never calls
+     fitBounds, so it can't interact with that guard at all. ── */
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return
+    const map = mapRef.current
+
+    designLinesRef.current.forEach(l => l.setMap(null))
+    designLinesRef.current = []
+    if (!showDesign || !designData) {
+      // Keep the debug snapshot live even in the cleared state — it must
+      // reflect designLinesRef.current's *current* value (empty here), not
+      // a stale snapshot frozen from the last time lines were built.
+      ;(window as any).__debugDesignLines = []
+      return
+    }
+
+    // google.maps.* symbols only exist once the Maps JS API has loaded —
+    // built here inside the effect (gated by mapLoaded), never at module
+    // scope, same discipline the tick-marker icon above uses. A module-
+    // scope reference would break next build's static prerender.
+    const dashIcons = (dash: DesignLayer['dash']): google.maps.IconSequence[] | undefined => {
+      if (dash === 'solid') return undefined
+      const dashSym = { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 }
+      const dotSym  = { path: google.maps.SymbolPath.CIRCLE, strokeOpacity: 1, scale: 2, fillOpacity: 1 }
+      if (dash === 'dash') return [{ icon: dashSym, offset: '0', repeat: '14px' }]
+      if (dash === 'dot')  return [{ icon: dotSym,  offset: '0', repeat: '10px' }]
+      return [ // dashdot
+        { icon: dashSym, offset: '0',    repeat: '20px' },
+        { icon: dotSym,  offset: '10px', repeat: '20px' },
+      ]
+    }
+
+    const lines: google.maps.Polyline[] = []
+    designData.layers.forEach(layer => {
+      const icons = dashIcons(layer.dash)
+      layer.features.forEach(feature => {
+        feature.paths.forEach(path => {
+          if (path.length < 2) return
+          const line = new google.maps.Polyline({
+            path,
+            strokeColor:   layer.color,
+            strokeOpacity: icons ? 0 : 0.95, // dashed styles hide the base stroke; icons carry the dashes
+            strokeWeight:  layer.weight,
+            icons,
+            clickable: true,
+            zIndex: layer.zIndex,
+            map,
+          })
+          line.addListener('click', () => { setSelDesignFeature({ feature, layer }); setSelReport(null) })
+          lines.push(line)
+        })
+      })
+    })
+    designLinesRef.current = lines
+    ;(window as any).__debugDesignLines = lines.map(l => ({ onMap: !!l.getMap() }))
+    ;(window as any).__debugDesignLinesRaw = lines // real objects, same precedent as __debugMap — lets tooling trigger click events for verification
+  }, [mapLoaded, designData, showDesign])
+
   /* ── Focus a specific report (e.g. clicked from a list elsewhere on the
      dashboard) ─────────────────────────────────────────────
      Pans/zooms straight to that report's coordinates and opens its popup.
@@ -642,6 +784,20 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
             boxShadow: colorBy === opt ? SH_RAISED : 'none',
           }}>{opt}</button>
         ))}
+
+        {/* Road-design overlay toggle — only meaningful once there's data
+            for the active project, but the button stays available so the
+            user isn't left guessing why nothing shows for other projects. */}
+        <button onClick={() => setShowDesign(v => !v)} style={{
+          background: showDesign ? D.amber : 'transparent',
+          color:      showDesign ? '#000'  : D.muted,
+          border:     `1px solid ${showDesign ? D.amber : D.sub}`,
+          borderRadius: 5, padding: '4px 14px', fontSize: 11,
+          cursor: 'pointer', fontFamily: 'var(--font-mono)',
+          letterSpacing: 1, textTransform: 'uppercase', transition: 'all 0.2s',
+          boxShadow: showDesign ? SH_RAISED : 'none',
+        }}>Design {showDesign ? 'On' : 'Off'}</button>
+        {designLoading && <span style={{ fontSize: 10, color: D.amber, fontFamily: 'var(--font-mono)' }}>· loading design…</span>}
 
         {/* Active chainage range badge */}
         {chFrom && chTo && (
@@ -709,7 +865,45 @@ export default function HitechMap({ project, chFrom, chTo, category, focusReport
             </div>
           </div>
         )}
+
+        {/* Selected road-design feature popup — top-right, mirroring the
+            report popup's style (top-left), so the two can never visually
+            collide even though click handlers already ensure only one is
+            open at a time. */}
+        {selDesignFeature && (
+          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 20, background: 'rgba(10,8,5,0.96)', border: `1px solid ${selDesignFeature.layer.color}55`, borderRadius: 10, padding: '14px 16px', minWidth: 220, maxWidth: 280, boxShadow: '0 12px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <span style={{ fontSize: 10, color: selDesignFeature.layer.color, fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
+                {selDesignFeature.layer.label}
+              </span>
+              <button onClick={() => setSelDesignFeature(null)} style={{ background: 'none', border: 'none', color: D.sub, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 8 }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <InfoRow label="Entity"   value={selDesignFeature.feature.entityName} />
+              <InfoRow label="Section"  value={selDesignFeature.feature.roadSection} />
+              <InfoRow label="Chainage" value={selDesignFeature.feature.chainage} />
+              <InfoRow label="Side"     value={selDesignFeature.feature.side} />
+              <InfoRow label="Status"   value={selDesignFeature.feature.status} />
+              {selDesignFeature.feature.shapeLength != null && (
+                <InfoRow label="Length" value={`${selDesignFeature.feature.shapeLength.toFixed(1)} m`} />
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Road-design legend — shown whenever the active project has design
+          data, independent of the color-by legend below. */}
+      {designData && designData.layers.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 12 }}>
+          {designData.layers.map(l => (
+            <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
+              <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>{l.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Legend */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 12 }}>

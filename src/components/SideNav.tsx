@@ -8,12 +8,14 @@ const IconHome = () => <svg width={19} height={19} viewBox="0 0 24 24" fill="non
 const IconChart = () => <svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="6"/><line x1="18" y1="20" x2="18" y2="15"/></svg>
 const IconTruck = () => <svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="6" width="14" height="11"/><path d="M15 9h4l3 3v5h-7z"/><circle cx="6" cy="19" r="2"/><circle cx="17.5" cy="19" r="2"/></svg>
 const IconPeople = () => <svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+const IconBulb   = () => <svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1v.2h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2Z"/></svg>
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',  href: '/dashboard',  icon: IconHome },
-  { label: 'Progress',   href: '/progress',   icon: IconChart },
-  { label: 'Machines',   href: '/machines',   icon: IconTruck },
-  { label: 'Personnel',  href: '/personnel',  icon: IconPeople },
+  { label: 'Dashboard',    href: '/dashboard',    icon: IconHome },
+  { label: 'Progress',     href: '/progress',     icon: IconChart },
+  { label: 'Machines',     href: '/machines',     icon: IconTruck },
+  { label: 'Personnel',    href: '/personnel',    icon: IconPeople },
+  { label: 'Streetlights', href: '/streetlights', icon: IconBulb },
 ]
 
 function NavItem({ href, label, Icon, isActive, D, isLight }: { href: string; label: string; Icon: () => React.ReactElement; isActive: boolean; D: ColorTokens; isLight: boolean }) {
