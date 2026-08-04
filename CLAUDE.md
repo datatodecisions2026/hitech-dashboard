@@ -20,6 +20,7 @@ src/
     machines/page.tsx       # Machines-focused view of dashboard data, self-contained (own Panel/KPICard/FilterBar)
     personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx)
     streetlights/page.tsx   # 3M-row streetlights map/scale-test page, self-contained — own Panel/KPICard/Reveal, own useTheme() usage. See 2026-07-30 changelog
+    planning-implementation/page.tsx  # Per-section Total/Planned/Implemented activity comparison, self-contained (own Panel/KPICard/Reveal). See 2026-08-04 changelog
     api/
       auth/
         login/route.ts      # POST — authenticate against Supabase auth_user table
@@ -30,14 +31,16 @@ src/
       map/route.ts          # GET  — chainage stations + geotagged reports for HitechMap (no session guard)
       streetlights/route.ts # GET  — clustered streetlight points + summary/sections/images from Supabase (session-guarded). See 2026-07-30 changelog
       road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
+      planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC (session-guarded). See 2026-08-04 changelog
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
-    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights), sticky below header, hidden on /login and <640px
+    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights/Planning & Implementation), sticky below header, hidden on /login and <640px
     HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points + ArcGIS road-design CAD overlay, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
     StreetlightsMap.tsx     # Google Maps JS API map for the 3M-row streetlights table — clustered points only, no polylines/chainage. Uses useTheme() (unlike HitechMap). See 2026-07-30 changelog
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs
+scripts/sql/                # One-off Postgres migration SQL not tracked by any Supabase CLI setup in this repo — apply manually via the Supabase SQL editor or MCP. add_planning_implementation_rpc.sql adds progress_section_breakdown(). See 2026-08-04 changelog
 sync_to_supabase.py         # Pulls Main_Survey_Data/photos/employees/supervisors/engineers/machines from Google Drive Excel, upserts into hitech_report_* tables (dedupes on globalid)
 sync_progress.py            # Uploads construction progress data (blocks/entities/BOQ) into hitech_construction_* tables from local CSV/XLSX
 sync_ogun.py                # Append-only sync of "Ogun - Total entities.xlsx" into hitech_ogun_entities (checks row count, inserts only new rows)
@@ -342,6 +345,41 @@ Every ArcGIS query is always bbox-scoped (never unbounded) and paginated (`resul
 
 ---
 
+### `GET /api/planning-implementation`
+
+Returns, per road section, a Total/Planned/Implemented activity count comparison — backs `/planning-implementation`, not `/dashboard` or `/progress`. Requires a valid session (401 if not authenticated).
+
+**Query params:**
+```
+project   — project display name (default "Coastal Road"), matched via .ilike() exact-match against project_name on both hitech_construction_entities and hitech_report_hitechreport — same convention as GET /api/progress
+```
+
+**Response (200):**
+```json
+{
+  "project": "Coastal Road",
+  "sections": [
+    { "section": "Section 1C", "total": 812, "planned": 790, "implemented": 340 },
+    { "section": "Unlinked / No Section", "total": 3120, "planned": 3050, "implemented": 0 }
+  ],
+  "summary": {
+    "total": 4046, "planned": 3910, "implemented": 340,
+    "sectionCount": 12, "plannedPct": 97, "implementedPct": 8
+  }
+}
+```
+
+`sections` is sorted descending by `total`. **"Section" does not exist as a column on the planning side** (`hitech_construction_entities` has no `section_name`) — it's derived by joining an entity's `global_id` to a matching activity report's `globalid` and taking that report's `section_name`. Entities with no matching report fall into the `"Unlinked / No Section"` bucket, which is excluded from `summary.sectionCount` but included in `summary.total`/`planned`/`implemented` and in the `sections` array (so the KPI totals and the per-section table stay consistent with each other).
+
+Definitions, confirmed with the user before building this (see 2026-08-04 changelog):
+- **Total** = distinct `global_id` count in `hitech_construction_entities` for the project.
+- **Planned** = of those, entities with a non-null `planned_date`.
+- **Implemented** = of those, entities with at least one matching report (`hitech_report_hitechreport.globalid = hitech_construction_entities.global_id`) — i.e. field-confirmed via an actual submitted activity report, **not** the planning table's own `status`/`date_completed` fields (which `/api/progress`'s `overallPct`/`totalCompleted` are based on — a deliberately different, complementary metric, not a duplicate of this route).
+
+All three numbers are computed by a single Postgres RPC, `progress_section_breakdown(p_project)` — see `hitech_construction_entities` below for why this can never be a `fetchAll()`. The RPC's SQL lives at `scripts/sql/add_planning_implementation_rpc.sql` (not yet tracked by any Supabase CLI setup in this repo — apply it manually via the Supabase SQL editor or MCP before this route will work).
+
+---
+
 ## Database Tables (Supabase / PostgreSQL)
 
 The dashboard's core data lives in two tables, cross-referenced by four HR join tables and a few progress/mapping tables added later:
@@ -497,6 +535,22 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-08-04 — New `/planning-implementation` page: per-section Total/Planned/Implemented activity comparison
+
+**Files changed:** `src/app/planning-implementation/page.tsx` (new), `src/app/api/planning-implementation/route.ts` (new), `scripts/sql/add_planning_implementation_rpc.sql` (new), `src/components/SideNav.tsx`, `src/components/DashHeader.tsx`
+
+**What changed:**
+- User asked for a new page, grouped by section, showing Total Activities vs Planned Activities vs Implemented Activities, where planning and implementation are linked "by the same global ID / unique ID." Investigation before writing any code found this ask doesn't map onto the schema as cleanly as it sounds: `hitech_construction_entities` (the planning table backing `/progress`) has **no `section_name` column at all** — only `hitech_report_hitechreport` (the field-submitted activity reports, the implementation side) does. And the join key differs in name/casing between the two: `global_id` on entities vs `globalid` on reports (same mismatch already noted in `/api/progress`'s existing code, see the 2026-07-22 `/progress` entry below). Rather than guess, asked the user two direct clarifying questions before building: (1) what "Implemented" should mean — the planning table's own `status`/`date_completed` fields, or a genuine cross-check that a matching field report exists — user chose the latter (field-report-linked); (2) since only reports carry a section, how to derive "section" for planning entities that have none natively — user chose deriving it from the linked report's `section_name`, with unlinked entities bucketed as `"Unlinked / No Section"` rather than dropped.
+- Given those answers, the definitions implemented are: **Total** = distinct `global_id` count in `hitech_construction_entities` for the project; **Planned** = of those, entities with a non-null `planned_date`; **Implemented** = of those, entities with at least one matching row in `hitech_report_hitechreport` via `globalid = global_id`. This is deliberately a different, complementary metric from `/api/progress`'s `overallPct`/`totalCompleted` (which are computed entirely from the planning table's own `status`/`date_completed`, no cross-reference to reports) — the two answer different questions ("what does the planning schedule say is done" vs "what does a field worker's submitted report confirm was actually done") and are not meant to reconcile to the same number.
+- **New Postgres RPC, `progress_section_breakdown(p_project)`**: `hitech_construction_entities` has ~580k rows (4,046 distinct `global_id` values — each logical entity spans many row segments, same fact already established by the 2026-07-22 `/progress` RPC migration), so per the project's own established rule this can never be a `fetchAll()`-into-JS-reduce. One CTE collapses entities to distinct `global_id` with a `bool_or(planned_date IS NOT NULL)` flag; a second CTE picks one representative `section_name` per `globalid` from reports (`DISTINCT ON`); a `LEFT JOIN` + `GROUP BY` produces per-section `total_count`/`planned_count`/`implemented_count` in one query. Marked `STABLE PARALLEL SAFE` and grants restricted to `service_role` only, matching every other `progress_*`/`streetlights_*` RPC's convention — but the SQL file explicitly flags (per the 2026-07-30 streetlights lesson, where `PARALLEL SAFE` was a measured net *negative* for one bbox-branching function) that this should be verified with `EXPLAIN ANALYZE` against the real table before trusting it, not assumed safe just because sibling functions benefited from it.
+- **Could not apply the migration or verify it live in this session**: no Supabase MCP tool was connected and no local `.env.local` was present in this working directory (a fresh checkout), so there was no way to execute SQL or run the dev server against real data. The RPC is written to `scripts/sql/add_planning_implementation_rpc.sql` (this repo has no Supabase CLI migrations directory — every prior migration in this project's history was applied directly via an MCP tool, never checked in as a file) with the full definitions, verification queries, and reasoning inline as comments, for a session with DB access (or the user directly) to apply and confirm against real data before this page is trusted in production. This breaks from this project's own established "verify against live data" discipline out of necessity, not choice — flagged clearly rather than silently skipped.
+- **`GET /api/planning-implementation`**: session-guarded, single RPC call (`rpcWithRetry` — same retry-once-on-`.error` pattern as `/api/progress`, so a canceled/timed-out query surfaces as a real `503` instead of silently returning convincing-looking zeros), `project` param defaults to `"Coastal Road"` with no dropdown/switcher — same precedent as `/api/progress` and `/progress/page.tsx`, which also hardcode the one currently-onboarded project rather than building a multi-project switcher nothing yet needs. Response includes both the per-section breakdown and a site-wide `summary` (total/planned/implemented, distinct section count excluding the unlinked bucket, planned/implemented percentages) computed by summing the RPC's rows in Node — cheap, since a project has at most a few hundred sections.
+- **`/planning-implementation` page**: self-contained per this project's established per-page convention (own `Panel`/`KPICard`/`Reveal`/`useCountUp`/`HBarChart`, copied from `machines/page.tsx`'s pattern, not shared). Five KPI cards (Total/Planned/Implemented Activities, Sections, Implementation Rate %); an "Activities by Section" bar chart (top 12 by total, reusing the single-series `HBarChart` pattern); a "Planning vs Implementation Coverage" panel showing a per-section two-layer `FunnelBar` (a blue "planned" layer under a green "implemented" layer, both widths relative to that section's own total — reads directly as a funnel: full track = total, blue = planned coverage, green = implemented coverage); and a paginated (20/page, same `.tbl-row` zebra+hover convention as `/progress`'s `DelayTable`) full section breakdown table. No filter bar — scoped deliberately minimal for a first version rather than porting the multi-field `FilterBar` other pages have, since nothing in the ask called for filtering and the RPC/route don't yet support any filter params beyond `project`.
+- Added a `Planning & Implementation` entry to both `SideNav` (new `IconClipboardCheck` icon) and `DashHeader`'s mobile nav-link fallback, following the existing pattern exactly.
+- **Verification status — incomplete, by necessity**: `npx tsc --noEmit` passes with zero errors project-wide (had to run `npm install` first — `node_modules` wasn't present in this checkout either). `npx next build` initially failed at the "Collecting page data" step with `Error: supabaseUrl is required` for the new API route — confirmed this is **not** a bug in the new code by temporarily writing a placeholder `.env.local` (deleted immediately after) and re-running the build, which then succeeded cleanly and listed both `/planning-implementation` and `/api/planning-implementation` alongside every other route with no errors; the original failure was purely the missing env file, which would have broken build page-data-collection for `/api/progress`/`/api/dashboard`/etc. identically, not something specific to this change. **Not verified**: the RPC has not been applied to the real database, `GET /api/planning-implementation` has not been called against real data, and the page has not been viewed in a browser — all blocked on DB access this session didn't have. This must happen before the page is considered done, not just built.
+
+**Why:** Direct ask for a new page. The two clarifying questions (implemented-definition, section-derivation) were necessary rather than optional — the schema genuinely doesn't have a "section" column on the planning side, so guessing either answer risked either silently duplicating `/progress`'s existing completion metric under a new name (if "implemented" had been read as `status`/`date_completed`) or grouping "sections" in a way the user didn't actually mean (e.g. by `entity_name` instead). Choosing to write the RPC as a checked-in `.sql` file plus explicit "not yet verified" changelog language, rather than either fabricating a live-verification narrative or silently applying the migration through a tool that wasn't actually available, follows the same "verify, don't assume" discipline this project has repeatedly needed (see the 2026-07-22/07-30 timeout and parallel-safety entries) — the honest version of that discipline here is admitting the verification step couldn't run yet, not skipping the admission.
 
 ### 2026-07-30 — ArcGIS road-design CAD overlay on the main dashboard map
 
