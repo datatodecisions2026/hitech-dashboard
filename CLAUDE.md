@@ -21,6 +21,7 @@ src/
     personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx)
     streetlights/page.tsx   # 3M-row streetlights map/scale-test page, self-contained — own Panel/KPICard/Reveal, own useTheme() usage. See 2026-07-30 changelog
     planning-implementation/page.tsx  # Per-section Total/Planned/Implemented activity comparison, self-contained (own Panel/KPICard/Reveal). See 2026-08-04 changelog
+    road-assets/page.tsx    # 7.27M-row road-design asset map (stonebase, ducts, culverts, fencing, etc.) across Kebbi and Coastal Road/Calabar/Ogun, self-contained. See 2026-08-04 changelog
     api/
       auth/
         login/route.ts      # POST — authenticate against Supabase auth_user table
@@ -32,15 +33,17 @@ src/
       streetlights/route.ts # GET  — clustered streetlight points + summary/sections/images from Supabase (session-guarded). See 2026-07-30 changelog
       road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
       planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC (session-guarded). See 2026-08-04 changelog
+      road-assets/route.ts  # GET — clustered road-design asset points + summary/project/section/entity-type stats from Supabase (session-guarded). See 2026-08-04 changelog
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
-    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights/Planning & Implementation), sticky below header, hidden on /login and <640px
+    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights/Planning & Implementation/Road Assets), sticky below header, hidden on /login and <640px
     HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points + ArcGIS road-design CAD overlay, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
     StreetlightsMap.tsx     # Google Maps JS API map for the 3M-row streetlights table — clustered points only, no polylines/chainage. Uses useTheme() (unlike HitechMap). See 2026-07-30 changelog
+    RoadAssetsMap.tsx       # Google Maps JS API map for the 7.27M-row road_assets table — clustered points, project/section filtering, no images (unlike StreetlightsMap). See 2026-08-04 changelog
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs
-scripts/sql/                # One-off Postgres migration SQL not tracked by any Supabase CLI setup in this repo — apply manually via the Supabase SQL editor or MCP. add_planning_implementation_rpc.sql adds progress_section_breakdown(). See 2026-08-04 changelog
+scripts/sql/                # One-off Postgres migration SQL not tracked by any Supabase CLI setup in this repo — apply manually via the Supabase SQL editor or MCP. add_planning_implementation_rpc.sql adds progress_section_breakdown(); add_road_assets_infra.sql adds the road_assets clustering/cache infrastructure. See 2026-08-04 changelog
 sync_to_supabase.py         # Pulls Main_Survey_Data/photos/employees/supervisors/engineers/machines from Google Drive Excel, upserts into hitech_report_* tables (dedupes on globalid)
 sync_progress.py            # Uploads construction progress data (blocks/entities/BOQ) into hitech_construction_* tables from local CSV/XLSX
 sync_ogun.py                # Append-only sync of "Ogun - Total entities.xlsx" into hitech_ogun_entities (checks row count, inserts only new rows)
@@ -380,6 +383,42 @@ All three numbers are computed by a single Postgres RPC, `progress_section_break
 
 ---
 
+### `GET /api/road-assets`
+
+Returns clustered road-design asset points (never raw rows — `road_assets` is 7.27M rows) plus summary KPIs and project/section/entity-type breakdowns, for `/road-assets` / `RoadAssetsMap`. Session-guarded.
+
+**Query params (all optional):**
+```
+zoom                              — current map zoom; chooses a 2D grid size (coarser when zoomed out) via gridDegForZoom() in the route file — identical tiers to /api/streetlights
+swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12
+project                            — exact match on road_assets.project (currently either "Coastal road" or "Kebbi - Sokoto project")
+section                            — exact match on road_assets.section
+```
+
+**Routing logic — deliberately stricter than `/api/streetlights`**: the live per-request RPC (`road_assets_cluster`) is used **only** when a real bbox is present at `zoom >= 12` — a `project`/`section` filter alone is never enough to justify it, unlike streetlights. `'Kebbi - Sokoto project'` alone is 5.5M rows, so a filter-with-no-bbox request still goes through the materialized-view-backed RPC (`road_assets_clusters`), which is keyed by `(grid_lat, grid_lon, project, section)` specifically so project/section filtering stays cheap without ever touching the live table. See `scripts/sql/add_road_assets_infra.sql` for the full reasoning, including why this sidesteps the exact bug `streetlights_cluster` shipped with (see the 2026-07-30 changelog).
+
+**Response (200):**
+```json
+{
+  "clusters": [
+    { "lat": 11.47, "lng": 4.57, "count": 340 },
+    { "lat": 11.4759, "lng": 4.5665, "count": 1, "id": 4452577, "entityType": "stonebase", "project": "Kebbi - Sokoto project", "section": "Kebbi section", "side": "RHS", "station": "297+429" }
+  ],
+  "clusterMode": "live",
+  "summary": { "total_estimate": 7271513, "geolocated_estimate": 7100000, "project_count": 2, "section_count": 3, "entity_type_count": 27, "refreshed_at": "2026-08-04T23:00:00Z" },
+  "projects": [{ "project": "Kebbi - Sokoto project", "point_count": 5525578, "geolocated_point_count": 5525578 }],
+  "sections": [{ "project": "Coastal road", "section": "Section 3 - Ogun", "point_count": 401549, "geolocated_point_count": 350000 }],
+  "entityTypes": [{ "entity_type": "stonebase", "point_count": 1257203 }],
+  "queryMs": 310
+}
+```
+
+A `clusters` entry only carries `id`/`entityType`/`project`/`section`/`side`/`station` when it resolved to exactly one real point (`clusterMode: 'live'` and the grid cell had a single row) — `mv`-mode entries and multi-point `live`-mode cells only carry `lat`/`lng`/`count`.
+
+**Known data-quality issue (found live, not assumed):** a real subset of `'Section 3 - Ogun'` rows have `NULL` lat/lon (confirmed via direct sampling — Calabar and Kebbi section samples came back fully populated; Ogun did not). Those rows still have `x`/`y` projected coordinates (CRS unconfirmed) and a `NULL` `geom`. Every clustering query naturally excludes them (a `NULL` fails any bbox comparison), so `geolocated_point_count`/`geolocated_estimate` will be visibly lower than `point_count`/`total_estimate` for Ogun specifically — this is real missing source data, not a bug in this route, and the frontend surfaces it as a banner when `summary.geolocated_estimate < summary.total_estimate`.
+
+---
+
 ## Database Tables (Supabase / PostgreSQL)
 
 The dashboard's core data lives in two tables, cross-referenced by four HR join tables and a few progress/mapping tables added later:
@@ -456,6 +495,12 @@ Populated by `sync_ogun.py` (append-only, checks row count before inserting). No
 
 ### `streetlights_summary_cache` / `streetlights_section_stats`
 Cache tables refreshed every 10 minutes by the `refresh_streetlights_summary_cache` `pg_cron` job (calling `streetlights_refresh_summary_cache()`), not queried live — the underlying full-table aggregates (`GROUP BY side`, `COUNT(DISTINCT section)`) measured 8–10s against the live `streetlights` table, at/past the `authenticator` role's 8s `statement_timeout`. `streetlights_summary_cache` is a one-row singleton (`total_estimate` from `pg_class.reltuples`, `lhs_count`/`rhs_count`/`median_count`, `section_count`). `streetlights_section_stats` is one row per section with `point_count`, doubling as the `/streetlights` section-dropdown data source.
+
+### `road_assets`
+7,271,513 rows (confirmed live 2026-08-04) — surveyed road-design assets (stonebase, subbase, ducts, fiber-optic cable, culverts, fencing, red filling, and more — 27+ distinct `entity_type` values found, not fully enumerated), backing `/road-assets`. Pre-existed in the shared Supabase project, discovered via live exploration when the user asked to see "Kebbi, Ogun, and Calabar" road assets — not populated by any script in this repo, and (as of this writing) undocumented anywhere else. One row per asset point. Key columns: `id` (PK), `project` (exactly two values: `"Coastal road"` and `"Kebbi - Sokoto project"`), `section` (`"Section 3 - Calabar"`, `"Section 3 - Ogun"`, `"Kebbi section"` — confirmed live; note the real Ogun section name does **not** match `hitech_ogun_entities`' naming, a separate, unrelated table), `entity_type`, `lat`/`lon` (double precision — **a real subset of `'Section 3 - Ogun'` rows have these NULL**, see `GET /api/road-assets` above), `x`/`y` (projected coordinates, always populated, CRS unconfirmed), `z` (elevation), `side`, `station`/`station_m`, `geom` (PostGIS point, NULL wherever lat/lon is NULL), `extra` (jsonb, e.g. `{"name":"StoneBase","objectid":...}`). Indexed on `(lat, lon)` (`idx_road_assets_latlon`), `project`, and `section`. Never query this table's full 7.27M rows directly in a request path — see `GET /api/road-assets` above and `scripts/sql/add_road_assets_infra.sql`.
+
+### `road_assets_grid_mv` / `road_assets_summary_cache` / `road_assets_project_stats` / `road_assets_section_stats` / `road_assets_entity_type_stats`
+Same category of cache infrastructure as the streetlights tables above, one size up (7.27M vs 3M rows) and with one structural difference: `road_assets_grid_mv` is keyed by `(grid_lat, grid_lon, project, section)`, not just `(grid_lat, grid_lon)` — this is what lets a `project`/`section` filter with no map bbox stay cheap (`'Kebbi - Sokoto project'` alone is 5.5M rows, too large for streetlights' "any filter goes live" shortcut to be safe here). Refreshed every 15 minutes (vs streetlights' 10 — this data looks static/survey-sourced rather than live-sensor, so a slower cadence was judged acceptable, adjustable in the SQL) by `road_assets_refresh_summary_cache()` via `pg_cron`. All four `_stats`/`_cache` tables additionally track a `geolocated_point_count`/`geolocated_estimate` alongside the plain row count, specifically because of the NULL lat/lon issue on Ogun — see `GET /api/road-assets` above.
 
 ---
 
@@ -535,6 +580,23 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-08-04 — New `/road-assets` page: 7.27M-row road-design asset map across Kebbi and Coastal Road/Calabar/Ogun
+
+**Files changed:** `src/app/road-assets/page.tsx` (new), `src/components/RoadAssetsMap.tsx` (new), `src/app/api/road-assets/route.ts` (new), `scripts/sql/add_road_assets_infra.sql` (new), `src/components/SideNav.tsx`, `src/components/DashHeader.tsx`
+
+**What changed:**
+- User asked to see "road assets" they have in Supabase covering Kebbi, Ogun, and Calabar, filterable by section or project — while looking at the just-shipped `/planning-implementation` page's SQL file in the IDE, i.e. a follow-on ask in the same session rather than a fresh conversation. Investigated live (same "verify against real data, don't guess" discipline this project has used repeatedly — see the streetlights/`/progress` changelog entries) rather than assuming a table name: found a previously **completely undocumented** `road_assets` table with **7,271,513 rows** — larger than the 3M-row `streetlights` table, and with zero pre-existing supporting infrastructure (no indexes confirmed, no cache tables, no RPCs), unlike streetlights which already had a materialized view and two RPCs in place before its page was built.
+- **Real schema, not assumed**: `project` has exactly two values — `"Coastal road"` (1,745,935 rows) and `"Kebbi - Sokoto project"` (5,525,578 rows, all one section, `"Kebbi section"`). `"Coastal road"` splits into `"Section 3 - Calabar"` (1,344,386 rows) and `"Section 3 - Ogun"` (the remainder) — the real Ogun section name was confirmed live via targeted probing after a first guess (`"Section 4A (Ogun)"`, copied from the unrelated `hitech_ogun_entities` table's naming) came back not-found. `entity_type` is a real asset catalog — `stonebase` (1.26M), `clear_fence_view` (67k), `culvert` (172), plus `duct`, `fiber_optic_cable`, `subbase`, `red_filling`, and more not fully enumerated in this session.
+- **Real data-quality bug found live, not assumed away**: a genuine subset of `'Section 3 - Ogun'` rows have `NULL` lat/lon (confirmed by direct sampling — Calabar and Kebbi section samples came back fully populated, Ogun did not). Those rows still carry `x`/`y` projected coordinates (CRS unconfirmed) and a `NULL` `geom` — looks like an incomplete coordinate conversion for part of one import batch, not something introduced by this change. Every clustering query in the new SQL naturally excludes `NULL`-coordinate rows (a `NULL` fails any bbox `BETWEEN`), but that silently means part of Ogun's assets can never appear on the map until the source data is fixed — rather than let that be discovered by a confused user later, added `geolocated_point_count`/`geolocated_estimate` columns (alongside the plain row count) to every new stats/cache table, and a visible banner on `/road-assets` whenever `geolocated_estimate < total_estimate`, naming the gap directly.
+- **New infrastructure, one size up from streetlights' precedent** (`scripts/sql/add_road_assets_infra.sql`): indexes on `(lat, lon)`/`project`/`section`; a materialized view `road_assets_grid_mv`; a `road_assets_refresh_summary_cache()` function run via `pg_cron` (defaulted to every 15 minutes, vs streetlights' 10 — this looks like static survey/CAD data rather than a live-sensor feed, so a slower cadence was judged acceptable) populating 4 cache tables; and two clustering RPCs, `road_assets_clusters` (MV-backed, safe default) and `road_assets_cluster` (live, bbox-required).
+- **One deliberate structural difference from streetlights, not a copy-paste**: streetlights routed *any* section filter through the live table regardless of bbox, because even its largest section topped out around 450k rows. That reasoning does not carry over here — `'Kebbi - Sokoto project'` alone is 5.5M rows, so a project/section filter with **no** bbox must still be answered from the MV, never the live table. Fixed by keying `road_assets_grid_mv` on `(grid_lat, grid_lon, project, section)` instead of just `(grid_lat, grid_lon)`, so `road_assets_clusters` can filter by project/section cheaply without ever touching the 7.27M-row table, and by making the live RPC's bbox parameters required (it `RAISE EXCEPTION`s if called without one) rather than optional. This also sidesteps, by construction, the exact bug `streetlights_cluster` shipped with (see the 2026-07-30 changelog) — a single query body that optionally branched on "has bbox or not" defeated its own index and needed `PARALLEL UNSAFE` to fix. `road_assets_cluster` has only one query shape, always bbox-bound, so that failure mode doesn't apply — verify with `EXPLAIN ANALYZE` regardless once applied, per the verification queries included at the bottom of the SQL file, rather than assuming the design avoids every possible planner surprise.
+- **`GET /api/road-assets`**: session-guarded, mirrors `/api/streetlights`'s response-normalization/error-checking pattern (every one of 5 parallel queries has its `.error` checked explicitly before building a response — an unchecked `.error` is what shipped the silent-all-zeros bug in `/api/progress` before, see the 2026-07-22 entry). Returns `clusters` (uniform shape regardless of which RPC served the request), `summary`, `projects`, `sections`, `entityTypes`, and `queryMs`.
+- **`RoadAssetsMap.tsx`**: modeled directly on `StreetlightsMap.tsx`'s reusable core (Google Maps loader, `idle`-driven viewport refetch, `lastFitKeyRef` guard against the `fitBounds → idle → refetch → fitBounds` loop, `MarkerClusterer` with the same step-sized bubble renderer) — filter key is `project|section` instead of just `section`, and the click popup shows `entityType`/`project`/`section`/`side`/`station` instead of an image (this dataset has no per-point photos, unlike streetlights).
+- **`/road-assets` page**: self-contained per this project's per-page convention (own `Panel`/`KPICard`/`Reveal`/`useCountUp`, copied from `streetlights/page.tsx`). Cascading Project → Section dropdowns (selecting a project clears any section filter and narrows the section dropdown to that project's sections — exact, not a heuristic, since a section belongs to exactly one project in this data). An "Asset Types" panel replaces streetlights' image-legend panel, showing the top 10 `entity_type`s by count as a horizontal bar breakdown. KPI row: Total Assets (est.), Projects, Sections, and a Load Time card matching streetlights' server+client dual timing readout.
+- **Could not apply the migration or fully verify it live in this session, same limitation as the `/planning-implementation` build earlier the same day**: no DDL-execution path was available (service-role REST key can call existing RPCs and query tables, but cannot `CREATE FUNCTION`/`CREATE MATERIALIZED VIEW`; no direct Postgres connection string or Supabase Management API token was available either). What *was* verified live, using the same real-credentials access described in the `/planning-implementation` entry: the `road_assets` table's actual schema/row counts/project/section values (all documented above came from live queries, not the source CSV or guesswork), that none of the new table/function names collide with anything existing, that `id` values run up to 7,271,513 (fits comfortably in the `bigint` columns used), and — the null-lat/lon finding itself, which would not have been caught without live sampling. `tsc --noEmit` and `next build` both pass (confirmed with a real `.env.local`, temporarily reconstructed from credentials the user explicitly authorized using — see the `/planning-implementation` entry for that authorization). Confirmed via a live dev server + minted session cookie: `GET /api/road-assets` returns 401 with no cookie and a real 500 with a clear error message (not silent zeros) since the RPCs don't exist in the database yet; `/road-assets` server-renders 200 with no crash. **Not verified**: the SQL has not been applied, the clustering RPCs have never actually run against real data, and the page has not been viewed rendering real clusters in a browser — all blocked on DDL access this session didn't have, exactly as flagged in the SQL file's own bottom-of-file verification-queries section.
+
+**Why:** Direct ask, arrived at from the user looking at the previous feature's SQL file and asking for the next thing. Investigating `road_assets` live before writing any SQL — rather than assuming its shape from the three region names alone — is what surfaced two things a guess would have missed entirely: the real Ogun section name (differs from every other Ogun-related table in this codebase) and the null-coordinate data-quality gap. Both would have shipped silently wrong (a filter dropdown option that matches zero rows; a fraction of Ogun's assets vanishing from the map with no explanation) if the investigation had stopped at "there's probably a table with roughly this shape." Structuring the live-cluster RPC to require a bbox by construction, rather than fixing a discovered bug after the fact the way `streetlights_cluster`'s `PARALLEL UNSAFE` fix did, applies the *lesson* from that prior incident rather than just its patch — the goal being to not need a second "found a bug during verification" postscript for the same category of mistake.
 
 ### 2026-08-04 — New `/planning-implementation` page: per-section Total/Planned/Implemented activity comparison
 
