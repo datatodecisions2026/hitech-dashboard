@@ -84,21 +84,32 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Keyword-existence checks against hitech_report_hitechreport (~9.7k rows
-  // — trivial cost, never touches the 7.27M-row road_assets table). Run
-  // after the main batch so a failure here can't take down the primary
-  // response; a query error is simply treated as "no match found" rather
-  // than a hard failure, since this only affects one derived flag.
+  // Keyword count checks against hitech_report_hitechreport (~9.7k rows —
+  // trivial cost, never touches the 7.27M-row road_assets table; exact
+  // count via head:true, no rows fetched). Run after the main batch so a
+  // failure here can't take down the primary response; a query error is
+  // simply treated as "0 matches" rather than a hard failure, since this
+  // only affects one derived stat.
+  //
+  // This is deliberately a REPORT COUNT, not an "implemented asset count" —
+  // an earlier version multiplied a single matching report across a
+  // section's entire point_count (e.g. 1 Calabar report → 1,344,386 assets
+  // marked "implemented"), which is not a real signal at that scale and was
+  // flagged live by the user after seeing it on the page. A report's
+  // existence tells you a section got *some* field attention; it says
+  // nothing about which or how many specific assets were verified, so
+  // road_assets no longer contributes to summary.implemented/combined at
+  // all — see the 2026-08-05 CLAUDE.md changelog for the full reasoning.
   const keywordEntries = Object.entries(ROAD_ASSET_SECTION_KEYWORDS)
   const keywordChecks = await Promise.all(
     keywordEntries.map(([, keyword]) =>
-      supabase.from('hitech_report_hitechreport').select('id').ilike('section_name', `%${keyword}%`).limit(1)
+      supabase.from('hitech_report_hitechreport').select('*', { count: 'exact', head: true }).ilike('section_name', `%${keyword}%`)
     )
   )
-  const matchedKeywordBySection = new Map<string, string>()
-  keywordEntries.forEach(([section, keyword], i) => {
+  const reportCountBySection = new Map<string, number>()
+  keywordEntries.forEach(([section], i) => {
     const r = keywordChecks[i]
-    if (!r.error && (r.data?.length ?? 0) > 0) matchedKeywordBySection.set(section, keyword)
+    reportCountBySection.set(section, !r.error ? (r.count ?? 0) : 0)
   })
 
   const sections = (planningRes.data ?? [])
@@ -131,14 +142,14 @@ export async function GET(req: NextRequest) {
     : roadAssetsProjectsAll
 
   const roadAssetsSectionsAll = (roadSectionsRes.data ?? []).map(r => {
-    const matchedKeyword = matchedKeywordBySection.get(r.section) ?? null
-    const total = Number(r.point_count)
+    const reportCount = reportCountBySection.get(r.section) ?? 0
+    const matchedKeyword = reportCount > 0 ? ROAD_ASSET_SECTION_KEYWORDS[r.section] ?? null : null
     return {
       project: r.project,
       section: r.section,
-      total,
+      total: Number(r.point_count),
       geolocated: Number(r.geolocated_point_count ?? 0),
-      implemented: matchedKeyword ? total : 0,
+      reportCount,
       matchedKeyword,
     }
   })
@@ -148,10 +159,8 @@ export async function GET(req: NextRequest) {
 
   const roadAssetsTotal = roadAssetsSections.reduce((s, r) => s + r.total, 0)
   const roadAssetsGeolocated = roadAssetsSections.reduce((s, r) => s + r.geolocated, 0)
-  const roadAssetsImplemented = roadAssetsSections.reduce((s, r) => s + r.implemented, 0)
 
   const combinedTotal = summary.total + roadAssetsTotal
-  const combinedImplemented = summary.implemented + roadAssetsImplemented
 
   return NextResponse.json({
     project,
@@ -172,15 +181,15 @@ export async function GET(req: NextRequest) {
       entityTypes: roadEntityTypesRes.data ?? [], // no project/section breakdown exists at this cache grain — always nationwide
       total: roadAssetsTotal,
       geolocated: roadAssetsGeolocated,
-      implemented: roadAssetsImplemented,
     },
+    // "Implemented" is intentionally activities-only (summary.implemented,
+    // per-entity global_id-linked) — road_assets never contributes here,
+    // see the comment above reportCountBySection for why. combined only
+    // sums the two tables' Total and (activities-only) Planned figures.
     combined: {
       total: combinedTotal,
       planned: summary.planned, // road assets have no planned_date concept — activities-only
-      implemented: combinedImplemented,
-      implementedPct: combinedTotal > 0 ? Math.round((combinedImplemented / combinedTotal) * 100) : 0,
       totalBreakdown: { activities: summary.total, roadAssets: roadAssetsTotal },
-      implementedBreakdown: { activities: summary.implemented, roadAssets: roadAssetsImplemented },
     },
   })
 }

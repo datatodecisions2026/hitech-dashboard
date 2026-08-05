@@ -35,7 +35,7 @@ interface RoadAssetSectionRow {
   section: string
   total: number
   geolocated: number
-  implemented: number
+  reportCount: number
   matchedKeyword: string | null
 }
 
@@ -64,15 +64,14 @@ interface PlanningData {
     entityTypes: Array<{ entity_type: string; point_count: number }>
     total: number
     geolocated: number
-    implemented: number
   }
+  // "Implemented" has no combined figure — road assets don't contribute to
+  // it (see route.ts comment), so summary.implemented is the only real
+  // Implemented number on this page.
   combined: {
     total: number
     planned: number
-    implemented: number
-    implementedPct: number
     totalBreakdown: { activities: number; roadAssets: number }
-    implementedBreakdown: { activities: number; roadAssets: number }
   }
 }
 
@@ -237,7 +236,7 @@ function PageSkeleton() {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
       <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14 }}>{[0,1,2,3,4].map(i=><Skel key={i} h={108}/>)}</div>
-      <div className="kpi-grid2" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>{[0,1,2].map(i=><Skel key={i} h={90}/>)}</div>
+      <div className="kpi-grid2" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>{[0,1,2,3].map(i=><Skel key={i} h={90}/>)}</div>
       <div className="pi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))', gap:14 }}><Skel h={320}/><Skel h={320}/></div>
       <Skel h={560}/>
     </div>
@@ -300,7 +299,7 @@ function RoadAssetSectionTable({ rows, activeSection }: { rows: RoadAssetSection
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${D.border}` }}>
-            {['Section', 'Project', 'Total Assets', 'Geolocated', 'Implemented'].map(h => (
+            {['Section', 'Project', 'Total Assets', 'Geolocated', 'Field Reports'].map(h => (
               <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Section' || h === 'Project' ? 'left' : 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
@@ -313,8 +312,8 @@ function RoadAssetSectionTable({ rows, activeSection }: { rows: RoadAssetSection
               <td style={{ padding: '10px 14px', textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
               <td style={{ padding: '10px 14px', textAlign: 'right', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.geolocated.toLocaleString()}</td>
               <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                {r.matchedKeyword ? (
-                  <span title={`Matched a report section containing "${r.matchedKeyword}"`} style={{ background: 'rgba(52,211,153,0.12)', color: D.green, border: `1px solid ${D.green}30`, padding: '3px 10px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10 }}>✓ {r.implemented.toLocaleString()}</span>
+                {r.reportCount > 0 ? (
+                  <span title={`Matched via report section names containing "${r.matchedKeyword}" — a report count, not an asset-verification count`} style={{ background: 'rgba(96,165,250,0.12)', color: D.blue, border: `1px solid ${D.blue}30`, padding: '3px 10px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10 }}>{r.reportCount.toLocaleString()} report{r.reportCount === 1 ? '' : 's'}</span>
                 ) : (
                   <span style={{ color: D.sub, fontFamily: 'var(--font-mono)', fontSize: 10 }}>— none</span>
                 )}
@@ -391,11 +390,16 @@ function PlanningImplementationPageInner() {
   )
   const roadAssetsTotal       = filteredRoadAssets.reduce((s, r) => s + r.total, 0)
   const roadAssetsGeolocated  = filteredRoadAssets.reduce((s, r) => s + r.geolocated, 0)
-  const roadAssetsImplemented = filteredRoadAssets.reduce((s, r) => s + r.implemented, 0)
+  const roadAssetsReportCount = filteredRoadAssets.reduce((s, r) => s + r.reportCount, 0)
 
-  const combinedTotal       = planningSummary.total + roadAssetsTotal
-  const combinedImplemented = planningSummary.implemented + roadAssetsImplemented
-  const combinedImplementedPct = combinedTotal > 0 ? Math.round((combinedImplemented / combinedTotal) * 100) : 0
+  // Total legitimately sums both tables. Implementation Rate does NOT — a
+  // report's existence on a road-asset section says nothing about how many
+  // of that section's assets were actually verified, so folding road assets
+  // into this rate would either wildly overstate it (one report flips a
+  // whole section) or crater it toward ~0% (divided by 7M+ assets). This is
+  // activities-only, on purpose — see route.ts's comment for the full story.
+  const combinedTotal = planningSummary.total + roadAssetsTotal
+  const activityImplementedPct = planningSummary.total > 0 ? Math.round((planningSummary.implemented / planningSummary.total) * 100) : 0
   const combinedSectionCount = new Set([...filteredPlanning.map(s => s.section), ...filteredRoadAssets.map(s => s.section)]).size
 
   const topSections = filteredPlanning.slice(0, 12).map(s => ({ name: s.section, count: s.total }))
@@ -466,15 +470,16 @@ function PlanningImplementationPageInner() {
                 sub={`Activities: ${planningSummary.total.toLocaleString()} · Road Assets: ${roadAssetsTotal.toLocaleString()}`} />
               <KPICard label="Planned Activities"     value={planningSummary.planned} icon={<IconClipboard/>} delay={80}  color={D.blue}
                 sub="Activities only — road assets have no planned_date" />
-              <KPICard label="Implemented (Combined)" value={combinedImplemented}     icon={<IconCheck/>}     delay={160} color={D.green}
-                sub={`Activities: ${planningSummary.implemented.toLocaleString()} · Road Assets: ${roadAssetsImplemented.toLocaleString()}`} />
+              <KPICard label="Implemented Activities" value={planningSummary.implemented} icon={<IconCheck/>}  delay={160} color={D.green}
+                sub="Activities only — a road-asset field report confirms a section got attention, not which assets were verified" />
               <KPICard label="Sections"               value={combinedSectionCount}    icon={<IconMap/>}       delay={240} color={D.purple} />
-              <KPICard label="Implementation Rate"    value={combinedImplementedPct} suffix="%" icon={<IconCheck/>} delay={320} color={D.green} />
+              <KPICard label="Activity Implementation Rate" value={activityImplementedPct} suffix="%" icon={<IconCheck/>} delay={320} color={D.green} />
             </div>
 
-            <div className="kpi-grid2" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:20 }}>
+            <div className="kpi-grid2" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:20 }}>
               <KPICard label="Road Assets (est.)"      value={roadAssetsTotal} icon={<IconLayers/>} delay={0}  color={D.amber} />
               <KPICard label="Road Assets Geolocated"  value={roadAssetsGeolocated} icon={<IconMap/>} delay={80} color={D.blue} />
+              <KPICard label="Road Asset Field Reports" value={roadAssetsReportCount} icon={<IconClipboard/>} delay={120} color={D.purple} />
               <div style={{ background: D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <div style={{ width: 44, height: 44, borderRadius: 14, background: `${D.green}20`, border: `1px solid ${D.green}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.green, marginBottom: 16 }}><IconClock /></div>
                 {loadStats ? (
