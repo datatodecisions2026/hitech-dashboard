@@ -40,6 +40,8 @@ export default function DashHeader() {
     { label: 'Machines',     href: '/machines'     },
     { label: 'Personnel',    href: '/personnel'    },
     { label: 'Streetlights', href: '/streetlights' },
+    { label: 'Planning & Implementation', href: '/planning-implementation' },
+    { label: 'Road Assets', href: '/road-assets' },
     { label: 'Asset Coverage', href: '/road-assets-coverage' },
   ]
 

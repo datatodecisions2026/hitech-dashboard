@@ -189,7 +189,9 @@
       "Bash(node scripts/__tmp-layout-check.mjs)",
       "Bash(rm -f .tmp-session-cookie.txt .tmp-devserver.log .tmp-shot-*.png)",
       "Bash(rm -f scripts/__tmp-layout-check.mjs)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(git merge *)",
+      "Bash(node -e *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ukpoweh Gift\\Documents\\hitech-dashboard",
