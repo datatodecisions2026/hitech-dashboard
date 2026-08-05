@@ -20,8 +20,8 @@ src/
     machines/page.tsx       # Machines-focused view of dashboard data, self-contained (own Panel/KPICard/FilterBar)
     personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx)
     streetlights/page.tsx   # 3M-row streetlights map/scale-test page, self-contained — own Panel/KPICard/Reveal, own useTheme() usage. See 2026-07-30 changelog
-    planning-implementation/page.tsx  # Per-section Total/Planned/Implemented activity comparison, self-contained (own Panel/KPICard/Reveal). See 2026-08-04 changelog
-    road-assets/page.tsx    # 7.27M-row road-design asset map (stonebase, ducts, culverts, fencing, etc.) across Kebbi and Coastal Road/Calabar/Ogun, self-contained. See 2026-08-04 changelog
+    planning-implementation/page.tsx  # Per-section Total/Planned/Implemented activity comparison COMBINED with the 7.27M-row road_assets map/KPIs/section breakdown — project+section filter bar cross-filters both, self-contained (own Panel/KPICard/Reveal). See 2026-08-05 changelog
+    road-assets/page.tsx    # Redirect only (next/navigation redirect('/planning-implementation')) — road assets are no longer a standalone page, folded into planning-implementation/page.tsx. Kept so old links don't 404. See 2026-08-05 changelog
     api/
       auth/
         login/route.ts      # POST — authenticate against Supabase auth_user table
@@ -32,11 +32,11 @@ src/
       map/route.ts          # GET  — chainage stations + geotagged reports for HitechMap (no session guard)
       streetlights/route.ts # GET  — clustered streetlight points + summary/sections/images from Supabase (session-guarded). See 2026-07-30 changelog
       road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
-      planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC (session-guarded). See 2026-08-04 changelog
-      road-assets/route.ts  # GET — clustered road-design asset points + summary/project/section/entity-type stats from Supabase (session-guarded). See 2026-08-04 changelog
+      planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC, PLUS road_assets stats (summary/project/section/entity-type) and a combined total/implemented figure (session-guarded). See 2026-08-05 changelog
+      road-assets/route.ts  # GET — clustered road-design asset points + summary/project/section/entity-type stats from Supabase (session-guarded) — still used by RoadAssetsMap, now embedded in /planning-implementation rather than its own page. See 2026-08-04/2026-08-05 changelog
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
-    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights/Planning & Implementation/Road Assets), sticky below header, hidden on /login and <640px
+    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights/Planning & Implementation), sticky below header, hidden on /login and <640px. Road Assets was removed as a separate entry 2026-08-05 — merged into Planning & Implementation
     HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points + ArcGIS road-design CAD overlay, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
     StreetlightsMap.tsx     # Google Maps JS API map for the 3M-row streetlights table — clustered points only, no polylines/chainage. Uses useTheme() (unlike HitechMap). See 2026-07-30 changelog
     RoadAssetsMap.tsx       # Google Maps JS API map for the 7.27M-row road_assets table — clustered points, project/section filtering, no images (unlike StreetlightsMap). See 2026-08-04 changelog
@@ -350,11 +350,11 @@ Every ArcGIS query is always bbox-scoped (never unbounded) and paginated (`resul
 
 ### `GET /api/planning-implementation`
 
-Returns, per road section, a Total/Planned/Implemented activity count comparison — backs `/planning-implementation`, not `/dashboard` or `/progress`. Requires a valid session (401 if not authenticated).
+Returns, per road section, a Total/Planned/Implemented activity count comparison, **plus** the 7.27M-row `road_assets` table's stats folded into the same response — backs `/planning-implementation`, the only page for this data as of 2026-08-05 (see that changelog entry; `/road-assets` used to be a separate page and is now a redirect). Requires a valid session (401 if not authenticated).
 
 **Query params:**
 ```
-project   — project display name (default "Coastal Road"), matched via .ilike() exact-match against project_name on both hitech_construction_entities and hitech_report_hitechreport — same convention as GET /api/progress
+project   — project display name (default "Coastal Road" server-side for the planning RPC only — road_assets stats are NOT narrowed by this default, only by an explicitly-passed project, so the unfiltered page still shows the true nationwide road-asset total). Matched via .ilike() against hitech_construction_entities/hitech_report_hitechreport (same convention as GET /api/progress), and case-insensitively against road_assets_project_stats/road_assets_section_stats in Node (road_assets.project's real casing, e.g. "Coastal road", differs from this param's, e.g. "Coastal Road" — confirmed live, see 2026-08-05 changelog).
 ```
 
 **Response (200):**
@@ -368,24 +368,45 @@ project   — project display name (default "Coastal Road"), matched via .ilike(
   "summary": {
     "total": 4046, "planned": 3910, "implemented": 340,
     "sectionCount": 12, "plannedPct": 97, "implementedPct": 8
+  },
+  "roadAssets": {
+    "summary": { "total_estimate": 7271513, "geolocated_estimate": 6982101, "project_count": 2, "section_count": 3, "entity_type_count": 18, "refreshed_at": "2026-08-05T09:45:00Z" },
+    "projects": [{ "project": "Coastal road", "point_count": 1745935, "geolocated_point_count": 1456523 }],
+    "sections": [
+      { "project": "Coastal road", "section": "Section 3 - Calabar", "total": 1344386, "geolocated": 1344386, "implemented": 1344386, "matchedKeyword": "calabar" },
+      { "project": "Coastal road", "section": "Section 3 - Ogun", "total": 401549, "geolocated": 112137, "implemented": 0, "matchedKeyword": null }
+    ],
+    "entityTypes": [{ "entity_type": "crcp", "point_count": 1259203 }],
+    "total": 1745935, "geolocated": 1456523, "implemented": 1344386
+  },
+  "combined": {
+    "total": 1749981, "planned": 4046, "implemented": 1348430, "implementedPct": 77,
+    "totalBreakdown": { "activities": 4046, "roadAssets": 1745935 },
+    "implementedBreakdown": { "activities": 4044, "roadAssets": 1344386 }
   }
 }
 ```
 
-`sections` is sorted descending by `total`. **"Section" does not exist as a column on the planning side** (`hitech_construction_entities` has no `section_name`) — it's derived by joining an entity's `global_id` to a matching activity report's `globalid` and taking that report's `section_name`. Entities with no matching report fall into the `"Unlinked / No Section"` bucket, which is excluded from `summary.sectionCount` but included in `summary.total`/`planned`/`implemented` and in the `sections` array (so the KPI totals and the per-section table stay consistent with each other).
+`sections` (the planning array) is sorted descending by `total`. **"Section" does not exist as a column on the planning side** (`hitech_construction_entities` has no `section_name`) — it's derived by joining an entity's `global_id` to a matching activity report's `globalid` and taking that report's `section_name`. Entities with no matching report fall into the `"Unlinked / No Section"` bucket, which is excluded from `summary.sectionCount` but included in `summary.total`/`planned`/`implemented` and in the `sections` array (so the KPI totals and the per-section table stay consistent with each other).
 
 Definitions, confirmed with the user before building this (see 2026-08-04 changelog):
 - **Total** = distinct `global_id` count in `hitech_construction_entities` for the project.
 - **Planned** = of those, entities with a non-null `planned_date`.
 - **Implemented** = of those, entities with at least one matching report (`hitech_report_hitechreport.globalid = hitech_construction_entities.global_id`) — i.e. field-confirmed via an actual submitted activity report, **not** the planning table's own `status`/`date_completed` fields (which `/api/progress`'s `overallPct`/`totalCompleted` are based on — a deliberately different, complementary metric, not a duplicate of this route).
 
-All three numbers are computed by a single Postgres RPC, `progress_section_breakdown(p_project)` — see `hitech_construction_entities` below for why this can never be a `fetchAll()`. The RPC's SQL lives at `scripts/sql/add_planning_implementation_rpc.sql` (not yet tracked by any Supabase CLI setup in this repo — apply it manually via the Supabase SQL editor or MCP before this route will work).
+All three numbers are computed by a single Postgres RPC, `progress_section_breakdown(p_project)` — see `hitech_construction_entities` below for why this can never be a `fetchAll()`. The RPC's SQL lives at `scripts/sql/add_planning_implementation_rpc.sql` (not yet tracked by any Supabase CLI setup in this repo — apply it manually via the Supabase SQL editor or MCP before this route will work). **Confirmed applied and live as of 2026-08-05** (see that changelog entry) — the earlier "not yet verified against real data" caveat from 2026-08-04 no longer applies.
+
+**`roadAssets` and `combined` — added 2026-08-05, see that changelog entry for the full reasoning:**
+
+- `roadAssets.sections[].implemented` is a **section-level, not per-asset, flag** — if any report anywhere has a `section_name` containing the section's configured keyword (`ROAD_ASSET_SECTION_KEYWORDS` in the route file, e.g. `"Section 3 - Calabar"` → `"calabar"`), the section's **entire** `total` counts as implemented. This is coarser than the planning side's per-entity `global_id` link, and deliberately a keyword/fuzzy `ilike` match rather than an exact project+section join — confirmed live that road_assets' project/section naming doesn't line up with the report tables' naming closely enough for an exact join to work (Kebbi's real 21 linked reports are filed under a *different* project name than road_assets uses for Kebbi at all). Add a line to `ROAD_ASSET_SECTION_KEYWORDS` when onboarding a new road-asset section.
+- `combined.total`/`combined.implemented` are `hitech_construction_entities` counts plus `road_assets` counts added together — a genuinely different scale of thing (schedule entities vs. physical survey points), per explicit user direction after being shown the real numbers live. `combined.planned` is activities-only (road assets have no `planned_date` concept).
+- `roadAssets.entityTypes` is **never** project/section-filtered — `road_assets_entity_type_stats` (the cache table backing it) has no project/section breakdown at that grain, so this figure is always nationwide regardless of the `project` filter.
 
 ---
 
 ### `GET /api/road-assets`
 
-Returns clustered road-design asset points (never raw rows — `road_assets` is 7.27M rows) plus summary KPIs and project/section/entity-type breakdowns, for `/road-assets` / `RoadAssetsMap`. Session-guarded.
+Returns clustered road-design asset points (never raw rows — `road_assets` is 7.27M rows) plus summary KPIs and project/section/entity-type breakdowns, for `RoadAssetsMap` (embedded in `/planning-implementation` as of 2026-08-05 — there is no standalone `/road-assets` page anymore, see that changelog entry). Session-guarded.
 
 **Query params (all optional):**
 ```
@@ -580,6 +601,24 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-08-05 — Merged `/road-assets` into `/planning-implementation`; one Project+Section filter cross-filters both
+
+**Files changed:** `src/app/planning-implementation/page.tsx` (rewritten), `src/app/api/planning-implementation/route.ts` (extended), `src/app/road-assets/page.tsx` (replaced with a redirect), `src/components/SideNav.tsx`, `src/components/DashHeader.tsx`, `scripts/check-planning-implementation.mjs` (new)
+
+**What changed:**
+- User asked to stop treating road assets (previous entry) as a separate page — fold its total, KPIs, map, and asset-type breakdown into `/planning-implementation`, keep the project/section filters, make the two pages' totals genuinely combined ("the total assets in road assets should be joined with the total activities in planning"), define a road asset section as "implemented" if a report exists on that section, and make the whole thing cross-filter like a BI dashboard (picking a project/section narrows every panel at once).
+- **Investigated the real project/section naming before writing any join logic** (same discipline as every prior entry in this file) rather than assuming `road_assets.project`/`section` line up with `hitech_construction_entities`/`hitech_report_hitechreport`. They don't, in two separate ways, both confirmed live via direct SQL: (1) casing — `road_assets.project` is `"Coastal road"` (lowercase r), the planning side uses `"Coastal Road"`; (2) naming — `road_assets.section` values (`"Section 3 - Calabar"`, `"Section 3 - Ogun"`, `"Kebbi section"`) don't match any real `hitech_report_hitechreport.section_name` value (`"section 1-A/B/C"`, `"Section 2"`, `"Section 3"`, one loose `"Calabar section"` row) — and for Kebbi specifically, the 21 real reports with `section_name = "Kebbi section"` are filed under project `"SBS Sokoto Badagry highway"`, **not** `"Kebbi - Sokoto project"` (road_assets' name for that project). A strict project+section join would have silently shown Kebbi as 0% implemented despite real linked reports existing.
+- Asked the user two direct clarifying questions before building, given what the live data showed: (1) sum the two totals into one combined figure, or show them side by side — user chose **one combined total**, explicitly after being shown that it would be dominated almost entirely by the 7.27M road-asset rows (the 4,046 planning entities become ~0.06% of the combined number) — a deliberate call, not a default; (2) match "implemented" by `section_name` only (ignoring project, since project names don't agree) with keyword/fuzzy `ilike` matching (so `"Section 3 - Calabar"` matches a report's `"Calabar section"`) — user chose **exactly this**, the option that actually recovers Kebbi's real linkage rather than the strict alternative that would return zero everywhere.
+- **`GET /api/planning-implementation`** extended (no new SQL migration needed): alongside the existing `progress_section_breakdown` RPC call, now also reads the same 4 cached `road_assets_*_stats` tables `/api/road-assets` already reads (cheap, cache-table-only, never touches the live 7.27M-row table), plus 3 new parallel keyword-existence checks against `hitech_report_hitechreport` (`.ilike('section_name', '%keyword%').limit(1)`, ~9.7k-row table, trivial cost) keyed by a new `ROAD_ASSET_SECTION_KEYWORDS` config map in the route file — add a line there when a new road-asset section is onboarded, same config-edit convention as `PROJECT_ID_MAP`/`ROAD_DESIGN_LAYERS`. A section's `implemented` count is all-or-nothing (its full `point_count` if any keyword match exists, else 0) since this is a section-level flag, not a per-asset link — flagged clearly in the response and in the UI (a matched-keyword badge), not hidden as if it were a precise join.
+- **Fixed a subtler bug while building this**: the planning RPC's `project` param has always defaulted to `"Coastal Road"` server-side when the caller sends none (existing behavior, unchanged). Naively reusing that same default to also scope the new road-asset stats would have made the *unfiltered* page silently show Coastal-only road-asset totals instead of the true nationwide figure. Fixed by tracking `rawProjectParam` (null when the caller sent nothing) separately from the RPC's defaulted `project` — road-asset stats are only narrowed when the caller explicitly filtered. Verified live: no filter → `combined.total = 7,275,559` (4,046 + 7,271,513, both projects); `project=Coastal Road` → `combined.total = 1,749,981` (4,046 + 1,745,935, Coastal only); `project=Kebbi - Sokoto project` → `combined.total = 5,525,578` (0 planning entities + all of Kebbi's road assets, and the keyword match correctly still finds Kebbi's 21 reports despite the project-name mismatch).
+- **`/planning-implementation` page rewritten**: gained the URL-driven Project+Section filter bar `/road-assets` used to have (`useSearchParams`/`router.push`, `<Suspense>` wrapper — none of this existed on this page before, it previously hardcoded `project: 'Coastal Road'` with zero filter UI). Selecting a **project** refetches the API (server-scoped, necessary). Selecting a **section** does **not** refetch — the full per-project section arrays (both planning and road-asset) are already local, so the KPI row, bar chart, funnel panel, and both section tables are recomputed client-side instantly on section change — genuine Power-BI-style instant cross-filtering, not a spinner. Only `RoadAssetsMap`'s own fetch (unchanged component, just re-imported here) reacts to the section change over the network, since that table is too large to ever hold client-side in full. The Section dropdown groups options into "Planning Sections" / "Road Asset Sections" `<optgroup>`s so it's visually obvious the two naming schemes don't overlap, rather than presenting one flat list that implies they do.
+- KPI row shows the combined Total/Implemented as the primary number per the user's choice, with a breakdown subtext underneath (e.g. `Activities: 4,046 · Road Assets: 1,745,935`) so the combined figure stays interpretable rather than a bare, unexplained number. A second row carries road-asset-specific figures (Total, Geolocated, Map Load Time — the last one reusing `RoadAssetsMap`'s existing `onLoadStats` callback unchanged). Ported the geolocation-coverage warning banner and the asset-type breakdown (now reusing the page's own existing `HBarChart` instead of porting a near-duplicate `EntityTypeBars` component). Added a new small "Road Assets by Section" table (at most a handful of rows) showing which sections matched a keyword and which didn't — kept deliberately separate from the existing planning `SectionTable` rather than merged into one table, since the two section taxonomies don't overlap and a forced single table would misrepresent that.
+- Empty states: selecting a project/section with no planning data (e.g. Kebbi, which has zero `hitech_construction_entities` rows) shows "No planning activities recorded for this project/section" rather than a blank panel — verified live via Playwright (see below), confirmed this state renders correctly for Section 3 - Calabar (no planning entities use that literal section name).
+- `src/app/road-assets/page.tsx` replaced with a 3-line `redirect('/planning-implementation')` rather than deleted outright, so old bookmarks/links don't 404. `src/app/api/road-assets/route.ts` and `src/components/RoadAssetsMap.tsx` are untouched — still doing exactly what they did before, just invoked from the merged page instead of a dedicated one. Removed the "Road Assets" entry from `SideNav`/`DashHeader` nav — "Planning & Implementation" is now the only entry for both.
+- **Verified live**, not just built: `tsc --noEmit` and `next build` both pass clean. Direct `curl` calls against a local dev server with a minted session cookie confirmed the exact combined-total arithmetic above for all three project-filter states, confirmed `/api/road-assets` still accepts the exact-cased project strings (`"Coastal road"`, `"Kebbi - Sokoto project"`) `RoadAssetsMap` sends it, and confirmed unauthenticated requests still 401. A scripted Playwright pass (`scripts/check-planning-implementation.mjs`, new — kept checked in per this project's existing `scripts/` convention) drove a real browser through the unfiltered → Coastal Road → Section 3 - Calabar flow and confirmed `/road-assets` redirects, with zero console/page errors throughout. One false alarm during this pass, worth noting: an early version of the check read the combined-total KPI text within ~3s of a filter change and saw a stale-looking number — turned out to be the existing `useCountUp` count-up animation genuinely still mid-animation (it restarts from 0 on every data change), not a data bug; confirmed by polling the DOM every 300ms and watching it converge smoothly to the exact correct value. Not yet re-confirmed with a fresh full-page scrolled screenshot (the one taken mid-session had below-the-fold `Reveal` panels not yet faded in, since `IntersectionObserver`-based reveal only fires once an element enters the viewport) — the underlying data/text was confirmed correct via `innerText` regardless, but a true visual pass would need the same scroll-then-screenshot approach `scripts/visual-check.mjs` already uses.
+
+**Why:** Direct ask to stop maintaining road assets as a separate page and combine it with planning/implementation into one cross-filtering view. The two clarifying questions (combine-into-one-number vs. side-by-side; section-name-only vs. project+section matching) were asked only after live data showed they weren't arbitrary style choices — the "obvious" strict-join interpretation of "if there is a report on that section then its implemented" would have returned zero everywhere including Kebbi's real 21 linked reports, and guessing wrong on the total-combination question would have shipped a KPI card whose big number nobody could sanity-check against anything. Following this project's own repeatedly-stated discipline (see the 2026-07-22/07-30/08-04 entries above) of checking real data before writing the join, rather than assuming project/section names introduced in one table would naturally agree with another.
 
 ### 2026-08-04 — New `/road-assets` page: 7.27M-row road-design asset map across Kebbi and Coastal Road/Calabar/Ogun
 

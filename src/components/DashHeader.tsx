@@ -41,7 +41,6 @@ export default function DashHeader() {
     { label: 'Personnel',    href: '/personnel'    },
     { label: 'Streetlights', href: '/streetlights' },
     { label: 'Planning & Implementation', href: '/planning-implementation' },
-    { label: 'Road Assets', href: '/road-assets' },
   ]
 
   const headerBg = isLight ? '#ffffff' : '#1c1c1f'
