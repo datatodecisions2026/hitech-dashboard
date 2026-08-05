@@ -17,7 +17,7 @@ const NAV_ITEMS = [
   { label: 'Machines',     href: '/machines',     icon: IconTruck },
   { label: 'Personnel',    href: '/personnel',    icon: IconPeople },
   { label: 'Streetlights', href: '/streetlights', icon: IconBulb },
-  { label: 'Road Assets',  href: '/road-assets',  icon: IconLayers },
+  { label: 'Asset Coverage', href: '/road-assets-coverage', icon: IconLayers },
 ]
 
 function NavItem({ href, label, Icon, isActive, D, isLight }: { href: string; label: string; Icon: () => React.ReactElement; isActive: boolean; D: ColorTokens; isLight: boolean }) {

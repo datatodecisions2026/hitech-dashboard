@@ -696,7 +696,7 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
     if (applied.dateTo) qs.set('date_to', applied.dateTo)
     if (applied.chFrom) qs.set('ch_from', applied.chFrom)
     if (applied.chTo) qs.set('ch_to', applied.chTo)
-    fetch(`/api/road-assets?${qs.toString()}`)
+    fetch(`/api/road-assets-coverage?${qs.toString()}`)
       .then(async r => {
         if (reqId !== requestIdRef.current) return
         const d = await r.json()
@@ -813,7 +813,7 @@ export default function RoadAssetsPage() {
     setLoading(true)
     setError(null)
     try {
-      const r = await fetch(`/api/road-assets?section=${encodeURIComponent(sec)}`)
+      const r = await fetch(`/api/road-assets-coverage?section=${encodeURIComponent(sec)}`)
       if (reqId !== requestIdRef.current) return
       if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || 'Failed to load road assets data.'); return }
       const d: RoadAssetsData = await r.json()
@@ -832,7 +832,7 @@ export default function RoadAssetsPage() {
   const handleSelectSide = useCallback((entityType: string, side: string) => {
     setSelected({ entityType, side })
     setGapLoading(true)
-    fetch(`/api/road-assets?section=${encodeURIComponent(section)}&entity_type=${encodeURIComponent(entityType)}&side=${encodeURIComponent(side)}`)
+    fetch(`/api/road-assets-coverage?section=${encodeURIComponent(section)}&entity_type=${encodeURIComponent(entityType)}&side=${encodeURIComponent(side)}`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((d: RoadAssetsData) => setGapDetail(d.gapDetail))
       .catch(() => setGapDetail(null))
@@ -844,7 +844,7 @@ export default function RoadAssetsPage() {
       <Reveal>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
           <div>
-            <h1 style={{ fontFamily: 'var(--font-loader)', fontSize: '1.8rem', color: D.text, margin: 0, letterSpacing: '0.02em' }}>Road Assets</h1>
+            <h1 style={{ fontFamily: 'var(--font-loader)', fontSize: '1.8rem', color: D.text, margin: 0, letterSpacing: '0.02em' }}>Asset Coverage</h1>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: D.muted, margin: '4px 0 0' }}>As-built asset-layer coverage vs. total road length, per section</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
