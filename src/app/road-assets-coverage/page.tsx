@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 
 /* ── Shared motion tokens (mirrors /progress) ─────────────────────────── */
@@ -798,6 +799,7 @@ function Skeleton() {
 /* ── Page ──────────────────────────────────────────────────────────────── */
 export default function RoadAssetsPage() {
   const { colors: D, shadows: SH } = useTheme()
+  const router = useRouter()
   const [section, setSection] = useState<string>('Calabar')
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'chainage'>('overview')
   const [data, setData] = useState<RoadAssetsData | null>(null)
@@ -815,6 +817,7 @@ export default function RoadAssetsPage() {
     try {
       const r = await fetch(`/api/road-assets-coverage?section=${encodeURIComponent(sec)}`)
       if (reqId !== requestIdRef.current) return
+      if (r.status === 401) { router.replace('/login'); return }
       if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || 'Failed to load road assets data.'); return }
       const d: RoadAssetsData = await r.json()
       setData(d)
@@ -825,7 +828,7 @@ export default function RoadAssetsPage() {
     } finally {
       if (reqId === requestIdRef.current) setLoading(false)
     }
-  }, [])
+  }, [router])
 
   useEffect(() => { loadData(section) }, [section, loadData])
 

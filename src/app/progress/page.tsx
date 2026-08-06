@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 
 /* ── Shared motion tokens ──────────────────────────────────── */
@@ -573,6 +574,7 @@ const IconList  = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="no
 /* ── Main Page ─────────────────────────────────────────────── */
 function ProgressPageInner() {
   const { colors: D, shadows: SH } = useTheme()
+  const router = useRouter()
   const [data, setData]           = useState<ProgressData | null>(null)
   const [loading, setLoading]     = useState(true)
   const [filtering, setFiltering] = useState(false)
@@ -595,13 +597,14 @@ function ProgressPageInner() {
     if (params.chFrom && params.chTo) { qs.set('ch_from', params.chFrom); qs.set('ch_to', params.chTo) }
     fetch(`/api/progress?${qs.toString()}`)
       .then(async r => {
+        if (r.status === 401) { router.replace('/login'); return }
         const d = await r.json()
         if (!r.ok) throw new Error(d?.error || `Failed to load data (${r.status})`)
         setError(''); setData(d)
       })
       .catch((e: Error) => { setError(e.message || 'Failed to load data') })
       .finally(() => { setLoading(false); setFiltering(false) })
-  }, [])
+  }, [router])
 
   useEffect(() => { loadData({ entity: '', side: '', month: '', chFrom: '', chTo: '' }) }, [loadData])
 

@@ -348,13 +348,14 @@ function PlanningImplementationPageInner() {
     if (activeProject) qs.set('project', activeProject.label)
     fetch(`/api/planning-implementation?${qs}`)
       .then(async r => {
+        if (r.status === 401) { router.replace('/login'); return null }
         const d = await r.json()
         if (!r.ok) throw new Error(d?.error || 'Failed to load')
         return d
       })
-      .then(d => { if (reqId === requestIdRef.current) { setData(d); setLoading(false) } })
+      .then(d => { if (d && reqId === requestIdRef.current) { setData(d); setLoading(false) } })
       .catch(() => { if (reqId === requestIdRef.current) { setError('Failed to load planning/implementation data'); setLoading(false) } })
-  }, [activeProject])
+  }, [activeProject, router])
 
   useEffect(() => { loadData() }, [loadData])
 

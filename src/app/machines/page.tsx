@@ -307,10 +307,10 @@ function MachinesPageInner() {
     setLoading(true)
     const qs = searchParams.toString()
     fetch(`/api/dashboard${qs ? `?${qs}` : ''}`)
-      .then(r => r.json())
-      .then(d => { if (reqId === requestIdRef.current) { setData(d); setLoading(false) } })
+      .then(r => { if (r.status === 401) { router.replace('/login'); return null }; return r.json() })
+      .then(d => { if (d && reqId === requestIdRef.current) { setData(d); setLoading(false) } })
       .catch(() => { if (reqId === requestIdRef.current) { setError('Failed to load machines data'); setLoading(false) } })
-  }, [searchParams])
+  }, [searchParams, router])
 
   useEffect(() => { loadData() }, [loadData])
 
