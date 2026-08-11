@@ -231,35 +231,57 @@ export async function GET(req: NextRequest) {
   const filteredEngineers   = engineers.filter(inFilter)
   const filteredSupervisors = supervisors.filter(inFilter)
 
-  const byMachine    = groupCount(filteredMachines.map(m => (m as any).machine_name    as string)).slice(0, 15)
-  const byEmployee   = groupCount(filteredEmployees.map(e => (e as any).employee_name   as string)).slice(0, 15)
-  const byEngineer   = groupCount(filteredEngineers.map(e => (e as any).engineer_name   as string)).slice(0, 15)
-  const bySupervisor = groupCount(filteredSupervisors.map(s => (s as any).supervisor_name as string)).slice(0, 15)
-  const byOwnership  = groupCount(filteredMachines.map(m => (m as any).ownership         as string))
-  const byDriver      = groupCount(filteredMachines.map(m => (m as any).driver_name  as string)).slice(0, 15)
-  const byEmployeeRole    = groupCount(filteredEmployees.map(e => (e as any).employee_role as string))
-  const byEngineerParty   = groupCount(filteredEngineers.map(e => (e as any).party as string))
-  const bySupervisorParty = groupCount(filteredSupervisors.map(s => (s as any).party as string))
+  // Project/category/weather/etc. filters are deliberately a co-occurrence
+  // view: filter the report set, then show whatever else appears within it.
+  // Machine/employee/engineer/supervisor are the exception, per explicit
+  // user request — selecting a specific one (e.g. clicking "GPS", or an
+  // employee's name) should narrow that dimension's own panels/KPIs down to
+  // its own rows, not every machine/person who happened to co-occur in the
+  // same now-report-level-filtered reports (which was confusing: "Distinct
+  // Machines" showing 24 after selecting just GPS, "Distinct Employees"
+  // showing 38 after selecting one employee, etc.).
+  const machineRows = filterMachine
+    ? filteredMachines.filter(m => toTitleCase((m as any).machine_name as string).toLowerCase() === filterMachine.toLowerCase())
+    : filteredMachines
+  const employeeRows = filterEmployee
+    ? filteredEmployees.filter(e => toTitleCase((e as any).employee_name as string).toLowerCase() === filterEmployee.toLowerCase())
+    : filteredEmployees
+  const engineerRows = filterEngineer
+    ? filteredEngineers.filter(e => toTitleCase((e as any).engineer_name as string).toLowerCase() === filterEngineer.toLowerCase())
+    : filteredEngineers
+  const supervisorRows = filterSupervisor
+    ? filteredSupervisors.filter(s => toTitleCase((s as any).supervisor_name as string).toLowerCase() === filterSupervisor.toLowerCase())
+    : filteredSupervisors
+
+  const byMachine    = groupCount(machineRows.map(m => (m as any).machine_name    as string)).slice(0, 15)
+  const byEmployee   = groupCount(employeeRows.map(e => (e as any).employee_name   as string)).slice(0, 15)
+  const byEngineer   = groupCount(engineerRows.map(e => (e as any).engineer_name   as string)).slice(0, 15)
+  const bySupervisor = groupCount(supervisorRows.map(s => (s as any).supervisor_name as string)).slice(0, 15)
+  const byOwnership  = groupCount(machineRows.map(m => (m as any).ownership         as string))
+  const byDriver      = groupCount(machineRows.map(m => (m as any).driver_name  as string)).slice(0, 15)
+  const byEmployeeRole    = groupCount(employeeRows.map(e => (e as any).employee_role as string))
+  const byEngineerParty   = groupCount(engineerRows.map(e => (e as any).party as string))
+  const bySupervisorParty = groupCount(supervisorRows.map(s => (s as any).party as string))
 
   const distinctCount = (rows: Record<string, unknown>[], field: string) =>
     new Set(rows.map(r => toTitleCase(r[field] as string)).filter(Boolean)).size
 
   const machineSummary = {
-    totalMentions:    filteredMachines.length,
-    distinctMachines: distinctCount(filteredMachines, 'machine_name'),
-    distinctDrivers:  distinctCount(filteredMachines, 'driver_name'),
+    totalMentions:    machineRows.length,
+    distinctMachines: distinctCount(machineRows, 'machine_name'),
+    distinctDrivers:  distinctCount(machineRows, 'driver_name'),
   }
   const employeeSummary = {
-    totalMentions:     filteredEmployees.length,
-    distinctEmployees: distinctCount(filteredEmployees, 'employee_name'),
+    totalMentions:     employeeRows.length,
+    distinctEmployees: distinctCount(employeeRows, 'employee_name'),
   }
   const engineerSummary = {
-    totalMentions:     filteredEngineers.length,
-    distinctEngineers: distinctCount(filteredEngineers, 'engineer_name'),
+    totalMentions:     engineerRows.length,
+    distinctEngineers: distinctCount(engineerRows, 'engineer_name'),
   }
   const supervisorSummary = {
-    totalMentions:       filteredSupervisors.length,
-    distinctSupervisors: distinctCount(filteredSupervisors, 'supervisor_name'),
+    totalMentions:       supervisorRows.length,
+    distinctSupervisors: distinctCount(supervisorRows, 'supervisor_name'),
   }
 
   const mapPoints = all

@@ -359,7 +359,7 @@ function PersonnelPageInner() {
               <KPICard label="Total Mentions"     value={totalMentions}                                    icon={<IconUsers/>}  delay={240} color={D.amber} />
             </div>
 
-            <Reveal style={{ marginBottom:16 }}>
+            <Reveal style={{ marginBottom:14 }}>
               <div className="personnel-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:14 }}>
                 <Panel title="Top Employees">
                   {data.byEmployee?.length > 0
@@ -371,6 +371,11 @@ function PersonnelPageInner() {
                     ? <DonutChart data={data.byEmployeeRole} activeName={data.activeFilters.filterEmployeeRole} onSliceClick={name => handleFilter('employee_role', name)}/>
                     : <EmptyState label="No role data matches your filters"/>}
                 </Panel>
+              </div>
+            </Reveal>
+
+            <Reveal delay={60} style={{ marginBottom:14 }}>
+              <div className="personnel-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:14 }}>
                 <Panel title="Engineers Activity">
                   {data.byEngineer?.length > 0
                     ? <HBarChart data={data.byEngineer} color={D.blue} activeName={data.activeFilters.filterEngineer} onBarClick={name => handleFilter('engineer', name)}/>
@@ -381,6 +386,11 @@ function PersonnelPageInner() {
                     ? <DonutChart data={data.byEngineerParty} activeName={data.activeFilters.filterEngineerParty} onSliceClick={name => handleFilter('engineer_party', name)}/>
                     : <EmptyState label="No party data matches your filters"/>}
                 </Panel>
+              </div>
+            </Reveal>
+
+            <Reveal delay={120} style={{ marginBottom:16 }}>
+              <div className="personnel-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:14 }}>
                 <Panel title="Supervisors Activity">
                   {data.bySupervisor?.length > 0
                     ? <HBarChart data={data.bySupervisor} color={D.purple} activeName={data.activeFilters.filterSupervisor} onBarClick={name => handleFilter('supervisor', name)}/>

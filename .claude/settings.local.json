@@ -191,7 +191,22 @@
       "Bash(rm -f scripts/__tmp-layout-check.mjs)",
       "Bash(git mv *)",
       "Bash(git merge *)",
-      "Bash(node -e *)"
+      "Bash(node -e *)",
+      "Bash(node scripts/__tmp-site-check.mjs)",
+      "Bash(curl -s -o /dev/null -w \"server: %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(node scripts/__tmp-full-review.mjs)",
+      "Bash(node scripts/__tmp-map-check.mjs)",
+      "Bash(rm -f scripts/__tmp-full-review.mjs scripts/__tmp-map-check.mjs)",
+      "Bash(curl -s --cookie hitech-dashboard-session=__TRACKED_VAR__ http://localhost:3000/api/dashboard)",
+      "Bash(node scripts/__tmp-machine-check.mjs)",
+      "Bash(node scripts/__tmp-machine-check2.mjs)",
+      "Bash(rm -f scripts/__tmp-machine-check.mjs scripts/__tmp-machine-check2.mjs)",
+      "Bash(curl -s --cookie hitech-dashboard-session=__TRACKED_VAR__ http://localhost:3000/api/dashboard?employee=Gabriel)",
+      "Bash(curl -s --cookie hitech-dashboard-session=__TRACKED_VAR__ http://localhost:3000/api/dashboard?engineer=Believe)",
+      "Bash(node scripts/__tmp-personnel-check.mjs)",
+      "Bash(node scripts/__tmp-personnel-check2.mjs)",
+      "Bash(node scripts/__tmp-personnel-direct.mjs)",
+      "Bash(node scripts/__tmp-personnel-grid-check.mjs)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ukpoweh Gift\\Documents\\hitech-dashboard",
