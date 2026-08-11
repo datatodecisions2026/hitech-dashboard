@@ -156,7 +156,7 @@ function KPICard({ label, value, suffix, sub, icon, delay = 0, color: colorProp 
 }
 
 /* ── Horizontal bar chart (single series) ──────────────────── */
-function HBarChart({ data, color: colorProp }: { data: Array<{ name: string; count: number }>; color?: string }) {
+function HBarChart({ data, color: colorProp, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; color?: string; activeName?: string; onBarClick?: (name: string) => void }) {
   const { colors: D } = useTheme()
   const color = colorProp ?? D.amber
   const [ready, setReady] = useState(false)
@@ -164,6 +164,7 @@ function HBarChart({ data, color: colorProp }: { data: Array<{ name: string; cou
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
   const max   = Math.max(...data.map(d => d.count), 1)
   const total = data.reduce((s, d) => s + d.count, 0)
+  const hasActive = !!activeName
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
       {data.map((d, i) => {
@@ -171,15 +172,17 @@ function HBarChart({ data, color: colorProp }: { data: Array<{ name: string; cou
         const barPct = (d.count / max) * 100
         const isHov  = hov === i
         const isTop  = i < 3
+        const isActive = d.name === activeName
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: hov !== null && !isHov ? 0.35 : 1, transform: isHov ? 'translateX(2px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}>
+            onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.35 : 1), transform: isHov || isActive ? 'translateX(2px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}>
             <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${color}18` : 'transparent', border: isTop ? `1px solid ${color}35` : `1px solid transparent`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? color : D.sub, fontWeight: isTop ? 700 : 400 }}>{i+1}</div>
-            <span style={{ width: 150, fontSize: '0.7rem', color: isHov ? D.text : D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, transition: 'color 0.2s' }} title={d.name}>{d.name}</span>
+            <span style={{ width: 150, fontSize: '0.7rem', color: isHov || isActive ? D.text : D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, transition: 'color 0.2s' }} title={d.name}>{d.name}</span>
             <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.04)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? `linear-gradient(90deg, ${color}, ${color}bb)` : `linear-gradient(90deg, ${color}66, ${color}33)`, borderRadius: 6, transition: `width 0.9s ${EASE} ${i*0.04}s, box-shadow 0.2s`, boxShadow: isTop && isHov ? `0 0 8px ${color}55` : 'none' }} />
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? `linear-gradient(90deg, ${color}, ${color}bb)` : `linear-gradient(90deg, ${color}66, ${color}33)`, borderRadius: 6, transition: `width 0.9s ${EASE} ${i*0.04}s, box-shadow 0.2s`, boxShadow: (isTop && isHov) || isActive ? `0 0 8px ${color}55` : 'none' }} />
             </div>
-            <span style={{ width: 70, textAlign: 'right', fontSize: '0.7rem', color: isHov ? color : D.text, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{d.count.toLocaleString()}</span>
+            <span style={{ width: 70, textAlign: 'right', fontSize: '0.7rem', color: isHov || isActive ? color : D.text, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{d.count.toLocaleString()}</span>
             <span style={{ width: 30, textAlign: 'right', fontSize: '0.62rem', color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{pct}%</span>
           </div>
         )
@@ -244,7 +247,7 @@ function PageSkeleton() {
 }
 
 /* ── Section table (planning activities) ──────────────────────── */
-function SectionTable({ sections }: { sections: SectionRow[] }) {
+function SectionTable({ sections, activeSection, onSelectSection }: { sections: SectionRow[]; activeSection: string; onSelectSection: (section: string) => void }) {
   const { colors: D } = useTheme()
   const [page, setPage] = useState(0)
   const PAGE = 20, total = sections.length
@@ -264,9 +267,12 @@ function SectionTable({ sections }: { sections: SectionRow[] }) {
             {pageData.map((r, i) => {
               const rate = r.total > 0 ? Math.round((r.implemented / r.total) * 100) : 0
               const unlinked = r.section === 'Unlinked / No Section'
+              const isActive = r.section === activeSection
               return (
-                <tr key={r.section + i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
-                  <td style={{ padding: '10px 14px', color: unlinked ? D.sub : D.text, fontFamily: 'var(--font-mono)', fontWeight: 600, fontStyle: unlinked ? 'italic' : 'normal' }}>{r.section}</td>
+                <tr key={r.section + i} className="tbl-row" onClick={unlinked ? undefined : () => onSelectSection(r.section === activeSection ? '' : r.section)}
+                  style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, cursor: unlinked ? 'default' : 'pointer', background: isActive ? 'rgba(212,160,64,0.07)' : undefined }}
+                  title={unlinked ? undefined : `Filter to ${r.section}`}>
+                  <td style={{ padding: '10px 14px', color: unlinked ? D.sub : (isActive ? D.amber : D.text), fontFamily: 'var(--font-mono)', fontWeight: 600, fontStyle: unlinked ? 'italic' : 'normal' }}>{r.section}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: D.blue, fontFamily: 'var(--font-mono)' }}>{r.planned.toLocaleString()}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: D.green, fontFamily: 'var(--font-mono)' }}>{r.implemented.toLocaleString()}</td>
@@ -292,7 +298,7 @@ function SectionTable({ sections }: { sections: SectionRow[] }) {
 }
 
 /* ── Road assets by section (small, always ≤ a handful of rows) ── */
-function RoadAssetSectionTable({ rows, activeSection }: { rows: RoadAssetSectionRow[]; activeSection: string }) {
+function RoadAssetSectionTable({ rows, activeSection, onSelectSection }: { rows: RoadAssetSectionRow[]; activeSection: string; onSelectSection: (section: string) => void }) {
   const { colors: D } = useTheme()
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -305,9 +311,13 @@ function RoadAssetSectionTable({ rows, activeSection }: { rows: RoadAssetSection
           </tr>
         </thead>
         <tbody>
-          {rows.map(r => (
-            <tr key={`${r.project}|${r.section}`} className="tbl-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: r.section === activeSection ? 'rgba(212,160,64,0.06)' : undefined }}>
-              <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.section}</td>
+          {rows.map(r => {
+            const isActive = r.section === activeSection
+            return (
+            <tr key={`${r.project}|${r.section}`} className="tbl-row" onClick={() => onSelectSection(r.section === activeSection ? '' : r.section)}
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', background: isActive ? 'rgba(212,160,64,0.07)' : undefined }}
+              title={`Filter to ${r.section}`}>
+              <td style={{ padding: '10px 14px', color: isActive ? D.amber : D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.section}</td>
               <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.project}</td>
               <td style={{ padding: '10px 14px', textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
               <td style={{ padding: '10px 14px', textAlign: 'right', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.geolocated.toLocaleString()}</td>
@@ -319,7 +329,8 @@ function RoadAssetSectionTable({ rows, activeSection }: { rows: RoadAssetSection
                 )}
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -502,7 +513,7 @@ function PlanningImplementationPageInner() {
               <div className="pi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))', gap:14 }}>
                 <Panel title="Activities by Section">
                   {topSections.length > 0
-                    ? <HBarChart data={topSections} color={D.amber}/>
+                    ? <HBarChart data={topSections} color={D.amber} activeName={activeSection} onBarClick={handleSectionFilter}/>
                     : <EmptyState label="No planning activities recorded for this project/section"/>}
                 </Panel>
                 <Panel title="Planning vs Implementation Coverage">
@@ -515,9 +526,13 @@ function PlanningImplementationPageInner() {
                     ? <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                         {filteredPlanning.slice(0, 12).map(s => {
                           const rate = s.total > 0 ? Math.round((s.implemented / s.total) * 100) : 0
+                          const isActive = s.section === activeSection
+                          const unlinked = s.section === 'Unlinked / No Section'
                           return (
-                            <div key={s.section} style={{ display:'flex', alignItems:'center', gap:10 }}>
-                              <span style={{ width:130, fontSize:'0.68rem', color:D.muted, fontFamily:'var(--font-mono)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }} title={s.section}>{s.section}</span>
+                            <div key={s.section} onClick={unlinked ? undefined : () => handleSectionFilter(s.section === activeSection ? '' : s.section)}
+                              style={{ display:'flex', alignItems:'center', gap:10, cursor: unlinked ? 'default' : 'pointer', opacity: isActive ? 1 : (activeSection && !isActive ? 0.55 : 1), transition:`opacity 0.2s ${EASE}` }}
+                              title={unlinked ? undefined : `Filter to ${s.section}`}>
+                              <span style={{ width:130, fontSize:'0.68rem', color: isActive ? D.amber : D.muted, fontFamily:'var(--font-mono)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }} title={s.section}>{s.section}</span>
                               <div style={{ flex:1 }}><FunnelBar total={s.total} planned={s.planned} implemented={s.implemented}/></div>
                               <span style={{ width:36, textAlign:'right', fontSize:'0.68rem', color:D.green, fontWeight:700, fontFamily:'var(--font-mono)', flexShrink:0 }}>{rate}%</span>
                             </div>
@@ -546,7 +561,7 @@ function PlanningImplementationPageInner() {
             <Reveal delay={80} style={{ marginBottom:16 }}>
               <Panel title={`Road Assets by Section (${roadAssetSections.length})`}>
                 {roadAssetSections.length > 0
-                  ? <RoadAssetSectionTable rows={roadAssetSections} activeSection={activeSection} />
+                  ? <RoadAssetSectionTable rows={roadAssetSections} activeSection={activeSection} onSelectSection={handleSectionFilter} />
                   : <EmptyState label="No road asset sections found for this project"/>}
               </Panel>
             </Reveal>
@@ -554,7 +569,7 @@ function PlanningImplementationPageInner() {
             <Reveal delay={100}>
               <Panel title={`Sections Breakdown (${filteredPlanning.length})`}>
                 {filteredPlanning.length > 0
-                  ? <SectionTable sections={filteredPlanning}/>
+                  ? <SectionTable sections={filteredPlanning} activeSection={activeSection} onSelectSection={handleSectionFilter}/>
                   : <EmptyState label="No planning activities recorded for this project/section"/>}
               </Panel>
             </Reveal>

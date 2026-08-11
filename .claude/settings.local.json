@@ -206,7 +206,9 @@
       "Bash(node scripts/__tmp-personnel-check.mjs)",
       "Bash(node scripts/__tmp-personnel-check2.mjs)",
       "Bash(node scripts/__tmp-personnel-direct.mjs)",
-      "Bash(node scripts/__tmp-personnel-grid-check.mjs)"
+      "Bash(node scripts/__tmp-personnel-grid-check.mjs)",
+      "Bash(node scripts/__tmp-dim-check.mjs)",
+      "Bash(taskkill //PID 46828 //F)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Ukpoweh Gift\\Documents\\hitech-dashboard",

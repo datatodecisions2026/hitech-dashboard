@@ -324,7 +324,7 @@ function Gauge({ value, label, color, delay = 0 }: { value: number; label: strin
 }
 
 /* ── Paired planned-vs-actual bar chart, per entity ────────────────────── */
-function PlannedActualBars({ entities }: { entities: EntityRow[] }) {
+function PlannedActualBars({ entities, selectedEntity, onSelectEntity, dimRange }: { entities: EntityRow[]; selectedEntity?: string | null; onSelectEntity?: (entityType: string, side: string) => void; dimRange?: [number, number] | null }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<string | null>(null)
@@ -336,9 +336,16 @@ function PlannedActualBars({ entities }: { entities: EntityRow[] }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: D.amber }} /><span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>Actual</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: D.sub }} /><span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>Planned</span></div>
       </div>
-      {entities.map((e, i) => (
-        <div key={e.entityType} onMouseEnter={() => setHov(e.entityType)} onMouseLeave={() => setHov(null)} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 120, flexShrink: 0, fontSize: 11, color: hov === e.entityType ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{e.label}</div>
+      {entities.map((e, i) => {
+        const isActive = selectedEntity === e.entityType
+        const inRange = !dimRange || (e.combinedCompletionPct >= dimRange[0] && e.combinedCompletionPct < dimRange[1])
+        const firstSide = Object.keys(e.sides).sort()[0]
+        return (
+        <div key={e.entityType} onMouseEnter={() => setHov(e.entityType)} onMouseLeave={() => setHov(null)}
+          onClick={onSelectEntity && firstSide ? () => onSelectEntity(e.entityType, firstSide) : undefined}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onSelectEntity ? 'pointer' : 'default', opacity: !inRange ? 0.3 : 1, padding: '3px 6px', margin: '-3px -6px', borderRadius: 6, background: isActive ? `${D.amber}10` : 'transparent', border: isActive ? `1px solid ${D.amber}40` : '1px solid transparent', transition: `opacity 0.2s ${EASE}, background 0.2s ${EASE}, border-color 0.2s ${EASE}` }}
+          title={onSelectEntity ? `View gaps for ${e.label} · ${firstSide}` : undefined}>
+          <div style={{ width: 120, flexShrink: 0, fontSize: 11, color: hov === e.entityType || isActive ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{e.label}</div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{ height: 9, background: 'rgba(255,255,255,0.04)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: ready ? `${e.combinedCompletionPct}%` : '0%', background: `linear-gradient(90deg, ${D.amber}88, ${D.amber})`, borderRadius: 3, transition: `width 1s ${EASE} ${i * 0.02}s` }} />
@@ -349,13 +356,14 @@ function PlannedActualBars({ entities }: { entities: EntityRow[] }) {
           </div>
           <div style={{ width: 50, fontSize: 10, fontFamily: 'var(--font-mono)', color: e.gapPct >= 0 ? D.green : D.red, textAlign: 'right', flexShrink: 0 }}>{e.gapPct >= 0 ? '+' : ''}{e.gapPct.toFixed(0)}pp</div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
 /* ── Per-entity Gantt schedule ─────────────────────────────────────────── */
-function EntityGanttChart({ entities, sectionStart, sectionEnd }: { entities: EntityRow[]; sectionStart: string; sectionEnd: string }) {
+function EntityGanttChart({ entities, sectionStart, sectionEnd, selectedEntity, onSelectEntity, dimRange }: { entities: EntityRow[]; sectionStart: string; sectionEnd: string; selectedEntity?: string | null; onSelectEntity?: (entityType: string, side: string) => void; dimRange?: [number, number] | null }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<string | null>(null)
@@ -388,10 +396,15 @@ function EntityGanttChart({ entities, sectionStart, sectionEnd }: { entities: En
         <div style={{ position: 'absolute', left: `calc(130px + ${todayPct}% * (100% - 130px) / 100%)`, top: 0, bottom: 0, width: 1, background: D.blue, opacity: 0.4, zIndex: 1 }} />
         {sorted.map(e => {
           const color = STATUS_COLOR[e.status] || D.sub
+          const isActive = selectedEntity === e.entityType
+          const inRange = !dimRange || (e.combinedCompletionPct >= dimRange[0] && e.combinedCompletionPct < dimRange[1])
+          const firstSide = Object.keys(e.sides).sort()[0]
           return (
-            <div key={e.entityType} style={{ display: 'flex', alignItems: 'center', gap: 10 }}
-              onMouseEnter={() => setHov(e.entityType)} onMouseLeave={() => setHov(null)}>
-              <div style={{ width: 130, flexShrink: 0, fontSize: 11, color: hov === e.entityType ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{e.label}</div>
+            <div key={e.entityType} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onSelectEntity ? 'pointer' : 'default', opacity: !inRange ? 0.3 : 1, padding: '2px 6px', margin: '-2px -6px', borderRadius: 6, background: isActive ? `${D.amber}10` : 'transparent', border: isActive ? `1px solid ${D.amber}40` : '1px solid transparent', transition: `opacity 0.2s ${EASE}, background 0.2s ${EASE}, border-color 0.2s ${EASE}` }}
+              onMouseEnter={() => setHov(e.entityType)} onMouseLeave={() => setHov(null)}
+              onClick={onSelectEntity && firstSide ? () => onSelectEntity(e.entityType, firstSide) : undefined}
+              title={onSelectEntity ? `View gaps for ${e.label} · ${firstSide}` : undefined}>
+              <div style={{ width: 130, flexShrink: 0, fontSize: 11, color: hov === e.entityType || isActive ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{e.label}</div>
               <div style={{ flex: 1, height: 26, background: 'rgba(255,255,255,0.03)', borderRadius: 5, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
                 <div style={{ position: 'absolute', left: toX(e.plannedStart), width: ready ? toW(e.plannedStart, e.plannedEnd) : '0%', top: 3, bottom: 3, borderRadius: 3, background: `${color}25`, border: `1px solid ${color}55`, transition: `width 1.1s ${EASE}`, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${e.combinedCompletionPct}%`, background: color, opacity: 0.85 }} />
@@ -412,7 +425,7 @@ function EntityGanttChart({ entities, sectionStart, sectionEnd }: { entities: En
 }
 
 /* ── Completion distribution histogram ─────────────────────────────────── */
-function CompletionHistogram({ entities }: { entities: EntityRow[] }) {
+function CompletionHistogram({ entities, activeRange, onSelectRange }: { entities: EntityRow[]; activeRange?: [number, number] | null; onSelectRange?: (range: [number, number] | null) => void }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
@@ -429,13 +442,19 @@ function CompletionHistogram({ entities }: { entities: EntityRow[] }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flex: 1, minHeight: 180, padding: '0 6px' }}>
-      {buckets.map((b, i) => (
-        <div key={b.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, height: '100%', justifyContent: 'flex-end', gap: 8 }}>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: D.text, fontWeight: 700 }}>{counts[i]}</span>
-          <div style={{ width: '100%', maxWidth: 46, height: ready ? `${(counts[i] / maxCount) * 100}%` : '0%', minHeight: counts[i] > 0 ? 4 : 0, background: `linear-gradient(180deg, ${b.color}, ${b.color}88)`, borderRadius: '6px 6px 2px 2px', transition: `height 0.9s ${EASE} ${i * 0.05}s`, boxShadow: `0 0 10px ${b.color}33` }} />
-          <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: D.muted, textAlign: 'center' }}>{b.label}</span>
-        </div>
-      ))}
+      {buckets.map((b, i) => {
+        const isActive = activeRange && activeRange[0] === b.min && activeRange[1] === b.max
+        const dimmed = !!activeRange && !isActive
+        return (
+          <div key={b.label} onClick={onSelectRange ? () => onSelectRange(isActive ? null : [b.min, b.max]) : undefined}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, height: '100%', justifyContent: 'flex-end', gap: 8, cursor: onSelectRange ? 'pointer' : 'default', opacity: dimmed ? 0.4 : 1, transition: `opacity 0.2s ${EASE}` }}
+            title={onSelectRange ? `Filter entities to ${b.label} completion` : undefined}>
+            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: isActive ? D.amber : D.text, fontWeight: 700 }}>{counts[i]}</span>
+            <div style={{ width: '100%', maxWidth: 46, height: ready ? `${(counts[i] / maxCount) * 100}%` : '0%', minHeight: counts[i] > 0 ? 4 : 0, background: `linear-gradient(180deg, ${b.color}, ${b.color}88)`, borderRadius: '6px 6px 2px 2px', transition: `height 0.9s ${EASE} ${i * 0.05}s`, boxShadow: isActive ? `0 0 14px ${b.color}77` : `0 0 10px ${b.color}33`, outline: isActive ? `1px solid ${b.color}` : 'none' }} />
+            <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: D.muted, textAlign: 'center' }}>{b.label}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -523,9 +542,15 @@ function TimelineChart({ points, granularity }: { points: TimelinePoint[]; granu
 }
 
 /* ── Timeline tab ──────────────────────────────────────────────────────── */
-function TimelineTab({ timeline, entities }: { timeline: TimelineData; entities: EntityRow[] }) {
+function TimelineTab({ timeline, entities, selected, gapDetail, gapLoading, onSelectSide }: {
+  timeline: TimelineData; entities: EntityRow[]
+  selected: { entityType: string; side: string } | null; gapDetail: GapDetail | null; gapLoading: boolean
+  onSelectSide: (entityType: string, side: string) => void
+}) {
   const { colors: D, shadows: SH } = useTheme()
   const [granularity, setGranularity] = useState<Granularity>('monthly')
+  const [histogramRange, setHistogramRange] = useState<[number, number] | null>(null)
+  useEffect(() => { setHistogramRange(null) }, [timeline])
   const points = aggregateTimeline(timeline.daily, granularity)
   const ahead = timeline.gapPctToday >= 0
   const onTrack = Math.abs(timeline.gapPctToday) < 3
@@ -555,7 +580,7 @@ function TimelineTab({ timeline, entities }: { timeline: TimelineData; entities:
         </Reveal>
         <Reveal delay={60}>
           <Panel title="Completion Distribution" style={{ height: '100%' }}>
-            <CompletionHistogram entities={entities} />
+            <CompletionHistogram entities={entities} activeRange={histogramRange} onSelectRange={setHistogramRange} />
           </Panel>
         </Reveal>
       </div>
@@ -574,15 +599,23 @@ function TimelineTab({ timeline, entities }: { timeline: TimelineData; entities:
         </Panel>
       </Reveal>
 
-      <Reveal delay={140}>
-        <Panel title="Planned vs Actual — By Entity">
-          <PlannedActualBars entities={entities} />
-        </Panel>
-      </Reveal>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 16, alignItems: 'flex-start' }}>
+        <Reveal delay={140}>
+          <Panel title="Planned vs Actual — By Entity">
+            <PlannedActualBars entities={entities} selectedEntity={selected?.entityType} onSelectEntity={onSelectSide} dimRange={histogramRange} />
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: D.muted, margin: 0, lineHeight: 1.6 }}>Click a row to see its gap chainages. Click a bucket above to filter by completion range.</p>
+          </Panel>
+        </Reveal>
+        <Reveal delay={180}>
+          <Panel title={selected ? `Gaps — ${selected.entityType} · ${selected.side}` : 'Gap Detail'}>
+            <GapDetailPanel detail={gapDetail} loading={gapLoading} />
+          </Panel>
+        </Reveal>
+      </div>
 
       <Reveal delay={200}>
         <Panel title="Entity Schedule">
-          <EntityGanttChart entities={entities} sectionStart={timeline.startDate} sectionEnd={timeline.endDate} />
+          <EntityGanttChart entities={entities} sectionStart={timeline.startDate} sectionEnd={timeline.endDate} selectedEntity={selected?.entityType} onSelectEntity={onSelectSide} dimRange={histogramRange} />
         </Panel>
       </Reveal>
     </div>
@@ -909,7 +942,7 @@ export default function RoadAssetsPage() {
               </div>
             </>
           ) : activeTab === 'timeline' ? (
-            <TimelineTab timeline={data.timeline} entities={data.entities} />
+            <TimelineTab timeline={data.timeline} entities={data.entities} selected={selected} gapDetail={gapDetail} gapLoading={gapLoading} onSelectSide={handleSelectSide} />
           ) : (
             <ByChainageTab section={section} entities={data.entities} />
           )}
