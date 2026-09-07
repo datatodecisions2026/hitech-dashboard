@@ -44,9 +44,9 @@ interface DashData {
     start_chainage_lat?: string | null; start_chainage_long?: string | null
     end_chainage_lat?: string | null;   end_chainage_long?: string | null
   }>
-  filterOptions: { categories: string[]; projects: string[] }
+  filterOptions: { categories: string[]; projects: string[]; sections: string[] }
   activeFilters: {
-    filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
+    filterCategory: string; filterProject: string; filterSection: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
     filterWeather: string; filterMachine: string; filterEmployee: string; filterEngineer: string; filterSupervisor: string
   }
 }
@@ -353,23 +353,30 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
 }
 
 /* ── Media Gallery ─────────────────────────────────────────── */
-function MediaGallery({ items, activeProject }: { items: MediaItem[]; activeProject: string }) {
+function MediaGallery({ items, activeFilters }: { items: MediaItem[]; activeFilters: DashData['activeFilters'] }) {
+  const hasAnyFilter = !!(
+    activeFilters.filterProject || activeFilters.filterCategory || activeFilters.filterSection ||
+    activeFilters.filterWeather || activeFilters.filterDateFrom || activeFilters.filterDateTo ||
+    activeFilters.filterChFrom || activeFilters.filterChTo || activeFilters.filterSearch ||
+    activeFilters.filterMachine || activeFilters.filterEmployee || activeFilters.filterEngineer || activeFilters.filterSupervisor
+  )
+  const filterKey = JSON.stringify(activeFilters)
   const images = items.filter(m => m.media_type !== 'video')
   const videos = items.filter(m => m.media_type === 'video')
 
-  if (!activeProject) return <EmptyState label="Select a project to view site media"/>
-  if (!images.length && !videos.length) return <EmptyState label="No media for this project"/>
+  if (!hasAnyFilter) return <EmptyState label="Select a filter (project, category, section, etc.) to view site media"/>
+  if (!images.length && !videos.length) return <EmptyState label="No media matches the active filters"/>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <MediaBox label="Photos" items={images} activeProject={activeProject}/>
-      <MediaBox label="Videos" items={videos} activeProject={activeProject}/>
+      <MediaBox label="Photos" items={images} filterKey={filterKey}/>
+      <MediaBox label="Videos" items={videos} filterKey={filterKey}/>
     </div>
   )
 }
 
 /* ── Media box (independent grid + pagination + lightbox, used per media type) ── */
-function MediaBox({ label, items, activeProject }: { label: string; items: MediaItem[]; activeProject: string }) {
+function MediaBox({ label, items, filterKey }: { label: string; items: MediaItem[]; filterKey: string }) {
   const { colors: D, shadows: SH } = useTheme()
   const [lightbox, setLightbox] = useState<MediaItem | null>(null)
   const [page, setPage] = useState(0)
@@ -388,7 +395,7 @@ function MediaBox({ label, items, activeProject }: { label: string; items: Media
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [lightbox, items])
-  useEffect(() => { setPage(0); setLightbox(null) }, [activeProject])
+  useEffect(() => { setPage(0); setLightbox(null) }, [filterKey])
 
   return (
     <div style={{ background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 12, padding: 14 }}>
@@ -396,12 +403,12 @@ function MediaBox({ label, items, activeProject }: { label: string; items: Media
         <span>{label} · {items.length}</span>
         {items.length > 0 && <span style={{ color: D.sub, textTransform: 'none', letterSpacing: 'normal' }}>Showing {page*PAGE_SIZE+1}–{Math.min((page+1)*PAGE_SIZE, items.length)} of {items.length}</span>}
       </div>
-      {!items.length ? <EmptyState label={`No ${label.toLowerCase()} for this project`}/> : (
+      {!items.length ? <EmptyState label={`No ${label.toLowerCase()} match the active filters`}/> : (
       <div className="media-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         {pageItems.map((item, i) => {
           const isVideo = item.media_type === 'video'
           return (
-            <div key={`${activeProject}-${page}-${i}`} onClick={() => setLightbox(item)}
+            <div key={`${filterKey}-${page}-${i}`} onClick={() => setLightbox(item)}
               style={{ aspectRatio: '4/3', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', position: 'relative', background: D.panel2, border: `1px solid ${D.border}`, transition: 'transform 0.2s, box-shadow 0.2s' }}
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.03)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(212,160,64,0.3)` }}
               onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)';   (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}>
@@ -661,7 +668,7 @@ function HeroBanner({ firstName, totalReports, reportsThisMonth, photos, weather
 function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
   const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
-  const hasFilters = !!(active.filterCategory||active.filterProject||active.filterDateFrom||active.filterDateTo||active.filterChFrom||active.filterChTo||active.filterSearch||active.filterWeather||active.filterMachine||active.filterEmployee||active.filterEngineer||active.filterSupervisor)
+  const hasFilters = !!(active.filterCategory||active.filterProject||active.filterSection||active.filterDateFrom||active.filterDateTo||active.filterChFrom||active.filterChTo||active.filterSearch||active.filterWeather||active.filterMachine||active.filterEmployee||active.filterEngineer||active.filterSupervisor)
   const [chFrom, setChFrom] = useState(active.filterChFrom||'')
   const [chTo,   setChTo]   = useState(active.filterChTo  ||'')
   const [search, setSearch] = useState(active.filterSearch||'')
@@ -698,6 +705,7 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
       {[
         { lbl:'Category',     el:<select value={active.filterCategory||''} onChange={e=>onFilter('category',e.target.value)} style={sel}><option value=''>All Categories</option>{data.filterOptions.categories.map(c=><option key={c} value={c}>{c}</option>)}</select> },
         { lbl:'Project',      el:<select value={active.filterProject||''}  onChange={e=>onFilter('project', e.target.value)} style={sel}><option value=''>All Projects</option>{data.filterOptions.projects.map(p=><option key={p} value={p}>{p}</option>)}</select> },
+        { lbl:'Section',      el:<select value={active.filterSection||''}  onChange={e=>onFilter('section', e.target.value)} style={sel}><option value=''>All Sections</option>{data.filterOptions.sections.map(s=><option key={s} value={s}>{s}</option>)}</select> },
         { lbl:'Date From',    el:<input type='date' value={active.filterDateFrom||''} onChange={e=>onFilter('date_from',e.target.value)} style={inp}/> },
         { lbl:'Date To',      el:<input type='date' value={active.filterDateTo||''}   onChange={e=>onFilter('date_to',  e.target.value)} style={inp}/> },
         { lbl:'Chainage From',el:<input type='number' placeholder='e.g. 20000' value={chFrom} onChange={e=>setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e=>{if(e.key==='Enter')applyChFilter()}} style={{...inp,minWidth:108}}/> },
@@ -770,7 +778,7 @@ function DashboardPageInner() {
   function handleFilter(key: string, val: string) {
     const p = new URLSearchParams(searchParams.toString())
     if (key === '__clear__') {
-      ['category','project','date_from','date_to','ch_from','ch_to','search','weather','machine','employee','engineer','supervisor'].forEach(k => p.delete(k))
+      ['category','project','section','date_from','date_to','ch_from','ch_to','search','weather','machine','employee','engineer','supervisor'].forEach(k => p.delete(k))
     } else if (key === '__ch_range__') {
       const [from, to] = val.split(',')
       p.set('ch_from', from); p.set('ch_to', to)
@@ -926,7 +934,7 @@ function DashboardPageInner() {
 
           <Reveal style={{ marginBottom:16 }}>
             <Panel title={`Site Media — ${data.summary.totalPhotos.toLocaleString()} photos`}>
-              <MediaGallery items={data.mediaItems} activeProject={data.activeFilters.filterProject}/>
+              <MediaGallery items={data.mediaItems} activeFilters={data.activeFilters}/>
             </Panel>
           </Reveal>
 

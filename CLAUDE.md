@@ -122,7 +122,7 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
 
 **Query params (all optional — combine freely, HR params are AND'd together):**
 ```
-category, project, weather   — case-insensitive .ilike() match on the report columns
+category, project, section, weather   — case-insensitive .ilike() match on the report columns (section matches section_name)
 date_from, date_to           — inclusive date range on date_of_activity
 ch_from, ch_to                — inclusive chainage range on start_chainage_val (only applied if both are valid numbers with ch_to > ch_from)
 search                        — matches reporter_name/project_name/section_name/activity_type/comment_activity
@@ -184,10 +184,11 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
   ],
   "filterOptions": {
     "categories": ["Earthworks", "Drainage"],
-    "projects": ["Ring Road Phase 2", "N1 Highway"]
+    "projects": ["Ring Road Phase 2", "N1 Highway"],
+    "sections": ["Section 1-A", "Section 2"]
   },
   "activeFilters": {
-    "filterCategory": "", "filterProject": "", "filterDateFrom": "", "filterDateTo": "",
+    "filterCategory": "", "filterProject": "", "filterSection": "", "filterDateFrom": "", "filterDateTo": "",
     "filterChFrom": "", "filterChTo": "", "filterSearch": "",
     "filterWeather": "", "filterMachine": "", "filterEmployee": "", "filterEngineer": "", "filterSupervisor": ""
   }
@@ -195,6 +196,8 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
 ```
 
 `byMachine`/`byEmployee`/`byEngineer`/`bySupervisor`/`byOwnership` are computed by cross-referencing the HR join tables (fetched in full every request, joined in-memory via `report_id`) against whichever reports match the active filters — see the 2026-07-16/2026-07-18 changelog entries below for the filtering/remount bugs this shape was built to fix.
+
+`mediaItems` is scoped to **all** active filters (project/category/section/weather/date/chainage/search/machine/employee/engineer/supervisor), not just project — see the 2026-09-07 changelog entry. When any filter is active, the photo query is scoped to the filtered report ids (most-recent-first, capped at 800) instead of a global "last 600 uploads" sample; with no filters active it falls back to that global sample, same as before.
 
 ---
 
@@ -621,6 +624,19 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-07 (2) — `/dashboard`: added a Section filter, fixed the media gallery to filter by all active filters
+
+**Files changed:** `src/app/api/dashboard/route.ts`, `src/app/dashboard/page.tsx`
+
+**What changed:**
+- Direct ask: "we need the section filter, we also need the images to filter by all filters" on the main dashboard page.
+- **New `section` filter**: `GET /api/dashboard` now accepts `section` (case-insensitive `.ilike()` on `section_name`, same convention as `category`/`project`), included in `hasFilters`/`activeFilters`, and a new `filterOptions.sections` distinct list (sourced from the same `filterOptions` fetch already pulling `activity_category`/`project_name`, now also selecting `section_name`). `FilterBar` gained a "Section" dropdown next to Project, and `handleFilter`'s `__clear__` list now also clears `section`.
+- **Real bug fixed in the media gallery**: `mediaItems` was always built from a global "last 600 uploaded photos" query, then filtered down to whichever of those happened to belong to the currently-filtered report set. For anything but a broad filter, the 600 most-recently-*uploaded* photos site-wide rarely overlap with a narrow filter's matching reports — verified live: `section=Section 1-A` (34 matching reports) returned 0 media candidates in the old global-600 sample logic, plausible-looking (an empty gallery) but wrong, since 75 real photos existed for those reports. This is the same class of bug the `recentReports` feed was fixed for on 2026-07-16 ("most-recent overall" is not the same set as "most-recent within an active filter"). Fixed by scoping the photo query to the filtered report ids (most-recent-first, capped at 800) whenever any filter is active, exactly mirroring the existing `recentIds`/`recent` pattern (factored a shared `sortedAll` used by both). With no filters active, behavior is unchanged (global most-recent-600 sample).
+- **Frontend gate changed from "requires a Project" to "requires any filter"**: `MediaGallery` previously refused to render anything until a `Project` was picked specifically ("Select a project to view site media") — a 2026-05-15 design decision from when the gallery was first wired to the filter bar. Since the ask was for images to respect *all* filters, not just Project, the gate is now `hasAnyFilter` (project OR category OR section OR weather OR date OR chainage OR search OR machine/employee/engineer/supervisor) with updated empty-state copy. `MediaBox`'s per-media-type key/reset dependency changed from `activeProject` to a `filterKey` (`JSON.stringify(activeFilters)`), since resetting pagination/lightbox state now needs to react to any filter change, not just project.
+- **Verified live**: `tsc --noEmit` and `next build` both pass. Direct curl against a local dev server with a minted session cookie confirmed `filterOptions.sections` returns real distinct values (`Section 1-A`, `Section 2`, `Kebbi Section`, etc.); `section=Section 1-A` correctly returns `totalReports: 34` and 75 real matching photos (previously would have returned ~0 under the old sampling logic); `category=Earthworks` (no project selected) now also returns real scoped photos (800, capped) — confirming the frontend's project-only gate was the wrong scope for this fix, not just a display nit.
+
+**Why:** Direct user ask, two closely related asks addressed together since the ask was specifically that images should filter by *all* filters, which required both surfacing the missing Section filter and fixing the actual photo-scoping bug (the gallery's project-only gate would have silently defeated a section-only or category-only filter regardless of the backend fix).
 
 ### 2026-09-07 — Removed the `/streetlights` page (frontend-only removal)
 

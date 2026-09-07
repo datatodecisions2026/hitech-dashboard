@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const filterCategory = searchParams.get('category')  || ''
   const filterProject  = searchParams.get('project')   || ''
+  const filterSection  = searchParams.get('section')   || ''
   const filterDateFrom = searchParams.get('date_from') || ''
   const filterDateTo   = searchParams.get('date_to')   || ''
   const filterChFrom   = searchParams.get('ch_from')   || ''
@@ -102,6 +103,7 @@ export async function GET(req: NextRequest) {
     )
     if (filterCategory) q = (q as any).ilike('activity_category', filterCategory)
     if (filterProject)  q = (q as any).ilike('project_name',      filterProject)
+    if (filterSection)  q = (q as any).ilike('section_name',      filterSection)
     if (filterWeather)  q = (q as any).ilike('weather',           filterWeather)
     if (filterDateFrom) q = (q as any).gte('date_of_activity',    filterDateFrom)
     if (filterDateTo)   q = (q as any).lte('date_of_activity',    filterDateTo)
@@ -113,15 +115,9 @@ export async function GET(req: NextRequest) {
     return q
   }
 
-  const [allRaw, media, totalMediaResult, machines, employees, engineers, supervisors, filterOptions] =
+  const [allRaw, totalMediaResult, machines, employees, engineers, supervisors, filterOptions] =
     await Promise.all([
       fetchAll(buildLiteQuery()),
-
-      supabase
-        .from('hitech_report_hitechphoto')
-        .select('file, media_type, report_id')
-        .order('id', { ascending: false })
-        .limit(600),
 
       supabase
         .from('hitech_report_hitechphoto')
@@ -146,7 +142,7 @@ export async function GET(req: NextRequest) {
 
       fetchAll(supabase
         .from('hitech_report_hitechreport')
-        .select('activity_category, project_name')),
+        .select('activity_category, project_name, section_name')),
     ])
 
   // Machine/Employee/Engineer/Supervisor filters are resolved in-memory: those
@@ -177,29 +173,63 @@ export async function GET(req: NextRequest) {
 
   const all = hrRestrictIds ? allRaw.filter(r => hrRestrictIds.has((r as any).id as number)) : allRaw
 
-  // Recent-reports feed: take the most-recent N ids from the FULLY filtered set
-  // (all filters, including machine/employee/engineer/supervisor applied above),
+  const filteredIds = new Set(all.map(r => (r as any).id as number))
+  const hasFilters  = !!(filterProject || filterCategory || filterSection || filterWeather || filterDateFrom || filterDateTo || applyChFilter || searchOr || hrRestrictIds)
+
+  // Most-recent-first ordering of the fully filtered set (all filters,
+  // including machine/employee/engineer/supervisor applied above) — shared by
+  // the recent-reports feed and the media gallery below, so both draw from
+  // the same "most relevant reports for this filter" pool instead of a
+  // separate, unfiltered global sample.
+  const sortedAll = [...all].sort((a, b) => {
+    const d = ((b as any).date_of_activity || '').localeCompare((a as any).date_of_activity || '')
+    return d !== 0 ? d : ((b as any).id as number) - ((a as any).id as number)
+  })
+
+  // Recent-reports feed: take the most-recent N ids from the FULLY filtered set,
   // then fetch their display fields. Doing this against `all` — rather than
   // limiting the DB query to N rows before applying the HR filter — avoids
   // returning an empty feed when the most-recent rows overall happen not to
-  // match a narrow HR filter.
-  const recentIds = [...all]
-    .sort((a, b) => {
-      const d = ((b as any).date_of_activity || '').localeCompare((a as any).date_of_activity || '')
-      return d !== 0 ? d : ((b as any).id as number) - ((a as any).id as number)
-    })
-    .slice(0, searchOr ? 300 : 12)
-    .map(r => (r as any).id as number)
+  // match a narrow filter.
+  const recentIds = sortedAll.slice(0, searchOr ? 300 : 12).map(r => (r as any).id as number)
 
-  const recent = recentIds.length
-    ? ((await supabase
-        .from('hitech_report_hitechreport')
-        .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity, weather, start_chainage, end_chainage, start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long')
-        .in('id', recentIds)
-        .order('date_of_activity', { ascending: false })
-        .order('id', { ascending: false })
-      ).data ?? [])
-    : []
+  // Media gallery: when any filter is active, scope the photo query to the
+  // filtered report ids (capped, most-recent-first) instead of a global
+  // "most recently uploaded" sample — a narrow filter's matching photos are
+  // very unlikely to fall within the last 600 uploads site-wide, which
+  // previously made the gallery look empty/wrong under filtering even though
+  // matching photos existed (the same class of bug the recent-reports feed
+  // above was already fixed for).
+  const mediaReportIds = hasFilters ? sortedAll.slice(0, 800).map(r => (r as any).id as number) : null
+
+  const [recent, media] = await Promise.all([
+    recentIds.length
+      ? supabase
+          .from('hitech_report_hitechreport')
+          .select('id, date_of_activity, reporter_name, project_name, section_name, activity_category, activity_type, activity_status, comment_activity, weather, start_chainage, end_chainage, start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long')
+          .in('id', recentIds)
+          .order('date_of_activity', { ascending: false })
+          .order('id', { ascending: false })
+          .then(r => r.data ?? [])
+      : Promise.resolve([]),
+
+    mediaReportIds
+      ? (mediaReportIds.length
+          ? supabase
+              .from('hitech_report_hitechphoto')
+              .select('file, media_type, report_id')
+              .in('report_id', mediaReportIds)
+              .order('id', { ascending: false })
+              .limit(800)
+              .then(r => ({ data: r.data ?? [] }))
+          : Promise.resolve({ data: [] }))
+      : supabase
+          .from('hitech_report_hitechphoto')
+          .select('file, media_type, report_id')
+          .order('id', { ascending: false })
+          .limit(600)
+          .then(r => ({ data: r.data ?? [] })),
+  ])
 
   const totalReports     = all.length
   const reportsThisMonth = all.filter(r => (r as any).date_of_activity >= thisMonthStart).length
@@ -222,9 +252,7 @@ export async function GET(req: NextRequest) {
   const completedCount = byStatus.find(s => s.name === 'Completed' || s.name === 'Complete')?.count ?? 0
   const completionRate = totalReports ? Math.round((completedCount / totalReports) * 100) : 0
 
-  const filteredIds = new Set(all.map(r => (r as any).id as number))
-  const hasFilters  = !!(filterProject || filterCategory || filterWeather || filterDateFrom || filterDateTo || applyChFilter || searchOr || hrRestrictIds)
-  const inFilter    = (row: unknown) => !hasFilters ? true : filteredIds.has((row as any).report_id as number)
+  const inFilter = (row: unknown) => !hasFilters ? true : filteredIds.has((row as any).report_id as number)
 
   const filteredMachines    = machines.filter(inFilter)
   const filteredEmployees   = employees.filter(inFilter)
@@ -312,6 +340,7 @@ export async function GET(req: NextRequest) {
   const allRows    = filterOptions ?? []
   const categories = [...new Set(allRows.map(r => toTitleCase((r as any).activity_category)).filter(Boolean))].sort()
   const projects   = [...new Set(allRows.map(r => toTitleCase((r as any).project_name)).filter(Boolean))].sort()
+  const sections   = [...new Set(allRows.map(r => toTitleCase((r as any).section_name)).filter(Boolean))].sort()
 
   const reportProjectMap: Record<number, string> = {}
   for (const r of all) {
@@ -346,9 +375,9 @@ export async function GET(req: NextRequest) {
     machineSummary, employeeSummary, engineerSummary, supervisorSummary,
     mediaItems, mapPoints, activityCalendar,
     recentReports: recent,
-    filterOptions: { categories, projects },
+    filterOptions: { categories, projects, sections },
     activeFilters: {
-      filterCategory, filterProject, filterDateFrom, filterDateTo, filterChFrom, filterChTo, filterSearch,
+      filterCategory, filterProject, filterSection, filterDateFrom, filterDateTo, filterChFrom, filterChTo, filterSearch,
       filterWeather, filterMachine, filterEmployee, filterEngineer, filterSupervisor,
       filterOwnership, filterDriver, filterEmployeeRole, filterEngineerParty, filterSupervisorParty,
     },
