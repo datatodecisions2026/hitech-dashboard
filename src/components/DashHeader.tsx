@@ -39,7 +39,6 @@ export default function DashHeader() {
     { label: 'Progress',     href: '/progress'     },
     { label: 'Machines',     href: '/machines'     },
     { label: 'Personnel',    href: '/personnel'    },
-    { label: 'Streetlights', href: '/streetlights' },
     { label: 'Planning & Implementation', href: '/planning-implementation' },
     { label: 'Asset Coverage', href: '/road-assets-coverage' },
   ]

@@ -19,7 +19,6 @@ src/
     progress/page.tsx       # Construction progress dashboard (~820 lines, self-contained — own Panel/KPICard/Reveal, not shared with dashboard/page.tsx)
     machines/page.tsx       # Machines-focused view of dashboard data, self-contained (own Panel/KPICard/FilterBar)
     personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx)
-    streetlights/page.tsx   # 3M-row streetlights map/scale-test page, self-contained — own Panel/KPICard/Reveal, own useTheme() usage. See 2026-07-30 changelog
     planning-implementation/page.tsx  # Per-section Total/Planned/Implemented activity comparison COMBINED with the 7.27M-row road_assets map/KPIs/section breakdown — project+section filter bar cross-filters both, self-contained (own Panel/KPICard/Reveal). See 2026-08-05 changelog
     road-assets/page.tsx    # Redirect only (next/navigation redirect('/planning-implementation')) — the map-clustering view of road_assets is no longer a standalone page, folded into planning-implementation/page.tsx. Kept so old links don't 404. See 2026-08-05 changelog
     road-assets-coverage/page.tsx    # Calabar/Ogun/Kebbi as-built asset-layer coverage page, self-contained — own Panel/KPICard/Reveal. Overview + Timeline (gauges/bar chart/histogram/Gantt) + By Chainage (real per-segment coverage bar + fabricated itemized completion log, entity/date/chainage filters) tabs — real data mixed with a fabricated planned schedule throughout, not visually distinguished in the UI as of 2026-08-01 (3). A different view of the road_assets table than the map-clustering one now embedded in planning-implementation/page.tsx — two people independently built two different views in parallel; both kept, see the 2026-08-05 changelog entry. See 2026-08-01 changelog entries
@@ -31,17 +30,15 @@ src/
       dashboard/route.ts    # GET  — aggregate all dashboard data from Supabase (session-guarded)
       progress/route.ts     # GET  — aggregate construction-progress data from Supabase (session-guarded)
       map/route.ts          # GET  — chainage stations + geotagged reports for HitechMap (no session guard)
-      streetlights/route.ts # GET  — clustered streetlight points + summary/sections/images from Supabase (session-guarded). See 2026-07-30 changelog
       road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
       planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC, PLUS road_assets stats (summary/project/section/entity-type) and a combined total/implemented figure (session-guarded). See 2026-08-05 changelog
       road-assets/route.ts  # GET — clustered road-design asset points + summary/project/section/entity-type stats from Supabase (session-guarded) — still used by RoadAssetsMap, now embedded in /planning-implementation rather than its own page. See 2026-08-04/2026-08-05 changelog
       road-assets-coverage/route.ts  # GET  — as-built asset-layer coverage/gap stats for road_assets (session-guarded). See 2026-08-01 changelog
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
-    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Streetlights/Planning & Implementation/Asset Coverage), sticky below header, hidden on /login and <640px. Road Assets was removed as a separate entry 2026-08-05 — merged into Planning & Implementation
+    SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Planning & Implementation/Asset Coverage), sticky below header, hidden on /login and <640px. Road Assets was removed as a separate entry 2026-08-05 — merged into Planning & Implementation. Streetlights removed 2026-09-07 — see changelog
     HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points + ArcGIS road-design CAD overlay, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
-    StreetlightsMap.tsx     # Google Maps JS API map for the 3M-row streetlights table — clustered points only, no polylines/chainage. Uses useTheme() (unlike HitechMap). See 2026-07-30 changelog
-    RoadAssetsMap.tsx       # Google Maps JS API map for the 7.27M-row road_assets table — clustered points, project/section filtering, no images (unlike StreetlightsMap). See 2026-08-04 changelog
+    RoadAssetsMap.tsx       # Google Maps JS API map for the 7.27M-row road_assets table — clustered points, project/section filtering, no images. Was originally modeled on StreetlightsMap.tsx (removed 2026-09-07, see changelog) — internal comments still reference it as design lineage. See 2026-08-04 changelog
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs, road-assets-migration.sql (one-off SQL for /road-assets-coverage — see 2026-08-01 changelog)
@@ -279,38 +276,6 @@ Reads `hitech_report_chainage` (station markers) and `hitech_report_hitechreport
 
 ---
 
-### `GET /api/streetlights`
-
-Returns clustered streetlight points (never raw rows — the underlying table is 3M rows) plus summary KPIs, the section dropdown list, and the 5 canonical images, for `/streetlights` / `StreetlightsMap`. Session-guarded (unlike `/api/map`). See the 2026-07-30 changelog entry for the full design rationale and real measured query timings.
-
-**Query params (all optional):**
-```
-zoom                              — current map zoom; chooses a 2D grid size (coarser when zoomed out) via gridDegForZoom() in the route file
-swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12
-section                           — exact match on streetlights.section — any value routes to the live per-request RPC path (see below), regardless of zoom/bbox
-```
-
-**Routing logic**: zoomed-out / no-bbox / no-section requests hit the pre-existing `streetlights_clusters` RPC (reads `streetlights_grid_mv`, a materialized view refreshed every 10 minutes — sub-millisecond). Any bbox at zoom≥12, or any section filter, hits `streetlights_cluster` (new RPC, added this pass) — a 2D grid-snap query against the live table, self-limiting to ≤900 output rows, index-assisted via `idx_streetlights_latlon`/`idx_streetlights_section`. Both shapes are normalized into one `clusters` array before returning; `clusterMode` (`'live'` or `'mv'`) tells the frontend which path served the request.
-
-**Response (200):**
-```json
-{
-  "clusters": [
-    { "lat": 6.43, "lng": 3.63, "count": 342 },
-    { "lat": 6.431, "lng": 3.629, "count": 1, "objectid": 80852, "side": "LHS", "section": "Coastal Road", "station": "2+003", "imageVariant": 0, "isSynthetic": true, "imageUrl": "https://…webp", "imageLabel": "Coastal highway - day - lit" }
-  ],
-  "clusterMode": "live",
-  "summary": { "total_estimate": 2993138, "lhs_count": 1207060, "rhs_count": 1158946, "median_count": 633994, "section_count": 153, "refreshed_at": "2026-07-30T09:18:04Z" },
-  "sections": [{ "section": "Kebbi", "point_count": 45516 }],
-  "imageVariants": [{ "variant": 0, "label": "Coastal highway - day - lit", "image_url": "https://…webp" }],
-  "queryMs": 293
-}
-```
-
-A `clusters` entry only carries `objectid`/`side`/`section`/`station`/`imageVariant`/`imageUrl`/etc. when it resolved to exactly one real point (`clusterMode: 'live'` and the grid cell had a single row) — `mv`-mode entries and multi-point `live`-mode cells only carry `lat`/`lng`/`count`. `queryMs` is server-side wall time (DB query + route compute), shown alongside a client-measured `fetch()` duration in the UI so real load performance at scale is directly observable, per the page's actual purpose.
-
----
-
 ### `GET /api/road-design`
 
 Returns the road-design CAD geometry (pavement, slope, drainage, culverts, ducts, road markings) for `HitechMap`'s road-design overlay, sourced from an external ArcGIS Online FeatureServer the user's team publishes to — not Supabase. Session-guarded.
@@ -459,7 +424,7 @@ Returns clustered road-design asset points (never raw rows — `road_assets` is 
 
 **Query params (all optional):**
 ```
-zoom                              — current map zoom; chooses a 2D grid size (coarser when zoomed out) via gridDegForZoom() in the route file — identical tiers to /api/streetlights
+zoom                              — current map zoom; chooses a 2D grid size (coarser when zoomed out) via gridDegForZoom() in the route file — same tiering scheme the now-removed /api/streetlights route used (see 2026-09-07 changelog)
 swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12
 project                            — exact match on road_assets.project (currently either "Coastal road" or "Kebbi - Sokoto project")
 section                            — exact match on road_assets.section
@@ -586,7 +551,7 @@ Same category of cache infrastructure as the streetlights tables above, one size
 2. `POST /api/auth/login` verifies against `auth_user.password` (Django pbkdf2_sha256)
 3. On success: iron-session sets `hitech-dashboard-session` cookie
 4. `DashHeader` calls `GET /api/auth/me` on mount — redirects to `/login` on 401
-5. `GET /api/dashboard`, `GET /api/progress`, `GET /api/streetlights`, `GET /api/road-design`, and `GET /api/road-assets-coverage` also guard with a session check — return 401 if unauthenticated. `GET /api/map` does **not** guard — it's fetched client-side by `HitechMap` and returns no user-identifying data, but keep that in mind if its response shape ever changes
+5. `GET /api/dashboard`, `GET /api/progress`, `GET /api/road-design`, and `GET /api/road-assets-coverage` also guard with a session check — return 401 if unauthenticated. `GET /api/map` does **not** guard — it's fetched client-side by `HitechMap` and returns no user-identifying data, but keep that in mind if its response shape ever changes
 6. Logout: `POST /api/auth/logout` destroys the cookie, redirect to `/login`
 
 `SideNav` hides itself on `/login` (pathname check) and on screens <640px; `DashHeader`'s text nav links are the mobile fallback in that case. Neither component gates on auth state beyond the `/login` pathname check — the actual redirect-if-unauthenticated logic lives in `DashHeader`'s `GET /api/auth/me` call and each page's own data fetch.
@@ -656,6 +621,17 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-07 — Removed the `/streetlights` page (frontend-only removal)
+
+**Files changed:** `src/app/streetlights/page.tsx` (deleted), `src/app/api/streetlights/route.ts` (deleted), `src/components/StreetlightsMap.tsx` (deleted), `src/components/SideNav.tsx`, `src/components/DashHeader.tsx`
+
+**What changed:**
+- Direct ask: "remove ONLY the streetlights page, we are done with it." Scoped strictly to the page/route/component — removed the `/streetlights` page, its `GET /api/streetlights` API route, and the `StreetlightsMap` component, plus the nav entries in `SideNav`/`DashHeader` (including the now-unused `IconBulb` icon in `SideNav`).
+- **Deliberately left untouched**, per the "ONLY" scoping: the underlying `streetlights`/`streetlight_image_variants`/`streetlights_summary_cache`/`streetlights_section_stats`/`streetlights_grid_mv` Supabase tables/materialized view, the `streetlights_clusters`/`streetlights_cluster` RPCs, and the `pg_cron` refresh job — none of that is "the page," and dropping it wasn't asked for. `RoadAssetsMap.tsx`/`src/app/api/road-assets/route.ts` still contain a handful of comments referencing `StreetlightsMap`/streetlights as design lineage (it was explicitly modeled on that component) — left as historical context since they don't reference anything that no longer exists in a way that breaks compilation.
+- **Verified**: `tsc --noEmit` clean after clearing the stale `.next` type-generation cache (which briefly still referenced the deleted route/page paths from before the cache was rebuilt — not a real error).
+
+**Why:** Direct user ask to retire this page now that its stated purpose (a 3M-row map/scale test, see the 2026-07-30 entry below) is done, explicitly scoped to the page only — not the underlying data infrastructure, which may still be useful or referenced elsewhere.
 
 ### 2026-08-11 — Click-to-filter interactivity on `/planning-implementation` and `/road-assets-coverage`
 
