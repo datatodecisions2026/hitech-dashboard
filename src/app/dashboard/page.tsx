@@ -440,6 +440,31 @@ function MediaBox({ label, items, filterKey }: { label: string; items: MediaItem
   )
 }
 
+/* ── one report's own submitted media ─────────────────────── */
+interface ReportMediaState { id: number; label: string; items: MediaItem[]; loading: boolean }
+function ReportMedia({ state }: { state: ReportMediaState }) {
+  const { colors: D } = useTheme()
+  const images = state.items.filter(m => m.media_type !== 'video')
+  const videos = state.items.filter(m => m.media_type === 'video')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ fontSize: 12.5, color: D.muted }}>
+        Media submitted on <span style={{ color: D.text, fontWeight: 600 }}>{state.label}</span>
+      </div>
+      {state.loading
+        ? <div style={{ padding: '22px 0', textAlign: 'center', color: D.muted, fontSize: 13, fontFamily: 'var(--font-mono)' }}>Loading…</div>
+        : (!images.length && !videos.length)
+          ? <EmptyState label="No photos or videos were submitted on this report" />
+          : (
+            <>
+              {images.length > 0 && <MediaBox label="Photos" items={images} filterKey={`report-${state.id}`} />}
+              {videos.length > 0 && <MediaBox label="Videos" items={videos} filterKey={`report-${state.id}`} />}
+            </>
+          )}
+    </div>
+  )
+}
+
 /* ── report feed ──────────────────────────────────────────── */
 function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports']; onSelect?: (r: DashData['recentReports'][number]) => void }) {
   const { colors: D } = useTheme()
@@ -466,7 +491,7 @@ function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports'];
             {pageItems.map((r, i) => {
               const dt = r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
               return (
-                <tr key={r.id} className="tbl-row" onClick={() => onSelect?.(r)} title={onSelect ? 'View on map' : undefined}
+                <tr key={r.id} className="tbl-row" onClick={() => onSelect?.(r)} title={onSelect ? "Show this report's media & locate it on the map" : undefined}
                   style={{ cursor: onSelect ? 'pointer' : 'default', opacity: 0, animation: `fadeIn 0.3s ${EASE} ${Math.min(i, 12) * 0.03}s forwards` }}>
                   <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{dt}</td>
                   <td style={{ ...td, color: D.text, fontWeight: 600, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.project_name || '—'}</td>
@@ -644,6 +669,10 @@ function DashboardPageInner() {
   const requestIdRef = useRef(0)
   const pendingExtraRef = useRef<{ reqId: number; x: Partial<DashData> } | null>(null)
   const mapPanelRef = useRef<HTMLDivElement>(null)
+  const mediaPanelRef = useRef<HTMLDivElement>(null)
+  // When a report row is clicked: isolate just that report's own submitted
+  // media in the Site Media panel (independent of the filter-driven gallery).
+  const [reportMedia, setReportMedia] = useState<ReportMediaState | null>(null)
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => { if (d?.user?.first_name) setFirstName(d.user.first_name) }).catch(() => {})
@@ -656,6 +685,7 @@ function DashboardPageInner() {
     const reqId = ++requestIdRef.current
     setLoading(true)
     pendingExtraRef.current = null
+    setReportMedia(null) // a filter / nav change drops any isolated-report media view
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
     const EMPTY_HEAVY = { mapPoints: [], mediaItems: [], activityCalendar: [], recentReports: [] }
 
@@ -727,7 +757,16 @@ function DashboardPageInner() {
         start_chainage: r.start_chainage, end_chainage: r.end_chainage,
       },
     })
-    mapPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+    // Isolate this report's own submitted media in the Site Media panel, and
+    // bring that panel into view (it sits just above the report feed).
+    const label = `${r.project_name || '—'} · ${r.section_name || '—'} · ${r.activity_type || r.activity_category || 'Report'}`
+    setReportMedia({ id: r.id, label, items: [], loading: true })
+    fetch(`/api/report-media?id=${r.id}`)
+      .then(res => (res.ok ? res.json() : { items: [] }))
+      .then(d => setReportMedia(prev => (prev && prev.id === r.id ? { ...prev, items: d.items || [], loading: false } : prev)))
+      .catch(() => setReportMedia(prev => (prev && prev.id === r.id ? { ...prev, loading: false } : prev)))
+    mediaPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   const hour = new Date().getHours()
@@ -817,9 +856,21 @@ function DashboardPageInner() {
             </Reveal>
 
             <Reveal style={{ marginBottom: 16 }}>
-              <Card title="Site Media" sub={`${data.summary.totalPhotos.toLocaleString()} photos`}>
-                <MediaGallery items={data.mediaItems} activeFilters={data.activeFilters} />
-              </Card>
+              <div ref={mediaPanelRef}>
+                <Card
+                  title="Site Media"
+                  sub={reportMedia ? undefined : `${data.summary.totalPhotos.toLocaleString()} photos`}
+                  action={reportMedia
+                    ? <button onClick={() => setReportMedia(null)}
+                        style={{ font: 'inherit', fontSize: 11.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        ← All filtered media
+                      </button>
+                    : undefined}>
+                  {reportMedia
+                    ? <ReportMedia state={reportMedia} />
+                    : <MediaGallery items={data.mediaItems} activeFilters={data.activeFilters} />}
+                </Card>
+              </div>
             </Reveal>
 
             {(data.recentReports.length > 0 || Object.values(data.activeFilters).some(Boolean)) && (
