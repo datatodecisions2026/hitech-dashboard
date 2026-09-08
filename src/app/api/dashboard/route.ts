@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getIronSession } from 'iron-session'
 import { sessionOptions, AppSession } from '@/lib/session'
-import { dashboardRpcArgs, activeFiltersFrom, rpcWithRetry, makeTtlCache, normalizePartySeries, applyUnknownHandling } from './_lib'
+import { dashboardRpcArgs, activeFiltersFrom, rpcWithRetry, makeTtlCache, normalizePartySeries, normalizeOwnershipSeries, applyUnknownHandling } from './_lib'
 
 /**
  * Core dashboard payload: KPIs, every chart series, the HR breakdowns, and
@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
     ...(data as Record<string, unknown>),
     byEngineerParty:   normalizePartySeries((data as Record<string, unknown>).byEngineerParty),
     bySupervisorParty: normalizePartySeries((data as Record<string, unknown>).bySupervisorParty),
+    byOwnership:        normalizeOwnershipSeries((data as Record<string, unknown>).byOwnership),
   }
   const body = {
     ...core,

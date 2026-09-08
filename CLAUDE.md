@@ -625,6 +625,12 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-08 (5) — `/machines` "Ownership Breakdown": merge to Hitech vs Subcontractor (renting/third-party counts as subcontractor)
+
+**Files changed:** `src/app/api/dashboard/_lib.ts`, `src/app/api/dashboard/route.ts`
+
+**What changed:** the raw `ownership` column on `hitech_report_hitechmachine` has 6 dirty values (`hitech` 9054, `subcontactor` [sic] 975, `Renting - Third party` 375, `HITECH` 17, `Subcontractor` 2, `Renting` 1, plus 40 null) — the donut showed all 6. Per the user, these are two groups: everything Hitech, and everything else (subcontractor + the misspelling + rented/third-party equipment). Added `normalizeOwnershipSeries()` in `_lib.ts` (same shape as `normalizePartySeries`, applied to `byOwnership` in `route.ts` right before `applyUnknownHandling`): `hitech` in the name → **"Hitech"** bucket; `sub[-\s]?cont` / `rent` / `third part` → **"Subcontractor"** bucket; anything else passes through. Labels are forced to those two canonical spellings (unlike the party merge's "dominant raw value" rule) because here the dominant non-Hitech raw value is the `subcontactor` typo. Verified live: donut collapses to `Hitech` 9,071 + `Subcontractor` 1,353 (sum 10,424, matches the old total), the "OWNERSHIP TYPES" KPI goes 6 → 2, and the `No ownership recorded: 40 not shown in ranking` caption (2026-09-08 (4)) is unaffected. `tsc` + `next build` clean; Playwright pass on `/machines`, 0 console errors. **Caveat (same as the party merge):** clicking the merged `Subcontractor` slice filters `ownership=Subcontractor`, an exact match that only catches the 2 literal-"Subcontractor" rows, not the typo'd/renting ones — a `dashboard_filtered_ids` ownership-predicate change would be needed to make that click sweep the whole bucket.
+
 ### 2026-09-08 (4) — "Unknown" buckets: recover blank employee names, strip the rest out of the ranked charts (no fabrication)
 
 **Files changed:** `scripts/sql/add_dashboard_unknown_handling.sql` (new) + Supabase migration `add_dashboard_unknown_handling`, `src/app/api/dashboard/_lib.ts`, `src/app/api/dashboard/route.ts`, `src/app/personnel/page.tsx`, `src/app/machines/page.tsx`, `src/app/dashboard/page.tsx`

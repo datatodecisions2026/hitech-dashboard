@@ -78,6 +78,39 @@ export function normalizePartySeries(series: unknown): Series {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 }
 
+// ── ownership normalization ──────────────────────────────────────────────────
+// The raw `ownership` column on hitech_report_hitechmachine has ~6 dirty values
+// that reduce to two real groups (per the user): everything Hitech ("hitech",
+// "HITECH") and everything not ("subcontactor" [sic], "Subcontractor", and
+// rented/third-party equipment — "Renting", "Renting - Third party"). Unlike the
+// party merge, the labels here are forced to canonical spellings ("Hitech" /
+// "Subcontractor") because the dominant raw value in the non-Hitech bucket is
+// the misspelling. Anything that matches neither pattern passes through
+// unchanged. See the 2026-09-08 (5) changelog.
+function ownershipBucket(name: string): { key: string; label: string } | null {
+  const n = name.toLowerCase()
+  if (n.includes('hitech')) return { key: 'hitech', label: 'Hitech' }
+  if (/sub[-\s]?cont/.test(n) || n.includes('rent') || n.includes('third part'))
+    return { key: 'sub', label: 'Subcontractor' }
+  return null
+}
+
+export function normalizeOwnershipSeries(series: unknown): Series {
+  if (!Array.isArray(series)) return [] as Series
+  const groups = new Map<string, { label: string; total: number }>()
+  const passthrough: Series = []
+  for (const row of series as Series) {
+    if (!row || typeof row.name !== 'string') continue
+    const b = ownershipBucket(row.name)
+    if (!b) { passthrough.push(row); continue }
+    const g = groups.get(b.key)
+    if (g) g.total += row.count
+    else groups.set(b.key, { label: b.label, total: row.count })
+  }
+  return [...[...groups.values()].map(g => ({ name: g.label, count: g.total })), ...passthrough]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
 // ── "Unknown" handling ───────────────────────────────────────────────────────
 // _dash_group() emits the literal label "Unknown" for any blank raw value. For
 // the person / weather breakdowns a large blank bucket is real missing data
