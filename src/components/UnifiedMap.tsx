@@ -659,6 +659,12 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
     filterFitRef.current = key
     if (key === '||') return // filters cleared — keep current view
 
+    // A regional section filter (Calabar/Ogun/Kebbi) owns the camera via the
+    // section-fit effect above. The category / chainage bounds computed below
+    // are Coastal-only, so without this they'd drag the view back to Lagos.
+    const secRegion = initialSection ? sectionRegion(initialSection) : ''
+    if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
+
     const map = mapRef.current
     const b = new google.maps.LatLngBounds()
     let has = false
@@ -679,7 +685,7 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
       map.fitBounds(b, 70)
       google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
     }
-  }, [mapLoaded, category, chFrom, chTo, reports, coastalStations])
+  }, [mapLoaded, category, chFrom, chTo, reports, coastalStations, initialSection])
 
   /* ── Render ───────────────────────────────────────────────── */
   const legendItems = colorBy === 'category' ? Object.entries(CAT_COLORS) : Object.entries(STATUS_COLORS)

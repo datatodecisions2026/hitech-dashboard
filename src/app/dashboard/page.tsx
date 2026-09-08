@@ -677,10 +677,13 @@ function DashboardPageInner() {
       .then(r => (r.ok ? r.json() : null))
       .then(x => {
         if (!x || x.error || reqId !== requestIdRef.current) return
-        setData(prev => {
-          if (!prev) { pendingExtraRef.current = { reqId, x }; return prev }
-          return { ...prev, ...x }
-        })
+        // Always stash — the core handler folds this in once it lands. Without
+        // this, an extra response that beat core (common on a filter change,
+        // since dashboard_core is the heavier query) was silently dropped when
+        // core rebuilt state from EMPTY_HEAVY: Site Media / Recent Reports /
+        // Calendar went empty while the KPI cards showed the filtered data.
+        pendingExtraRef.current = { reqId, x }
+        setData(prev => (prev ? { ...prev, ...x } : prev))
       })
       .catch(() => {})
   }, [searchParams, router])
@@ -806,6 +809,7 @@ function DashboardPageInner() {
                       chFrom={data.activeFilters.filterChFrom}
                       chTo={data.activeFilters.filterChTo}
                       category={data.activeFilters.filterCategory}
+                      initialSection={data.activeFilters.filterSection}
                     />
                   </div>
                 </Card>
