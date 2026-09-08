@@ -408,7 +408,7 @@ function PlanningImplementationPageInner() {
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
-      <div style={{ padding: '24px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Planning &amp; Implementation</h2>
           <p style={{ margin: 0, marginTop: 3, fontSize: 13, color: D.muted }}>Planned / field-confirmed activities and surveyed road-design assets, combined — filter by project or section to cross-filter every panel.</p>
@@ -575,7 +575,7 @@ function PlanningImplementationPageInner() {
 export default function PlanningImplementationPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '24px' }}><div style={{ maxWidth: 1240, margin: '0 auto' }}><PageSkeleton /></div></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '28px 36px' }}><PageSkeleton /></div>}>
       <PlanningImplementationPageInner />
     </Suspense>
   )

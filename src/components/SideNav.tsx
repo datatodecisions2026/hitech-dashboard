@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useTheme, ColorTokens } from '@/lib/theme'
 import { useSidebar } from '@/lib/sidebar'
+import { SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED } from '@/lib/theme-constants'
 
 /* ── icons (lucide-approximate) ────────────────────────────── */
 const mk = (d: React.ReactNode) => () => (
@@ -45,17 +46,21 @@ function NavButton({ item, active, collapsed, D, onNavigate }: {
     <a href={item.href} title={collapsed ? item.label : undefined} onClick={onNavigate}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
+        position: 'relative',
         display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-        padding: collapsed ? '7px 0' : '7px 9px', borderRadius: 8,
+        padding: collapsed ? '8px 0' : '8px 10px', borderRadius: 8,
         justifyContent: collapsed ? 'center' : 'flex-start',
         fontSize: 13, fontWeight: active ? 600 : 500, lineHeight: 1.2,
+        letterSpacing: active ? '-0.01em' : 0,
         color: active ? D.amber : hov ? D.text : D.muted,
-        background: active ? `${D.amber}1a` : hov ? D.panel2 : 'transparent',
+        background: active ? `${D.amber}1f` : hov ? D.panel2 : 'transparent',
+        boxShadow: active && !collapsed ? `inset 3px 0 0 ${D.amber}` : 'none',
         textDecoration: 'none', whiteSpace: 'nowrap',
-        transition: 'background 0.15s ease, color 0.15s ease',
+        transition: 'background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
       }}>
-      <span style={{ flexShrink: 0, display: 'flex' }}><Icon /></span>
+      <span style={{ flexShrink: 0, display: 'flex', transition: 'transform 0.15s ease', transform: hov && !active ? 'translateX(1px)' : 'none' }}><Icon /></span>
       {!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>}
+      {!collapsed && active && <span style={{ width: 5, height: 5, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />}
     </a>
   )
 }
@@ -68,21 +73,26 @@ export default function SideNav() {
   if (pathname === '/login') return null
 
   const isCollapsed = collapsed && !isMobile
-  const width = isMobile ? '18rem' : isCollapsed ? '3rem' : '16rem'
-  const railBg = theme === 'light' ? '#fbfcfd' : '#0d1319'
+  const width = isMobile ? '18rem' : isCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH
+  const railBg = theme === 'light' ? '#ffffff' : '#0c1218'
+  const railShadow = theme === 'light'
+    ? '1px 0 0 rgba(14,21,28,.05), 6px 0 28px -14px rgba(14,21,28,.14)'
+    : '1px 0 0 rgba(0,0,0,.5), 8px 0 32px -16px rgba(0,0,0,.6)'
 
   const rail = (
     <aside aria-label="Primary" style={{
       display: 'flex', flexDirection: 'column', flexShrink: 0,
       width, background: railBg, borderRight: `1px solid ${D.border}`,
       transition: 'width 0.18s ease, transform 0.2s ease',
+      // Always fixed — the rail is out of the document flow so it can never
+      // scroll or shift with the page content. On mobile it's an overlay
+      // drawer; on desktop it's a permanent top-to-bottom rail.
+      position: 'fixed', top: 0, bottom: 0, left: 0, height: '100vh',
+      zIndex: isMobile ? 120 : 40,
+      boxShadow: isMobile ? (mobileOpen ? SH.cardLg : 'none') : railShadow,
       ...(isMobile
-        ? {
-            position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 120,
-            transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
-            boxShadow: mobileOpen ? SH.cardLg : 'none',
-          }
-        : { position: 'sticky', top: 0, height: '100vh', zIndex: 40 }),
+        ? { transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)' }
+        : {}),
     } as React.CSSProperties}>
       {/* brand */}
       <div style={{

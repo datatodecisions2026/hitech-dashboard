@@ -68,8 +68,9 @@ export default function DashHeader() {
     <header style={{
       position: 'sticky', top: 0, zIndex: 90,
       height: '3.5rem', flexShrink: 0,
-      display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
-      background: D.panel, borderBottom: `1px solid ${D.border}`,
+      display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px',
+      background: `${D.panel}f2`, backdropFilter: 'saturate(180%) blur(8px)',
+      borderBottom: `1px solid ${D.border}`, boxShadow: SH.card,
     }}>
       <button aria-label="Toggle sidebar" title="Toggle sidebar (⌘/Ctrl + B)" onClick={toggle}
         onMouseEnter={() => setHovToggle(true)} onMouseLeave={() => setHovToggle(false)}

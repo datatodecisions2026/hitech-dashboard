@@ -860,7 +860,7 @@ export default function RoadAssetsPage() {
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
-      <div style={{ padding: '24px', maxWidth: 1240, margin: '0 auto' }}>
+      <div style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Asset Coverage</h2>

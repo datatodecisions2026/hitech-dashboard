@@ -72,13 +72,13 @@ const DARK_COLORS: ColorTokens = {
 }
 
 const LIGHT_SHADOWS: ShadowTokens = {
-  card:       '0 1px 2px rgba(14,21,28,.06)',
-  cardLg:     '0 1px 2px rgba(14,21,28,.06), 0 14px 44px -12px rgba(14,21,28,.14)',
-  panel:      '0 1px 2px rgba(14,21,28,.06)',
-  panelLg:    '0 1px 2px rgba(14,21,28,.06), 0 14px 44px -12px rgba(14,21,28,.14)',
+  card:       '0 1px 2px rgba(14,21,28,.05), 0 2px 6px -2px rgba(14,21,28,.07)',
+  cardLg:     '0 2px 4px -1px rgba(14,21,28,.07), 0 14px 44px -12px rgba(14,21,28,.16)',
+  panel:      '0 1px 2px rgba(14,21,28,.05), 0 2px 6px -2px rgba(14,21,28,.07)',
+  panelLg:    '0 2px 4px -1px rgba(14,21,28,.07), 0 14px 44px -12px rgba(14,21,28,.16)',
   well:       'inset 0 1px 2px rgba(14,21,28,.06)',
-  raised:     '0 1px 2px rgba(14,21,28,.06)',
-  raisedLg:   '0 1px 2px rgba(14,21,28,.06), 0 14px 44px -12px rgba(14,21,28,.14)',
+  raised:     '0 1px 2px rgba(14,21,28,.05), 0 2px 6px -2px rgba(14,21,28,.07)',
+  raisedLg:   '0 2px 4px -1px rgba(14,21,28,.07), 0 14px 44px -12px rgba(14,21,28,.16)',
   inset:      'inset 0 1px 2px rgba(14,21,28,.06)',
   glowAmber:  'none',
   glowGreen:  'none',
@@ -87,13 +87,13 @@ const LIGHT_SHADOWS: ShadowTokens = {
 }
 
 const DARK_SHADOWS: ShadowTokens = {
-  card:       '0 1px 2px rgba(0,0,0,.5)',
-  cardLg:     '0 1px 2px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.6)',
-  panel:      '0 1px 2px rgba(0,0,0,.5)',
-  panelLg:    '0 1px 2px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.6)',
+  card:       '0 1px 2px rgba(0,0,0,.5), 0 2px 8px -2px rgba(0,0,0,.4)',
+  cardLg:     '0 2px 4px -1px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.62)',
+  panel:      '0 1px 2px rgba(0,0,0,.5), 0 2px 8px -2px rgba(0,0,0,.4)',
+  panelLg:    '0 2px 4px -1px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.62)',
   well:       'inset 0 1px 2px rgba(0,0,0,.4)',
-  raised:     '0 1px 2px rgba(0,0,0,.5)',
-  raisedLg:   '0 1px 2px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.6)',
+  raised:     '0 1px 2px rgba(0,0,0,.5), 0 2px 8px -2px rgba(0,0,0,.4)',
+  raisedLg:   '0 2px 4px -1px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.62)',
   inset:      'inset 0 1px 2px rgba(0,0,0,.4)',
   glowAmber:  'none',
   glowGreen:  'none',

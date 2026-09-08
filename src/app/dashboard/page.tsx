@@ -102,12 +102,12 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
 function Card({ children, title, sub, action, style: st, bodyPad = true }: { children: React.ReactNode; title?: string; sub?: string; action?: React.ReactNode; style?: React.CSSProperties; bodyPad?: boolean }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
+    <div className="ui-card" style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.card, display: 'flex', flexDirection: 'column', transition: `box-shadow 0.18s ${EASE}, border-color 0.18s ${EASE}, transform 0.18s ${EASE}`, ...st }}>
       {title && (
         <div style={{ padding: '14px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
-            {sub && <div style={{ fontSize: 12, color: D.muted, marginTop: 2 }}>{sub}</div>}
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.02em', color: D.text }}>{title}</h3>
+            {sub && <div style={{ fontSize: 12, color: D.muted, marginTop: 2, fontFamily: 'var(--font-body)', letterSpacing: 0 }}>{sub}</div>}
           </div>
           {action}
         </div>
@@ -135,15 +135,15 @@ function Pill({ kind, children }: { kind: 'ok' | 'accent' | 'crit' | 'mut'; chil
 }
 
 /* ── mini KPI grid ────────────────────────────────────────── */
-function Mini({ k, value, delay = 0 }: { k: string; value: number; delay?: number }) {
+function Mini({ k, value, delay = 0, i = 0 }: { k: string; value: number; delay?: number; i?: number }) {
   const { colors: D } = useTheme()
   const [vis, setVis] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay); return () => clearTimeout(t) }, [delay])
   const shown = useCountUp(vis ? value : 0, 1100)
   return (
-    <div>
-      <div style={{ fontSize: 11.5, color: D.muted }}>{k}</div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+    <div className="mini-cell" style={{ paddingLeft: i === 0 ? 0 : 16, borderLeft: i === 0 ? 'none' : `1px solid ${D.border}` }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>{k}</div>
+      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>
         {shown.toLocaleString()}
       </div>
     </div>
@@ -631,7 +631,7 @@ function DashSkeleton() {
 
 /* ── page ─────────────────────────────────────────────────── */
 function DashboardPageInner() {
-  const { colors: D } = useTheme()
+  const { colors: D, shadows: SH } = useTheme()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [data, setData] = useState<DashData | null>(null)
@@ -715,12 +715,12 @@ function DashboardPageInner() {
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
-      <div className="dash-content" style={{ padding: '24px', maxWidth: 1240, margin: '0 auto' }}>
+      <div className="dash-content" style={{ padding: '28px 36px', width: '100%' }}>
 
         <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>{greeting}{firstName ? `, ${firstName}` : ''}</h2>
-            <p style={{ margin: 0, marginTop: 3, fontSize: 13, color: D.muted }}>Field-activity overview across all sites.</p>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: '-0.025em', color: D.text }}>{greeting}{firstName ? `, ${firstName}` : ''}</h2>
+            <p style={{ margin: 0, marginTop: 4, fontSize: 13, color: D.muted }}>Field-activity overview across all sites.</p>
           </div>
           {latestWeather && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px' }}>
@@ -743,15 +743,18 @@ function DashboardPageInner() {
 
             {/* overview mini-grid */}
             <Card title="Overview" sub="Current activity across every site" style={{ marginBottom: 16 }}>
-              <div className="exec-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '14px 12px' }}>
-                <Mini k="Total reports" value={data.summary.totalReports} />
-                <Mini k="This month" value={data.summary.reportsThisMonth} delay={60} />
-                <Mini k="Active projects" value={data.summary.activeProjects} delay={120} />
-                <Mini k="Site photos" value={data.summary.totalPhotos} delay={180} />
-                <Mini k="Unique reporters" value={data.summary.uniqueReporters} delay={240} />
-                <div>
-                  <div style={{ fontSize: 11.5, color: D.muted }}>Completion</div>
-                  <div style={{ fontFamily: 'var(--font-loader)', fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{data.summary.completionRate}%</div>
+              <div className="exec-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '18px 0' }}>
+                <Mini i={0} k="Total reports" value={data.summary.totalReports} />
+                <Mini i={1} k="This month" value={data.summary.reportsThisMonth} delay={60} />
+                <Mini i={2} k="Active projects" value={data.summary.activeProjects} delay={120} />
+                <Mini i={3} k="Site photos" value={data.summary.totalPhotos} delay={180} />
+                <Mini i={4} k="Unique reporters" value={data.summary.uniqueReporters} delay={240} />
+                <div className="mini-cell" style={{ paddingLeft: 16, borderLeft: `1px solid ${D.border}` }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>Completion</div>
+                  <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>{data.summary.completionRate}%</div>
+                  <div style={{ marginTop: 8, height: 4, borderRadius: 3, background: D.panel2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, data.summary.completionRate))}%`, background: D.green, borderRadius: 3, transition: `width 0.9s ${EASE}` }} />
+                  </div>
                 </div>
               </div>
             </Card>
@@ -818,16 +821,22 @@ function DashboardPageInner() {
         select:focus, input:focus { border-color: ${D.amber} !important; box-shadow: 0 0 0 3px ${D.amber}22 !important; }
         select option { background: ${D.panel}; color: ${D.text}; }
         input[type='date']::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
+        .ui-card:hover { box-shadow: ${SH.cardLg}; border-color: ${D.amber}44; transform: translateY(-1px); }
         .tbl-row { transition: background 0.12s ease; }
         .tbl-row:nth-child(even) { background: ${D.panel2}66; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
+        @media (max-width: 1200px) {
+          .dash-content { padding: 24px 24px !important; }
+        }
         @media (max-width: 1024px) {
           .grid-responsive { grid-template-columns: 1fr !important; }
-          .exec-grid { grid-template-columns: repeat(3, 1fr) !important; }
+          .exec-grid { grid-template-columns: repeat(3, 1fr) !important; row-gap: 20px !important; }
+          .exec-grid .mini-cell:nth-child(3n+1) { border-left: none !important; padding-left: 0 !important; }
         }
         @media (max-width: 640px) {
           .dash-content { padding: 16px !important; }
           .exec-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .exec-grid .mini-cell { border-left: none !important; padding-left: 0 !important; }
           .media-grid { grid-template-columns: repeat(3, 1fr) !important; }
         }
       `}</style>
@@ -838,7 +847,7 @@ function DashboardPageInner() {
 export default function DashboardPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '24px' }}><div style={{ maxWidth: 1240, margin: '0 auto' }}><DashSkeleton /></div></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '28px 36px' }}><DashSkeleton /></div>}>
       <DashboardPageInner />
     </Suspense>
   )

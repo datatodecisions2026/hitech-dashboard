@@ -1,15 +1,6 @@
 @import "tailwindcss";
 
 :root {
-  --font-display: var(--font-geist), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-body:    var(--font-geist), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono:    var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, monospace;
-  /* kept for the ~300 existing `var(--font-loader)` call sites — display numbers
-     now render Geist (weight applied per element), no separate display face */
-  --font-loader:  var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  /* back-compat aliases — pages not yet migrated still reference these names */
-  --font-dm-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-dm-mono: var(--font-geist-mono), ui-monospace, monospace;
   color-scheme: light;
 }
 
@@ -19,6 +10,25 @@ html, body {
 }
 
 body {
+  /* The `next/font` variables (--font-space-grotesk / --font-fira-sans /
+     --font-jetbrains-mono) are injected onto <body> via a className, so the
+     semantic aliases below MUST also live on <body> — declaring them on
+     :root would leave `var(--font-fira-sans)` undefined at that scope and
+     poison the whole declaration (invalid-at-computed-value-time).
+
+     Three distinct roles: Space Grotesk carries display + all big numbers
+     (a technical, drafting-table character that suits an engineering firm),
+     Fira Sans carries body / labels / tables (humanist but precise, built
+     for dense readouts), JetBrains Mono carries codes / chainages. */
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body:    var(--font-fira-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    var(--font-jetbrains-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  /* display numbers (the ~300 `var(--font-loader)` call sites) render Space Grotesk */
+  --font-loader:  var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  /* back-compat aliases — pages still referencing these names */
+  --font-dm-sans: var(--font-fira-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-dm-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
   background: #f5f7f9;
   color: #0e151c;
   font-family: var(--font-body);
@@ -27,6 +37,13 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* Headings + card titles pick up the display face automatically, with the
+   tight tracking Space Grotesk is drawn for. */
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 /* The no-FOUC script always resolves data-theme to an explicit value, so
