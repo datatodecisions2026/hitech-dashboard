@@ -7,8 +7,7 @@ import { useTheme } from '@/lib/theme'
 
 const RoadAssetsMap = dynamic(() => import('@/components/RoadAssetsMap'), { ssr: false })
 
-const EASE        = 'cubic-bezier(0.16,1,0.3,1)'
-const EASE_SPRING = 'cubic-bezier(0.34,1.56,0.64,1)'
+const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
 // Canonical project list for this page's filter bar. `label` is what's sent
 // as `project` to /api/planning-implementation (RPC-side matching is
@@ -77,8 +76,8 @@ interface PlanningData {
 
 interface LoadStats { queryMs: number; clientMs: number; count: number; mode: 'live' | 'mv' }
 
-/* ── Animated counter ───────────────────────────────────────── */
-function useCountUp(target: number, duration = 1200, delay = 0) {
+/* ── counter (motion only) ────────────────────────────────── */
+function useCountUp(target: number, duration = 1100, delay = 0) {
   const [val, setVal] = useState(0)
   useEffect(() => {
     if (target === 0) { setVal(0); return }
@@ -95,7 +94,7 @@ function useCountUp(target: number, duration = 1200, delay = 0) {
   return val
 }
 
-/* ── Reveal on scroll ───────────────────────────────────────── */
+/* ── primitives ───────────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null)
   const [vis, setVis] = useState(false)
@@ -105,85 +104,67 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
     obs.observe(el); return () => obs.disconnect()
   }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0) scale(1)' : 'translateY(22px) scale(0.985)', transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ${EASE} ${delay}ms`, willChange: vis ? 'auto' : 'opacity, transform', ...st }}>
+    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
       {children}
     </div>
   )
 }
 
-/* ── Panel ──────────────────────────────────────────────────── */
-function Panel({ children, title, style: st }: { children: React.ReactNode; title: string; style?: React.CSSProperties }) {
+function Card({ children, title }: { children: React.ReactNode; title: string }) {
   const { colors: D, shadows: SH } = useTheme()
-  const [hov, setHov] = useState(false)
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? '1px solid rgba(212,160,64,0.16)' : `1px solid ${D.border}`, boxShadow: hov ? SH.panelLg : SH.panel, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 6px ${D.amber}` }} />
-        </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: hov ? D.text : D.muted, background: D.bg, padding: '2px 10px', borderRadius: 4, border: `1px solid ${hov ? 'rgba(212,160,64,0.25)' : D.border}`, transition: `color 0.3s ${EASE}, border-color 0.3s ${EASE}` }}>{title}</span>
+    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 16px 8px' }}>
+        <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
       </div>
-      {children}
+      <div style={{ padding: '4px 16px 16px' }}>{children}</div>
     </div>
   )
 }
 
-/* ── KPI Card ──────────────────────────────────────────────── */
-function KPICard({ label, value, suffix, sub, icon, delay = 0, color: colorProp }: { label: string; value: number; suffix?: string; sub?: string; icon: React.ReactNode; delay?: number; color?: string }) {
+function KPICard({ label, value, suffix, sub, icon, delay = 0, color }: { label: string; value: number; suffix?: string; sub?: string; icon: React.ReactNode; delay?: number; color?: string }) {
   const { colors: D, shadows: SH } = useTheme()
-  const color = colorProp ?? D.amber
   const [vis, setVis] = useState(false)
-  const [hov, setHov] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
   const displayed = useCountUp(vis ? value : 0, 1200, 0)
-  const entranceY = vis ? 0 : 14
-  const hoverY    = hov ? -3 : 0
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, border-color 0.3s, box-shadow 0.3s, background 0.3s`, border: hov ? `1px solid ${color}33` : `1px solid ${D.border}`, boxShadow: hov ? SH.cardLg : SH.card }}>
-      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${color}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s' }} />
-      <div style={{ position: 'absolute', top: -24, right: -24, width: 90, height: 90, borderRadius: '50%', background: `radial-gradient(circle, ${color}${hov ? '22' : '15'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${color}20`, border: `1px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, transform: hov ? 'scale(1.08)' : 'scale(1)', transition: `transform 0.3s ${EASE_SPRING}` }}>{icon}</div>
-      </div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2.5rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.03em', color, textShadow: hov ? `0 0 24px ${color}44` : 'none', transition: 'text-shadow 0.3s' }}>{displayed.toLocaleString()}{suffix ?? ''}</div>
-      <div style={{ fontSize: '0.58rem', color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
-      {sub && <div style={{ fontSize: '0.6rem', color: D.sub, fontFamily: 'var(--font-mono)', marginTop: 4 }}>{sub}</div>}
+    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+      <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}>{icon}</div>
+      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 24, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix ?? ''}</div>
+      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)', marginTop: 4, lineHeight: 1.5 }}>{sub}</div>}
     </div>
   )
 }
 
-/* ── Horizontal bar chart (single series) ──────────────────── */
-function HBarChart({ data, color: colorProp, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; color?: string; activeName?: string; onBarClick?: (name: string) => void }) {
+/* ── horizontal bars (single series) ──────────────────────── */
+function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onBarClick?: (name: string) => void }) {
   const { colors: D } = useTheme()
-  const color = colorProp ?? D.amber
   const [ready, setReady] = useState(false)
-  const [hov, setHov]     = useState<number | null>(null)
-  useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
-  const max   = Math.max(...data.map(d => d.count), 1)
+  const [hov, setHov] = useState<number | null>(null)
+  useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
+  const max = Math.max(...data.map(d => d.count), 1)
   const total = data.reduce((s, d) => s + d.count, 0)
   const hasActive = !!activeName
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
       {data.map((d, i) => {
-        const pct    = total > 0 ? Math.round((d.count / total) * 100) : 0
+        const pct = total > 0 ? Math.round((d.count / total) * 100) : 0
         const barPct = (d.count / max) * 100
-        const isHov  = hov === i
-        const isTop  = i < 3
+        const isHov = hov === i
+        const isTop = i < 3
         const isActive = d.name === activeName
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.35) : (hov !== null && !isHov ? 0.35 : 1), transform: isHov || isActive ? 'translateX(2px)' : 'translateX(0)', transition: `opacity 0.2s, transform 0.25s ${EASE}` }}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${color}18` : 'transparent', border: isTop ? `1px solid ${color}35` : `1px solid transparent`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? color : D.sub, fontWeight: isTop ? 700 : 400 }}>{i+1}</div>
-            <span style={{ width: 150, fontSize: '0.7rem', color: isHov || isActive ? D.text : D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, transition: 'color 0.2s' }} title={d.name}>{d.name}</span>
-            <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.04)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? `linear-gradient(90deg, ${color}, ${color}bb)` : `linear-gradient(90deg, ${color}66, ${color}33)`, borderRadius: 6, transition: `width 0.9s ${EASE} ${i*0.04}s, box-shadow 0.2s`, boxShadow: (isTop && isHov) || isActive ? `0 0 8px ${color}55` : 'none' }} />
+            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.4) : (hov !== null && !isHov ? 0.45 : 1), transition: 'opacity 0.2s' }}>
+            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${D.amber}14` : 'transparent', border: `1px solid ${isTop ? D.amber + '33' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? D.amber : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
+            <span style={{ width: 150, fontSize: 12.5, color: isHov || isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
+            <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? D.amber : `${D.muted}88`, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
             </div>
-            <span style={{ width: 70, textAlign: 'right', fontSize: '0.7rem', color: isHov || isActive ? color : D.text, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{d.count.toLocaleString()}</span>
-            <span style={{ width: 30, textAlign: 'right', fontSize: '0.62rem', color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{pct}%</span>
+            <span style={{ width: 70, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? D.amber : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count.toLocaleString()}</span>
+            <span style={{ width: 30, textAlign: 'right', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{pct}%</span>
           </div>
         )
       })}
@@ -191,78 +172,84 @@ function HBarChart({ data, color: colorProp, activeName, onBarClick }: { data: A
   )
 }
 
-/* ── Funnel bar — Total (track) → Planned (mid layer) → Implemented (top layer) ── */
+/* ── Funnel bar — Total (track) → Planned (mid) → Implemented (top) ── */
 function FunnelBar({ total, planned, implemented }: { total: number; planned: number; implemented: number }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
-  const plannedPct     = total > 0 ? (planned / total) * 100 : 0
+  const plannedPct = total > 0 ? (planned / total) * 100 : 0
   const implementedPct = total > 0 ? (implemented / total) * 100 : 0
   return (
-    <div style={{ position: 'relative', height: 9, borderRadius: 5, background: 'rgba(255,255,255,0.05)', overflow: 'hidden', minWidth: 90 }}>
-      <div style={{ position: 'absolute', inset: 0, width: ready ? `${plannedPct}%` : '0%', background: `${D.blue}55`, borderRadius: 5, transition: `width 0.8s ${EASE}` }} />
-      <div style={{ position: 'absolute', inset: 0, width: ready ? `${implementedPct}%` : '0%', background: D.green, borderRadius: 5, boxShadow: `0 0 6px ${D.green}55`, transition: `width 0.8s ${EASE} 0.1s` }} />
+    <div style={{ position: 'relative', height: 9, borderRadius: 5, background: D.panel2, overflow: 'hidden', minWidth: 90 }}>
+      <div style={{ position: 'absolute', inset: 0, width: ready ? `${plannedPct}%` : '0%', background: `${D.amber}55`, borderRadius: 5, transition: `width 0.8s ${EASE}` }} />
+      <div style={{ position: 'absolute', inset: 0, width: ready ? `${implementedPct}%` : '0%', background: D.green, borderRadius: 5, transition: `width 0.8s ${EASE} 0.1s` }} />
     </div>
   )
 }
 
-/* ── Empty state ────────────────────────────────────────────── */
 function EmptyState({ label }: { label: string }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, padding:'32px 0', animation:`fadeIn 0.4s ${EASE}` }}>
-      <div style={{ width:34, height:34, borderRadius:9, background:'rgba(255,255,255,0.03)', border:`1px solid ${D.border}`, display:'flex', alignItems:'center', justifyContent:'center', color:D.sub }}>
-        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '28px 0' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 8, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.sub }}>
+        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="9" y1="9" x2="15" y2="15" /><line x1="15" y1="9" x2="9" y2="15" /></svg>
       </div>
-      <div style={{ color:D.sub, fontSize:'0.78rem', fontFamily:'var(--font-mono)', textAlign:'center' }}>{label}</div>
+      <div style={{ color: D.muted, fontSize: 13, textAlign: 'center' }}>{label}</div>
     </div>
   )
 }
 
-/* ── Icons ──────────────────────────────────────────────────── */
-const IconLayers   = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-const IconClipboard = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-const IconCheck     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-const IconMap       = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-const IconClock     = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/></svg>
+const IconLayers = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
+const IconClipboard = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /></svg>
+const IconCheck = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+const IconMap = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>
+const IconClock = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></svg>
 
-/* ── Skeleton ───────────────────────────────────────────────── */
+/* ── skeleton ─────────────────────────────────────────────── */
 function Skel({ h }: { h: number }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ height:h, borderRadius:16, background:D.panel, position:'relative', overflow:'hidden', border:`1px solid ${D.border}` }}>
-      <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg, transparent 0%, rgba(212,160,64,0.04) 50%, transparent 100%)', animation:'shimmer 2s ease-in-out infinite' }} />
+    <div style={{ height: h, borderRadius: 10, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
+      <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, ${D.panel2} 50%, transparent 100%)`, animation: 'shimmer 1.6s ease-in-out infinite' }} />
     </div>
   )
 }
 function PageSkeleton() {
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-      <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14 }}>{[0,1,2,3,4].map(i=><Skel key={i} h={108}/>)}</div>
-      <div className="kpi-grid2" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>{[0,1,2,3].map(i=><Skel key={i} h={90}/>)}</div>
-      <div className="pi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))', gap:14 }}><Skel h={320}/><Skel h={320}/></div>
-      <Skel h={560}/>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 14 }}>{[0, 1, 2, 3, 4].map(i => <Skel key={i} h={110} />)}</div>
+      <div className="kpi-grid2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>{[0, 1, 2, 3].map(i => <Skel key={i} h={90} />)}</div>
+      <div className="pi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 14 }}><Skel h={320} /><Skel h={320} /></div>
+      <Skel h={520} />
     </div>
   )
 }
 
-/* ── Section table (planning activities) ──────────────────────── */
+/* ── shared table chrome ──────────────────────────────────── */
+function useTh() {
+  const { colors: D } = useTheme()
+  return (align: 'left' | 'right' = 'left'): React.CSSProperties => ({
+    padding: '9px 14px', textAlign: align, color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 10,
+    letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, background: D.panel2,
+    borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap',
+  })
+}
+
+/* ── Section table (planning activities) ──────────────────── */
 function SectionTable({ sections, activeSection, onSelectSection }: { sections: SectionRow[]; activeSection: string; onSelectSection: (section: string) => void }) {
   const { colors: D } = useTheme()
+  const th = useTh()
   const [page, setPage] = useState(0)
   const PAGE = 20, total = sections.length
   const pageData = sections.slice(page * PAGE, page * PAGE + PAGE)
+  const td: React.CSSProperties = { padding: '9px 14px', borderBottom: `1px solid ${D.border}` }
+  const last = Math.ceil(total / PAGE) - 1
+  const pbtn: React.CSSProperties = { background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
   return (
     <div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${D.border}` }}>
-              {['Section', 'Total', 'Planned', 'Implemented', 'Impl. Rate', 'Coverage'].map(h => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Section' ? 'left' : 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
+      <div style={{ overflowX: 'auto', border: `1px solid ${D.border}`, borderRadius: 10 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 600 }}>
+          <thead><tr>{['Section', 'Total', 'Planned', 'Implemented', 'Impl. Rate', 'Coverage'].map(h => <th key={h} style={th(h === 'Section' ? 'left' : 'right')}>{h}</th>)}</tr></thead>
           <tbody>
             {pageData.map((r, i) => {
               const rate = r.total > 0 ? Math.round((r.implemented / r.total) * 100) : 0
@@ -270,16 +257,16 @@ function SectionTable({ sections, activeSection, onSelectSection }: { sections: 
               const isActive = r.section === activeSection
               return (
                 <tr key={r.section + i} className="tbl-row" onClick={unlinked ? undefined : () => onSelectSection(r.section === activeSection ? '' : r.section)}
-                  style={{ borderBottom: `1px solid rgba(255,255,255,0.03)`, cursor: unlinked ? 'default' : 'pointer', background: isActive ? 'rgba(212,160,64,0.07)' : undefined }}
+                  style={{ cursor: unlinked ? 'default' : 'pointer', background: isActive ? `${D.amber}12` : undefined }}
                   title={unlinked ? undefined : `Filter to ${r.section}`}>
-                  <td style={{ padding: '10px 14px', color: unlinked ? D.sub : (isActive ? D.amber : D.text), fontFamily: 'var(--font-mono)', fontWeight: 600, fontStyle: unlinked ? 'italic' : 'normal' }}>{r.section}</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'right', color: D.blue, fontFamily: 'var(--font-mono)' }}>{r.planned.toLocaleString()}</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'right', color: D.green, fontFamily: 'var(--font-mono)' }}>{r.implemented.toLocaleString()}</td>
-                  <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                    <span style={{ background: 'rgba(52,211,153,0.12)', color: D.green, border: `1px solid ${D.green}30`, padding: '3px 10px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10 }}>{rate}%</span>
+                  <td style={{ ...td, color: unlinked ? D.sub : (isActive ? D.amber : D.text), fontFamily: 'var(--font-mono)', fontWeight: 600, fontStyle: unlinked ? 'italic' : 'normal' }}>{r.section}</td>
+                  <td style={{ ...td, textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
+                  <td style={{ ...td, textAlign: 'right', color: D.amber, fontFamily: 'var(--font-mono)' }}>{r.planned.toLocaleString()}</td>
+                  <td style={{ ...td, textAlign: 'right', color: D.green, fontFamily: 'var(--font-mono)' }}>{r.implemented.toLocaleString()}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    <span style={{ background: `${D.green}1f`, color: D.green, border: `1px solid ${D.green}3a`, padding: '3px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600 }}>{rate}%</span>
                   </td>
-                  <td style={{ padding: '10px 14px', minWidth: 100 }}><FunnelBar total={r.total} planned={r.planned} implemented={r.implemented} /></td>
+                  <td style={{ ...td, minWidth: 100 }}><FunnelBar total={r.total} planned={r.planned} implemented={r.implemented} /></td>
                 </tr>
               )
             })}
@@ -288,47 +275,42 @@ function SectionTable({ sections, activeSection, onSelectSection }: { sections: 
       </div>
       {total > PAGE && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-          <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>‹ Prev</button>
-          <span style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, total)} of {total.toLocaleString()}</span>
-          <button className="btn-ghost" onClick={() => setPage(p => Math.min(Math.ceil(total / PAGE) - 1, p + 1))} disabled={page >= Math.ceil(total / PAGE) - 1} style={{ background: 'transparent', color: page >= Math.ceil(total / PAGE) - 1 ? D.sub : D.amber, border: `1px solid ${page >= Math.ceil(total / PAGE) - 1 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page >= Math.ceil(total / PAGE) - 1 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>Next ›</button>
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ ...pbtn, opacity: page === 0 ? 0.4 : 1 }}>‹ Prev</button>
+          <span style={{ fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, total)} of {total.toLocaleString()}</span>
+          <button onClick={() => setPage(p => Math.min(last, p + 1))} disabled={page >= last} style={{ ...pbtn, opacity: page >= last ? 0.4 : 1 }}>Next ›</button>
         </div>
       )}
     </div>
   )
 }
 
-/* ── Road assets by section (small, always ≤ a handful of rows) ── */
+/* ── Road assets by section (small) ──────────────────────── */
 function RoadAssetSectionTable({ rows, activeSection, onSelectSection }: { rows: RoadAssetSectionRow[]; activeSection: string; onSelectSection: (section: string) => void }) {
   const { colors: D } = useTheme()
+  const th = useTh()
+  const td: React.CSSProperties = { padding: '9px 14px', borderBottom: `1px solid ${D.border}` }
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-        <thead>
-          <tr style={{ borderBottom: `1px solid ${D.border}` }}>
-            {['Section', 'Project', 'Total Assets', 'Geolocated', 'Field Reports'].map(h => (
-              <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Section' || h === 'Project' ? 'left' : 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
+    <div style={{ overflowX: 'auto', border: `1px solid ${D.border}`, borderRadius: 10 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 560 }}>
+        <thead><tr>{['Section', 'Project', 'Total Assets', 'Geolocated', 'Field Reports'].map(h => <th key={h} style={th(h === 'Section' || h === 'Project' ? 'left' : 'right')}>{h}</th>)}</tr></thead>
         <tbody>
           {rows.map(r => {
             const isActive = r.section === activeSection
             return (
-            <tr key={`${r.project}|${r.section}`} className="tbl-row" onClick={() => onSelectSection(r.section === activeSection ? '' : r.section)}
-              style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', background: isActive ? 'rgba(212,160,64,0.07)' : undefined }}
-              title={`Filter to ${r.section}`}>
-              <td style={{ padding: '10px 14px', color: isActive ? D.amber : D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.section}</td>
-              <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.project}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.geolocated.toLocaleString()}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                {r.reportCount > 0 ? (
-                  <span title={`Matched via report section names containing "${r.matchedKeyword}" — a report count, not an asset-verification count`} style={{ background: 'rgba(96,165,250,0.12)', color: D.blue, border: `1px solid ${D.blue}30`, padding: '3px 10px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10 }}>{r.reportCount.toLocaleString()} report{r.reportCount === 1 ? '' : 's'}</span>
-                ) : (
-                  <span style={{ color: D.sub, fontFamily: 'var(--font-mono)', fontSize: 10 }}>— none</span>
-                )}
-              </td>
-            </tr>
+              <tr key={`${r.project}|${r.section}`} className="tbl-row" onClick={() => onSelectSection(r.section === activeSection ? '' : r.section)}
+                style={{ cursor: 'pointer', background: isActive ? `${D.amber}12` : undefined }} title={`Filter to ${r.section}`}>
+                <td style={{ ...td, color: isActive ? D.amber : D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.section}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.project}</td>
+                <td style={{ ...td, textAlign: 'right', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.total.toLocaleString()}</td>
+                <td style={{ ...td, textAlign: 'right', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.geolocated.toLocaleString()}</td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  {r.reportCount > 0 ? (
+                    <span title={`Matched via report section names containing "${r.matchedKeyword}" — a report count, not an asset-verification count`} style={{ background: `${D.amber}1f`, color: D.amber, border: `1px solid ${D.amber}3a`, padding: '3px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600 }}>{r.reportCount.toLocaleString()} report{r.reportCount === 1 ? '' : 's'}</span>
+                  ) : (
+                    <span style={{ color: D.sub, fontFamily: 'var(--font-mono)', fontSize: 10 }}>— none</span>
+                  )}
+                </td>
+              </tr>
             )
           })}
         </tbody>
@@ -337,20 +319,20 @@ function RoadAssetSectionTable({ rows, activeSection, onSelectSection }: { rows:
   )
 }
 
-/* ── Main page ──────────────────────────────────────────────── */
+/* ── page ─────────────────────────────────────────────────── */
 function PlanningImplementationPageInner() {
   const { colors: D } = useTheme()
-  const router       = useRouter()
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const [data, setData]       = useState<PlanningData | null>(null)
+  const [data, setData] = useState<PlanningData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
+  const [error, setError] = useState('')
   const [loadStats, setLoadStats] = useState<LoadStats | null>(null)
   const requestIdRef = useRef(0)
 
   const activeProjectKey = searchParams.get('project') || ''
-  const activeProject    = PROJECTS.find(p => p.key === activeProjectKey) ?? null
-  const activeSection    = searchParams.get('section') || ''
+  const activeProject = PROJECTS.find(p => p.key === activeProjectKey) ?? null
+  const activeSection = searchParams.get('section') || ''
 
   const loadData = useCallback(() => {
     const reqId = ++requestIdRef.current
@@ -391,17 +373,17 @@ function PlanningImplementationPageInner() {
   // a section is immediate, no network round trip. Only RoadAssetsMap (fed
   // activeSection directly below) does its own fetch, since road_assets is
   // too large to ever hold client-side in full.
-  const planningSections   = data?.sections ?? []
-  const roadAssetSections  = data?.roadAssets.sections ?? []
-  const filteredPlanning   = activeSection ? planningSections.filter(s => s.section === activeSection) : planningSections
+  const planningSections = data?.sections ?? []
+  const roadAssetSections = data?.roadAssets.sections ?? []
+  const filteredPlanning = activeSection ? planningSections.filter(s => s.section === activeSection) : planningSections
   const filteredRoadAssets = activeSection ? roadAssetSections.filter(s => s.section === activeSection) : roadAssetSections
 
   const planningSummary = filteredPlanning.reduce(
     (acc, s) => ({ total: acc.total + s.total, planned: acc.planned + s.planned, implemented: acc.implemented + s.implemented }),
     { total: 0, planned: 0, implemented: 0 }
   )
-  const roadAssetsTotal       = filteredRoadAssets.reduce((s, r) => s + r.total, 0)
-  const roadAssetsGeolocated  = filteredRoadAssets.reduce((s, r) => s + r.geolocated, 0)
+  const roadAssetsTotal = filteredRoadAssets.reduce((s, r) => s + r.total, 0)
+  const roadAssetsGeolocated = filteredRoadAssets.reduce((s, r) => s + r.geolocated, 0)
   const roadAssetsReportCount = filteredRoadAssets.reduce((s, r) => s + r.reportCount, 0)
 
   // Total legitimately sums both tables. Implementation Rate does NOT — a
@@ -421,33 +403,32 @@ function PlanningImplementationPageInner() {
     ? data.roadAssets.summary.total_estimate - data.roadAssets.summary.geolocated_estimate
     : 0
 
+  const selStyle: React.CSSProperties = { background: D.panel2, color: D.text, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, cursor: 'pointer', outline: 'none' }
+  const lblStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
+
   return (
-    <div style={{ minHeight:'100vh', background:D.bg, color:D.text, fontFamily:'var(--font-dm-sans)' }}>
-      <div style={{ padding:'28px 32px 80px', maxWidth:1480, margin:'0 auto' }}>
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontFamily:'var(--font-loader)', fontSize:'1.4rem', letterSpacing:'0.08em', color:D.amber }}>PLANNING &amp; IMPLEMENTATION</div>
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.65rem', color:D.muted, letterSpacing:'0.08em', marginTop:4 }}>
-            Planned/field-confirmed activities and surveyed road-design assets, combined — filter by project or section to cross-filter every panel below
-          </div>
+    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+      <div style={{ padding: '24px', maxWidth: 1240, margin: '0 auto' }}>
+        <div style={{ marginBottom: 18 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Planning &amp; Implementation</h2>
+          <p style={{ margin: 0, marginTop: 3, fontSize: 13, color: D.muted }}>Planned / field-confirmed activities and surveyed road-design assets, combined — filter by project or section to cross-filter every panel.</p>
         </div>
 
-        {error && <div style={{ background:'rgba(248,113,113,0.06)', border:'1px solid rgba(248,113,113,0.2)', borderRadius:12, padding:'14px 18px', color:D.red, fontFamily:'var(--font-mono)', fontSize:'0.78rem', marginBottom:20 }}>{error}</div>}
+        {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
-        {/* Project / Section filters */}
         {data && (
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px 20px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, marginBottom: 24 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, marginBottom: 20 }}>
+            <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.muted }}>Filters</span>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: 10, color: D.muted, letterSpacing: 1.5, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', marginBottom: 5 }}>Project</div>
-              <select value={activeProjectKey} onChange={e => handleProjectFilter(e.target.value)}
-                style={{ background: D.bg, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer', minWidth: 220, outline: 'none' }}>
+              <span style={lblStyle}>Project</span>
+              <select value={activeProjectKey} onChange={e => handleProjectFilter(e.target.value)} style={{ ...selStyle, minWidth: 220 }}>
                 <option value=''>All Projects (nationwide)</option>
                 {PROJECTS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: 10, color: D.muted, letterSpacing: 1.5, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', marginBottom: 5 }}>Section</div>
-              <select value={activeSection} onChange={e => handleSectionFilter(e.target.value)}
-                style={{ background: D.bg, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer', minWidth: 240, outline: 'none' }}>
+              <span style={lblStyle}>Section</span>
+              <select value={activeSection} onChange={e => handleSectionFilter(e.target.value)} style={{ ...selStyle, minWidth: 240 }}>
                 <option value=''>All Sections</option>
                 {planningSections.length > 0 && (
                   <optgroup label="Planning Sections">
@@ -461,136 +442,131 @@ function PlanningImplementationPageInner() {
                 )}
               </select>
             </div>
-            {(activeProjectKey || activeSection) && <button className="btn-ghost" onClick={clearFilters}
-              style={{ background: 'transparent', color: D.amber, border: '1px solid rgba(212,160,64,0.3)', borderRadius: 8, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end', transition: 'all 0.2s' }}>✕ Clear</button>}
+            {(activeProjectKey || activeSection) && <button onClick={clearFilters}
+              style={{ ...selStyle, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
           </div>
         )}
 
-        {loading && !data && <PageSkeleton/>}
+        {loading && !data && <PageSkeleton />}
 
         {data && (
-          <div style={{ opacity: loading ? 0.55 : 1, filter: loading ? 'blur(1.5px) saturate(0.85)' : 'blur(0) saturate(1)', transform: loading ? 'scale(0.997)' : 'scale(1)', pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.35s ${EASE}, filter 0.35s ${EASE}, transform 0.35s ${EASE}` }}>
+          <div style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
 
             {geoGapNationwide > 0 && (
-              <div style={{ background: 'rgba(212,160,64,0.07)', border: '1px solid rgba(212,160,64,0.22)', borderRadius: 10, padding: '10px 16px', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: '0.68rem', marginBottom: 14 }}>
+              <div style={{ background: `${D.amber}12`, border: `1px solid ${D.amber}3a`, borderRadius: 10, padding: '10px 16px', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 12, marginBottom: 14 }}>
                 {geoGapNationwide.toLocaleString()} road assets nationwide have no coordinates on file (mostly in the Ogun section) and can&apos;t appear on the map below.
               </div>
             )}
 
-            <div className="kpi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14, marginBottom:14 }}>
-              <KPICard label="Total (Combined)"       value={combinedTotal}          icon={<IconLayers/>}     delay={0}   color={D.amber}
+            <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 14, marginBottom: 14 }}>
+              <KPICard label="Total (Combined)" value={combinedTotal} icon={<IconLayers />} delay={0}
                 sub={`Activities: ${planningSummary.total.toLocaleString()} · Road Assets: ${roadAssetsTotal.toLocaleString()}`} />
-              <KPICard label="Planned Activities"     value={planningSummary.planned} icon={<IconClipboard/>} delay={80}  color={D.blue}
+              <KPICard label="Planned Activities" value={planningSummary.planned} icon={<IconClipboard />} delay={60}
                 sub="Activities only — road assets have no planned_date" />
-              <KPICard label="Implemented Activities" value={planningSummary.implemented} icon={<IconCheck/>}  delay={160} color={D.green}
+              <KPICard label="Implemented Activities" value={planningSummary.implemented} icon={<IconCheck />} delay={120} color={D.green}
                 sub="Activities only — a road-asset field report confirms a section got attention, not which assets were verified" />
-              <KPICard label="Sections"               value={combinedSectionCount}    icon={<IconMap/>}       delay={240} color={D.purple} />
-              <KPICard label="Activity Implementation Rate" value={activityImplementedPct} suffix="%" icon={<IconCheck/>} delay={320} color={D.green} />
+              <KPICard label="Sections" value={combinedSectionCount} icon={<IconMap />} delay={180} />
+              <KPICard label="Activity Implementation Rate" value={activityImplementedPct} suffix="%" icon={<IconCheck />} delay={240} color={D.green} />
             </div>
 
-            <div className="kpi-grid2" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:20 }}>
-              <KPICard label="Road Assets (est.)"      value={roadAssetsTotal} icon={<IconLayers/>} delay={0}  color={D.amber} />
-              <KPICard label="Road Assets Geolocated"  value={roadAssetsGeolocated} icon={<IconMap/>} delay={80} color={D.blue} />
-              <KPICard label="Road Asset Field Reports" value={roadAssetsReportCount} icon={<IconClipboard/>} delay={120} color={D.purple} />
-              <div style={{ background: D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div style={{ width: 44, height: 44, borderRadius: 14, background: `${D.green}20`, border: `1px solid ${D.green}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.green, marginBottom: 16 }}><IconClock /></div>
+            <div className="kpi-grid2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
+              <KPICard label="Road Assets (est.)" value={roadAssetsTotal} icon={<IconLayers />} delay={0} />
+              <KPICard label="Road Assets Geolocated" value={roadAssetsGeolocated} icon={<IconMap />} delay={60} />
+              <KPICard label="Road Asset Field Reports" value={roadAssetsReportCount} icon={<IconClipboard />} delay={120} />
+              <div style={{ background: D.panel, borderRadius: 10, padding: '14px 16px', border: `1px solid ${D.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}><IconClock /></div>
                 {loadStats ? (
                   <>
-                    <div style={{ fontFamily: 'var(--font-loader)', fontSize: '1.5rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.03em', color: D.green }}>
-                      {loadStats.queryMs}ms <span style={{ fontSize: '0.9rem', color: D.sub }}>db</span> / {loadStats.clientMs}ms <span style={{ fontSize: '0.9rem', color: D.sub }}>total</span>
+                    <div style={{ fontFamily: 'var(--font-loader)', fontSize: 15, fontWeight: 600, lineHeight: 1.2, color: D.text, fontVariantNumeric: 'tabular-nums' }}>
+                      {loadStats.queryMs}ms <span style={{ fontSize: 11, color: D.sub }}>db</span> / {loadStats.clientMs}ms <span style={{ fontSize: 11, color: D.sub }}>total</span>
                     </div>
-                    <div style={{ fontSize: '0.58rem', color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>
+                    <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 8 }}>
                       Map Load Time · {loadStats.mode === 'live' ? 'live query' : 'materialized view'}
                     </div>
                   </>
                 ) : (
-                  <div style={{ fontSize: '0.7rem', color: D.sub, fontFamily: 'var(--font-mono)' }}>waiting for map…</div>
+                  <div style={{ fontSize: 12, color: D.sub, fontFamily: 'var(--font-mono)' }}>waiting for map…</div>
                 )}
               </div>
             </div>
 
-            <Reveal style={{ marginBottom:16 }}>
-              <div className="pi-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))', gap:14 }}>
-                <Panel title="Activities by Section">
+            <Reveal style={{ marginBottom: 14 }}>
+              <div className="pi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 14 }}>
+                <Card title="Activities by Section">
                   {topSections.length > 0
-                    ? <HBarChart data={topSections} color={D.amber} activeName={activeSection} onBarClick={handleSectionFilter}/>
-                    : <EmptyState label="No planning activities recorded for this project/section"/>}
-                </Panel>
-                <Panel title="Planning vs Implementation Coverage">
-                  <div style={{ display:'flex', gap:16, alignItems:'center', fontSize:'0.68rem', fontFamily:'var(--font-mono)', color:D.muted, marginBottom:-4 }}>
-                    <span style={{ display:'flex', alignItems:'center', gap:6 }}><span style={{ width:8, height:8, borderRadius:2, background:`${D.blue}55` }}/>Planned</span>
-                    <span style={{ display:'flex', alignItems:'center', gap:6 }}><span style={{ width:8, height:8, borderRadius:2, background:D.green }}/>Implemented</span>
-                    <span style={{ color:D.sub }}>— relative to that section&apos;s total</span>
+                    ? <HBarChart data={topSections} activeName={activeSection} onBarClick={handleSectionFilter} />
+                    : <EmptyState label="No planning activities recorded for this project/section" />}
+                </Card>
+                <Card title="Planning vs Implementation Coverage">
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', fontSize: 11.5, fontFamily: 'var(--font-mono)', color: D.muted, marginBottom: 8 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: `${D.amber}55` }} />Planned</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: D.green }} />Implemented</span>
+                    <span style={{ color: D.sub }}>— relative to section total</span>
                   </div>
                   {filteredPlanning.length > 0
-                    ? <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    ? <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {filteredPlanning.slice(0, 12).map(s => {
                           const rate = s.total > 0 ? Math.round((s.implemented / s.total) * 100) : 0
                           const isActive = s.section === activeSection
                           const unlinked = s.section === 'Unlinked / No Section'
                           return (
                             <div key={s.section} onClick={unlinked ? undefined : () => handleSectionFilter(s.section === activeSection ? '' : s.section)}
-                              style={{ display:'flex', alignItems:'center', gap:10, cursor: unlinked ? 'default' : 'pointer', opacity: isActive ? 1 : (activeSection && !isActive ? 0.55 : 1), transition:`opacity 0.2s ${EASE}` }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: unlinked ? 'default' : 'pointer', opacity: isActive ? 1 : (activeSection && !isActive ? 0.55 : 1), transition: `opacity 0.2s ${EASE}` }}
                               title={unlinked ? undefined : `Filter to ${s.section}`}>
-                              <span style={{ width:130, fontSize:'0.68rem', color: isActive ? D.amber : D.muted, fontFamily:'var(--font-mono)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }} title={s.section}>{s.section}</span>
-                              <div style={{ flex:1 }}><FunnelBar total={s.total} planned={s.planned} implemented={s.implemented}/></div>
-                              <span style={{ width:36, textAlign:'right', fontSize:'0.68rem', color:D.green, fontWeight:700, fontFamily:'var(--font-mono)', flexShrink:0 }}>{rate}%</span>
+                              <span style={{ width: 130, fontSize: 11.5, color: isActive ? D.amber : D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={s.section}>{s.section}</span>
+                              <div style={{ flex: 1 }}><FunnelBar total={s.total} planned={s.planned} implemented={s.implemented} /></div>
+                              <span style={{ width: 36, textAlign: 'right', fontSize: 11.5, color: D.green, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{rate}%</span>
                             </div>
                           )
                         })}
                       </div>
-                    : <EmptyState label="No coverage data available"/>}
-                </Panel>
+                    : <EmptyState label="No coverage data available" />}
+                </Card>
               </div>
             </Reveal>
 
-            <Reveal delay={40} style={{ marginBottom:16 }}>
-              <Panel title={`Road Asset Types (${(data.roadAssets.entityTypes.length).toLocaleString()} total, top 10 shown, nationwide)`}>
+            <Reveal delay={40} style={{ marginBottom: 14 }}>
+              <Card title={`Road Asset Types (${data.roadAssets.entityTypes.length.toLocaleString()} total, top 10, nationwide)`}>
                 {assetTypeBars.length > 0
-                  ? <HBarChart data={assetTypeBars} color={D.blue}/>
-                  : <EmptyState label="No road asset type data available"/>}
-              </Panel>
+                  ? <HBarChart data={assetTypeBars} />
+                  : <EmptyState label="No road asset type data available" />}
+              </Card>
             </Reveal>
 
-            <Reveal delay={60} style={{ marginBottom:16 }}>
-              <Panel title={`Road Assets Map${activeProject ? ` · ${activeProject.label}` : ''}${activeSection ? ` · ${activeSection}` : ''}`}>
+            <Reveal delay={60} style={{ marginBottom: 14 }}>
+              <Card title={`Road Assets Map${activeProject ? ` · ${activeProject.label}` : ''}${activeSection ? ` · ${activeSection}` : ''}`}>
                 <RoadAssetsMap project={activeProject?.assetsName ?? ''} section={activeSection} onLoadStats={setLoadStats} />
-              </Panel>
+              </Card>
             </Reveal>
 
-            <Reveal delay={80} style={{ marginBottom:16 }}>
-              <Panel title={`Road Assets by Section (${roadAssetSections.length})`}>
+            <Reveal delay={80} style={{ marginBottom: 14 }}>
+              <Card title={`Road Assets by Section (${roadAssetSections.length})`}>
                 {roadAssetSections.length > 0
                   ? <RoadAssetSectionTable rows={roadAssetSections} activeSection={activeSection} onSelectSection={handleSectionFilter} />
-                  : <EmptyState label="No road asset sections found for this project"/>}
-              </Panel>
+                  : <EmptyState label="No road asset sections found for this project" />}
+              </Card>
             </Reveal>
 
             <Reveal delay={100}>
-              <Panel title={`Sections Breakdown (${filteredPlanning.length})`}>
+              <Card title={`Sections Breakdown (${filteredPlanning.length})`}>
                 {filteredPlanning.length > 0
-                  ? <SectionTable sections={filteredPlanning} activeSection={activeSection} onSelectSection={handleSectionFilter}/>
-                  : <EmptyState label="No planning activities recorded for this project/section"/>}
-              </Panel>
+                  ? <SectionTable sections={filteredPlanning} activeSection={activeSection} onSelectSection={handleSectionFilter} />
+                  : <EmptyState label="No planning activities recorded for this project/section" />}
+              </Card>
             </Reveal>
           </div>
         )}
       </div>
 
       <style>{`
-        @keyframes fadeIn    { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes shimmer   { 0% { transform:translateX(-100%); } 100% { transform:translateX(600%); } }
-        @keyframes pingAnim  { 0% { transform:scale(1); opacity:0.5; } 75%,100% { transform:scale(2.8); opacity:0; } }
-        select:focus { outline:none; border-color:rgba(212,160,64,0.4) !important; box-shadow:0 0 0 2px rgba(212,160,64,0.1) !important; }
-        select option { background:${D.bg}; }
-        .btn-ghost { transition: background 0.2s ${EASE}, border-color 0.2s ${EASE}, color 0.2s ${EASE}, transform 0.2s ${EASE} !important; }
-        .btn-ghost:not(:disabled):hover { background:rgba(212,160,64,0.1) !important; border-color:rgba(212,160,64,0.55) !important; color:${D.amberL} !important; transform:translateY(-1px); }
-        .btn-ghost:not(:disabled):active { transform:translateY(0) scale(0.97); }
-        .tbl-row { transition: background 0.15s ${EASE}; }
-        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.014); }
-        .tbl-row:hover { background: rgba(212,160,64,0.045) !important; }
+        @keyframes shimmer { 0% { transform:translateX(-100%); } 100% { transform:translateX(400%); } }
+        select:focus { border-color:${D.amber} !important; box-shadow:0 0 0 3px ${D.amber}22 !important; }
+        select option { background:${D.panel}; color:${D.text}; }
+        .tbl-row { transition: background 0.12s ease; }
+        .tbl-row:nth-child(even) { background: ${D.panel2}66; }
+        .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(2,1fr) !important; } }
-        @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(1,1fr) !important; } }
+        @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(1,1fr) !important; } .pi-grid { grid-template-columns: 1fr !important; } }
       `}</style>
     </div>
   )
@@ -599,7 +575,7 @@ function PlanningImplementationPageInner() {
 export default function PlanningImplementationPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '28px 32px 60px' }}><PageSkeleton /></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '24px' }}><div style={{ maxWidth: 1240, margin: '0 auto' }}><PageSkeleton /></div></div>}>
       <PlanningImplementationPageInner />
     </Suspense>
   )

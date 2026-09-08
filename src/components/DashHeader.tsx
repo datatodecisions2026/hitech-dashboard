@@ -1,153 +1,144 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
+import { useSidebar } from '@/lib/sidebar'
 import ThemeToggle from './ThemeToggle'
 
 interface SessionUser {
   first_name: string
   last_name: string
   email: string
+  role?: string
+}
+
+const IconPanelLeft = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>
+const IconSearch = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+const IconChevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+const IconSignOut = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></svg>
+
+function initials(u: SessionUser): string {
+  const src = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email.split('@')[0]
+  const parts = src.split(/[\s@._-]+/).filter(Boolean).slice(0, 2)
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || '·'
 }
 
 export default function DashHeader() {
-  const router   = useRouter()
+  const router = useRouter()
   const pathname = usePathname()
-  const { theme, colors: D } = useTheme()
-  const isLight = theme === 'light'
-  const [user, setUser]           = useState<SessionUser | null>(null)
-  const [hovLogout, setHovLogout] = useState(false)
+  const { colors: D, shadows: SH } = useTheme()
+  const { toggle } = useSidebar()
+  const [user, setUser] = useState<SessionUser | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [hovToggle, setHovToggle] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch('/api/auth/me')
-      .then(r => {
-        if (r.status === 401) { router.replace('/login'); return null }
-        return r.json()
-      })
+      .then(r => { if (r.status === 401) { router.replace('/login'); return null } return r.json() })
       .then(d => { if (d?.user) setUser(d.user) })
       .catch(() => router.replace('/login'))
   }, [router])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [menuOpen])
+
+  if (pathname === '/login') return null
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.replace('/login')
   }
 
-  const NAV_LINKS = [
-    { label: 'Dashboard',    href: '/dashboard'    },
-    { label: 'Progress',     href: '/progress'     },
-    { label: 'Machines',     href: '/machines'     },
-    { label: 'Personnel',    href: '/personnel'    },
-    { label: 'Planning & Implementation', href: '/planning-implementation' },
-    { label: 'Asset Coverage', href: '/road-assets-coverage' },
-  ]
-
-  const headerBg = isLight ? '#ffffff' : '#1c1c1f'
-  const headerShadow = isLight
-    ? '0 2px 8px rgba(15,23,42,0.08), 0 1px 0 rgba(0,0,0,0.03)'
-    : '0 2px 8px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.5)'
-  const pillBg      = isLight ? '#eef1f5' : '#252528'
-  const pillRaised   = isLight
-    ? '2px 2px 6px rgba(15,23,42,0.07), -1px -1px 2px rgba(255,255,255,0.7)'
-    : '2px 2px 6px rgba(0,0,0,0.7), -1px -1px 2px rgba(255,255,255,0.045), inset 0 1px 0 rgba(255,255,255,0.055)'
-  const pillRaisedHov = isLight
-    ? '3px 3px 8px rgba(15,23,42,0.09), -1px -1px 3px rgba(255,255,255,0.75)'
-    : '3px 3px 10px rgba(0,0,0,0.78), -1px -1px 3px rgba(255,255,255,0.052), inset 0 1px 0 rgba(255,255,255,0.07)'
-  const hoverText = isLight ? D.text : '#848080'
+  const iconBtn: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 32, height: 32, flexShrink: 0, color: D.muted, background: 'transparent',
+    border: '1px solid transparent', borderRadius: 8, cursor: 'pointer',
+    transition: 'background 0.15s ease, color 0.15s ease',
+  }
 
   return (
-    <header className="dash-header" style={{
-      position: 'sticky', top: 0, zIndex: 100, height: 52,
-      backgroundColor: headerBg,
-      backgroundImage: isLight ? 'none' : 'repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.005) 5px, rgba(255,255,255,0.005) 6px)',
-      boxShadow: headerShadow,
-      display: 'flex', alignItems: 'center',
-      padding: '0 24px', gap: 14, flexShrink: 0, overflowX: 'auto',
-      transition: 'background-color 0.25s ease, box-shadow 0.25s ease',
+    <header style={{
+      position: 'sticky', top: 0, zIndex: 90,
+      height: '3.5rem', flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
+      background: D.panel, borderBottom: `1px solid ${D.border}`,
     }}>
-
-      {/* Logo */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo.jpg" alt="Hitech" style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, boxShadow: isLight ? '0 0 0 1px rgba(15,23,42,0.1)' : '0 0 0 1px rgba(255,255,255,0.08)' }} />
-
-      {/* Wordmark */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>
-        <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1rem', letterSpacing: '0.12em', color: D.amber }}>
-          HITECH
-        </span>
-        <span className="dh-subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.55rem', letterSpacing: '0.16em', color: D.muted, textTransform: 'uppercase' }}>
-          Analytics
-        </span>
-      </div>
-
-      {/* Nav links — mobile-only fallback; SideNav covers this on wider screens */}
-      <nav className="dh-nav-links" style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16, flexShrink: 0 }}>
-        {NAV_LINKS.map(link => {
-          const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
-          return (
-            <a
-              key={link.href}
-              href={link.href}
-              style={{
-                fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em',
-                textTransform: 'uppercase', textDecoration: 'none',
-                color: isActive ? D.amber : D.muted,
-                background: isActive ? `${D.amber}15` : pillBg,
-                border: isActive ? `1px solid ${D.amber}40` : '1px solid transparent',
-                borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-                boxShadow: isActive
-                  ? `0 0 8px ${D.amber}28, inset 0 1px 0 rgba(255,255,255,${isLight ? 0.5 : 0.07})`
-                  : pillRaised,
-                transition: 'color 0.15s ease, background 0.15s ease, border-color 0.15s ease',
-              }}
-              onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLAnchorElement).style.color = hoverText }}
-              onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLAnchorElement).style.color = D.muted }}
-            >
-              {link.label}
-            </a>
-          )
-        })}
-      </nav>
-
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
-      <ThemeToggle />
-
-      {/* User name */}
-      {user && (
-        <span className="dh-username" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: D.muted, letterSpacing: '0.06em', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {user.first_name} {user.last_name}
-        </span>
-      )}
-
-      {/* Logout button */}
-      <button
-        onClick={handleLogout}
-        onMouseEnter={() => setHovLogout(true)}
-        onMouseLeave={() => setHovLogout(false)}
-        style={{
-          fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: hovLogout ? hoverText : D.muted,
-          background: pillBg, border: 'none', borderRadius: 6,
-          padding: '4px 10px', cursor: 'pointer', flexShrink: 0,
-          boxShadow: hovLogout ? pillRaisedHov : pillRaised,
-          transition: 'box-shadow 0.15s ease, color 0.15s ease',
-        }}
-      >
-        Logout
+      <button aria-label="Toggle sidebar" title="Toggle sidebar (⌘/Ctrl + B)" onClick={toggle}
+        onMouseEnter={() => setHovToggle(true)} onMouseLeave={() => setHovToggle(false)}
+        style={{ ...iconBtn, background: hovToggle ? D.panel2 : 'transparent', color: hovToggle ? D.text : D.muted }}>
+        <IconPanelLeft />
       </button>
 
+      <span style={{ width: 1, height: 20, background: D.border, margin: '0 4px', flexShrink: 0 }} />
+
+      <div className="dh-search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <span style={{ position: 'absolute', left: 9, display: 'flex', color: D.sub, pointerEvents: 'none' }}><IconSearch /></span>
+        <input type="search" placeholder="Search…" aria-label="Global search" style={{
+          font: 'inherit', height: 32, width: '15rem', padding: '0 10px 0 28px',
+          color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 8, outline: 'none',
+        }} />
+      </div>
+
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <ThemeToggle />
+
+        <div ref={menuRef} style={{ position: 'relative' }}>
+          <button aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '4px 6px 4px 4px',
+              background: menuOpen ? D.panel2 : 'transparent', border: '1px solid transparent',
+              borderRadius: 8, cursor: 'pointer', color: D.text,
+              transition: 'background 0.15s ease',
+            }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600,
+              color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 999,
+            }}>{user ? initials(user) : '·'}</span>
+            {user && <span className="dh-username" style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>{user.first_name} {user.last_name}</span>}
+            <span style={{ display: 'flex', color: D.sub }}><IconChevron /></span>
+          </button>
+
+          {menuOpen && user && (
+            <div role="menu" style={{
+              position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 100, width: 244, padding: 6,
+              background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.cardLg,
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 8px 10px' }}>
+                <span style={{ fontSize: 12.5, color: D.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
+                {user.role && (
+                  <span style={{
+                    alignSelf: 'flex-start', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
+                    letterSpacing: '0.05em', textTransform: 'uppercase', color: D.muted,
+                    background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 5, padding: '3px 6px',
+                  }}>{user.role}</span>
+                )}
+              </div>
+              <div style={{ height: 1, background: D.border, margin: '2px 0' }} />
+              <button role="menuitem" onClick={handleLogout} className="dh-menu-item" style={{
+                display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: 8, borderRadius: 7,
+                fontSize: 13, fontWeight: 500, color: D.text, background: 'transparent', border: 0, cursor: 'pointer', textAlign: 'left',
+              }}>
+                <span style={{ display: 'flex', color: D.muted }}><IconSignOut /></span>
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       <style>{`
-        @media (min-width: 641px) {
-          .dh-nav-links { display: none !important; }
-        }
+        .dh-menu-item:hover { background: ${D.panel2}; }
         @media (max-width: 640px) {
-          .dash-header { padding: 0 12px !important; gap: 10px !important; }
-          .dh-subtitle { display: none !important; }
-        }
-        @media (max-width: 480px) {
+          .dh-search { display: none !important; }
           .dh-username { display: none !important; }
         }
       `}</style>

@@ -4,9 +4,7 @@ import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 
-/* ── Shared motion tokens ──────────────────────────────────── */
-const EASE        = 'cubic-bezier(0.16,1,0.3,1)'
-const EASE_SPRING = 'cubic-bezier(0.34,1.56,0.64,1)'
+const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface ProgressData {
@@ -34,8 +32,8 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
-/* ── Animated counter ──────────────────────────────────────── */
-function useCountUp(target: number, duration = 1200, trigger = true) {
+/* ── counter (motion only) ────────────────────────────────── */
+function useCountUp(target: number, duration = 1100, trigger = true) {
   const [val, setVal] = useState(0)
   useEffect(() => {
     if (!trigger || target === 0) { setVal(0); return }
@@ -43,8 +41,7 @@ function useCountUp(target: number, duration = 1200, trigger = true) {
     const start = Date.now()
     const tick = () => {
       const p = Math.min((Date.now() - start) / duration, 1)
-      const ease = 1 - Math.pow(1 - p, 4)
-      setVal(Math.round(ease * target))
+      setVal(Math.round((1 - Math.pow(1 - p, 4)) * target))
       if (p < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -53,7 +50,7 @@ function useCountUp(target: number, duration = 1200, trigger = true) {
   return val
 }
 
-/* ── Reveal on scroll ──────────────────────────────────────── */
+/* ── primitives ───────────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
   const ref = useRef<HTMLDivElement>(null)
   const [vis, setVis] = useState(false)
@@ -63,58 +60,53 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
     obs.observe(el); return () => obs.disconnect()
   }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.985)', transition: `opacity 0.7s ease ${delay}ms, transform 0.7s ${EASE} ${delay}ms`, ...st }}>
+    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
       {children}
     </div>
   )
 }
 
-/* ── Panel ─────────────────────────────────────────────────── */
-function Panel({ children, title, style: st }: { children: React.ReactNode; title: string; style?: React.CSSProperties }) {
+function Card({ children, title, sub, action, style: st }: { children: React.ReactNode; title: string; sub?: string; action?: React.ReactNode; style?: React.CSSProperties }) {
   const { colors: D, shadows: SH } = useTheme()
-  const [hov, setHov] = useState(false)
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: D.panel, borderRadius: 16, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18, border: hov ? SH.borderGlow : `1px solid ${D.border}`, boxShadow: hov ? SH.panelLg : SH.panel, transform: hov ? 'translateY(-2px)' : 'translateY(0)', transition: `border-color 0.35s ${EASE}, box-shadow 0.35s ${EASE}, transform 0.35s ${EASE}`, ...st }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, animation: 'pingAnim 3s ease-out infinite', opacity: 0.5 }} />
-          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.amber, boxShadow: `0 0 8px ${D.amber}` }} />
+    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
+      <div style={{ padding: '14px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
+          {sub && <div style={{ fontSize: 12, color: D.muted, marginTop: 2 }}>{sub}</div>}
         </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: D.muted, background: D.bg, padding: '2px 10px', borderRadius: 4, border: `1px solid ${D.border}` }}>{title}</span>
+        {action}
       </div>
-      {children}
+      <div style={{ padding: '4px 16px 16px' }}>{children}</div>
     </div>
   )
 }
 
-/* ── KPI Card ──────────────────────────────────────────────── */
-function KPICard({ label, value, color, icon, suffix = '', delay = 0, glow }: { label: string; value: number; color?: string; icon: React.ReactNode; suffix?: string; delay?: number; glow?: string }) {
-  const { colors: D, shadows: SH } = useTheme()
-  const col = color ?? D.amber
-  const [vis, setVis] = useState(false)
-  const [hov, setHov] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const t = setTimeout(() => setVis(true), delay + 100)
-    return () => clearTimeout(t)
-  }, [delay])
-  const displayed = useCountUp(vis ? value : 0, 1400, vis)
-  const entranceY = vis ? 0 : 16
-  const hoverY    = hov ? -3 : 0
-
+function Pill({ kind, children }: { kind: 'ok' | 'accent' | 'crit' | 'mut'; children: React.ReactNode }) {
+  const { colors: D } = useTheme()
+  const map = { ok: D.green, accent: D.amber, crit: D.red, mut: D.muted }[kind]
   return (
-    <div ref={ref} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{ background: hov ? D.panel2 : D.panel, borderRadius: 22, padding: '20px 22px', position: 'relative', overflow: 'hidden', opacity: vis ? 1 : 0, transform: `translateY(${entranceY + hoverY}px) scale(${vis ? 1 : 0.97})`, transition: `opacity 0.6s ease ${delay}ms, transform 0.45s ${EASE} ${vis ? '0ms' : `${delay}ms`}, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s`, border: hov ? `1px solid rgba(212,160,64,0.2)` : `1px solid ${D.border}`, boxShadow: hov ? `${SH.cardLg}, ${glow || SH.glowAmber}` : SH.card }}>
-      {/* Accent line */}
-      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: `linear-gradient(180deg, transparent, ${col}, transparent)`, opacity: hov ? 1 : 0.5, transition: 'opacity 0.3s ease' }} />
-      {/* Corner glow */}
-      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: `radial-gradient(circle, ${col}${hov ? '28' : '18'} 0%, transparent 70%)`, pointerEvents: 'none', transition: `background 0.3s ${EASE}` }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 14, background: `${col}20`, border: `1px solid ${col}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col, boxShadow: `inset 0 1px 0 ${col}20`, transform: hov ? 'scale(1.08)' : 'scale(1)', transition: `transform 0.3s ${EASE_SPRING}` }}>{icon}</div>
+    <span style={{
+      fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
+      padding: '3px 7px', borderRadius: 5, whiteSpace: 'nowrap',
+      color: map, background: kind === 'mut' ? D.panel2 : `${map}1f`, border: `1px solid ${kind === 'mut' ? D.border : map + '3a'}`,
+    }}>{children}</span>
+  )
+}
+
+function KPICard({ label, value, color, icon, suffix = '', delay = 0 }: { label: string; value: number; color?: string; icon: React.ReactNode; suffix?: string; delay?: number }) {
+  const { colors: D, shadows: SH } = useTheme()
+  const [vis, setVis] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
+  const displayed = useCountUp(vis ? value : 0, 1200, vis)
+  const numColor = color ?? D.text
+  return (
+    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted }}>{icon}</div>
       </div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: '2.4rem', fontWeight: 400, lineHeight: 1, letterSpacing: '0.02em', color: col, textShadow: hov ? `0 0 20px ${col}44` : 'none', transition: 'text-shadow 0.3s ease' }}>{displayed.toLocaleString()}{suffix}</div>
-      <div style={{ fontSize: '0.58rem', color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 26, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: numColor, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
+      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
     </div>
   )
 }
@@ -122,31 +114,25 @@ function KPICard({ label, value, color, icon, suffix = '', delay = 0, glow }: { 
 /* ── Progress Curve ────────────────────────────────────────── */
 function ProgressCurve({ data }: { data: Array<{ date: string; pct: number }> }) {
   const { colors: D } = useTheme()
-  const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
   useEffect(() => {
-    const t1 = setTimeout(() => setReady(true), 200)
-    const t2 = setTimeout(() => {
+    const t = setTimeout(() => {
       let p = 0
-      const interval = setInterval(() => { p = Math.min(p + 0.02, 1); setProgress(p); if (p >= 1) clearInterval(interval) }, 16)
-      return () => clearInterval(interval)
-    }, 400)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
+      const iv = setInterval(() => { p = Math.min(p + 0.03, 1); setProgress(p); if (p >= 1) clearInterval(iv) }, 16)
+      return () => clearInterval(iv)
+    }, 250)
+    return () => clearTimeout(t)
   }, [])
+  if (!data.length) return <div style={{ color: D.muted, fontSize: 13, padding: '40px 0', textAlign: 'center' }}>No progress data yet</div>
 
-  if (!data.length) return <div style={{ color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '40px 0', textAlign: 'center' }}>No progress data yet</div>
-
-  const W = 820, H = 280, padL = 44, padB = 38, padR = 24, padT = 24
+  const W = 820, H = 280, padL = 40, padB = 34, padR = 20, padT = 20
   const chartW = W - padL - padR, chartH = H - padB - padT
   const toX = (i: number) => padL + (i / (data.length - 1)) * chartW
   const toY = (pct: number) => padT + chartH - (pct / 100) * chartH
   const labelEvery = Math.max(1, Math.floor(data.length / 10))
   const fmtD = (d: string) => { const dt = new Date(d); return `${dt.toLocaleString('en', { month: 'short' })} ${dt.getFullYear()}` }
-
-  // Clip path for animated draw
   const clipW = padL + chartW * progress
-
   const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${toX(i)} ${toY(d.pct)}`).join(' ')
   const areaD = `${pathD} L ${toX(data.length - 1)} ${padT + chartH} L ${toX(0)} ${padT + chartH} Z`
 
@@ -154,63 +140,38 @@ function ProgressCurve({ data }: { data: Array<{ date: string; pct: number }> })
     <div style={{ width: '100%', overflowX: 'auto' }}>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', minWidth: 400 }} onMouseLeave={() => setHov(null)}>
         <defs>
-          <linearGradient id="pgGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={D.amber} stopOpacity="0.35" />
-            <stop offset="60%" stopColor={D.amber} stopOpacity="0.08" />
-            <stop offset="100%" stopColor={D.amber} stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={D.amberD} />
-            <stop offset="50%" stopColor={D.amber} />
-            <stop offset="100%" stopColor={D.amberL} />
-          </linearGradient>
-          <clipPath id="pgClip">
-            <rect x="0" y="0" width={clipW} height={H} />
-          </clipPath>
+          <clipPath id="pgClip"><rect x="0" y="0" width={clipW} height={H} /></clipPath>
         </defs>
-
-        {/* Grid */}
         {[0, 25, 50, 75, 100].map(v => {
           const y = toY(v)
           return <g key={v}>
-            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={v === 50 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)'} strokeWidth={1} strokeDasharray={v === 50 ? '4 4' : undefined} />
-            <text x={padL - 8} y={y + 4} textAnchor="end" fill={D.muted} fontSize="9" fontFamily="var(--font-mono)">{v}%</text>
+            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} strokeDasharray={v === 50 ? '4 4' : undefined} />
+            <text x={padL - 8} y={y + 4} textAnchor="end" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{v}%</text>
           </g>
         })}
-
-        {/* Area + line clipped to animated width */}
         <g clipPath="url(#pgClip)">
-          <path d={areaD} fill="url(#pgGrad)" />
-          <path d={pathD} fill="none" stroke="url(#lineGrad)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+          <path d={areaD} fill={`${D.amber}14`} />
+          <path d={pathD} fill="none" stroke={D.amber} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         </g>
-
-        {/* Hover dots */}
         {data.map((d, i) => (
-          <circle key={i} cx={toX(i)} cy={toY(d.pct)} r={hov === i ? 6 : 3}
+          <circle key={i} cx={toX(i)} cy={toY(d.pct)} r={hov === i ? 5 : 2.5}
             fill={hov === i ? D.amberL : D.amber} opacity={hov === i ? 1 : 0.5}
-            style={{ cursor: 'pointer', transition: 'r 0.15s, opacity 0.15s' }}
-            onMouseEnter={() => setHov(i)} />
+            style={{ cursor: 'pointer', transition: 'r 0.15s, opacity 0.15s' }} onMouseEnter={() => setHov(i)} />
         ))}
-
-        {/* Tooltip */}
         {hov !== null && (() => {
           const d = data[hov], x = toX(hov), y = toY(d.pct)
           const tx = Math.min(x - 55, W - padR - 120), ty = Math.max(padT + 4, y - 50)
           return <g>
             <line x1={x} y1={y} x2={x} y2={padT + chartH} stroke={`${D.amber}44`} strokeWidth={1} strokeDasharray="3 3" />
-            <rect x={tx} y={ty} width={120} height={38} rx={6} fill="#0a0a0c" stroke={`${D.amber}44`} strokeWidth={1} />
-            <text x={tx + 10} y={ty + 14} fill={D.amber} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
+            <rect x={tx} y={ty} width={120} height={38} rx={5} fill={D.panel} stroke={D.border} strokeWidth={1} />
+            <text x={tx + 10} y={ty + 15} fill={D.amber} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
             <text x={tx + 10} y={ty + 30} fill={D.text} fontSize="11" fontFamily="var(--font-mono)" fontWeight="600">{d.pct.toFixed(1)}% complete</text>
           </g>
         })()}
-
-        {/* X axis */}
         {data.filter((_, i) => i % labelEvery === 0 || i === data.length - 1).map(d => {
           const i = data.indexOf(d)
-          return <text key={d.date} x={toX(i)} y={H - 6} textAnchor="middle" fill={D.muted} fontSize="8" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
+          return <text key={d.date} x={toX(i)} y={H - 6} textAnchor="middle" fill={D.sub} fontSize="8" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
         })}
-        <text x={W - padR} y={toY(100) + 4} textAnchor="end" fill={D.amber} fontSize="9" fontFamily="var(--font-mono)" fontWeight="700">100%</text>
-        <text x={W - padR} y={toY(50) + 4} textAnchor="end" fill={D.muted} fontSize="9" fontFamily="var(--font-mono)">50%</text>
       </svg>
     </div>
   )
@@ -222,7 +183,7 @@ function GanttChart({ data }: { data: Array<{ entity: string; start: string; end
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<string | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 200); return () => clearTimeout(t) }, [])
-  if (!data.length) return <div style={{ color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 12, padding: 20, textAlign: 'center' }}>No data</div>
+  if (!data.length) return <div style={{ color: D.muted, fontSize: 13, padding: 20, textAlign: 'center' }}>No data</div>
 
   const allDates = data.flatMap(d => [new Date(d.start), new Date(d.end)])
   const minDate = new Date(Math.min(...allDates.map(d => d.getTime())))
@@ -239,26 +200,20 @@ function GanttChart({ data }: { data: Array<{ entity: string; start: string; end
     cur.setMonth(cur.getMonth() + 1)
   }
 
-  const COLORS = ['#d4a040', '#c49030', '#b48020', '#a47020', '#946010']
-
   return (
     <div>
-      {/* Month header */}
-      <div style={{ position: 'relative', height: 22, marginLeft: 130, marginBottom: 6 }}>
-        {months.map((m, i) => <div key={i} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 9, color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', transform: 'translateX(-50%)' }}>{m.label}</div>)}
+      <div style={{ position: 'relative', height: 20, marginLeft: 130, marginBottom: 6 }}>
+        {months.map((m, i) => <div key={i} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 9, color: D.sub, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', transform: 'translateX(-50%)' }}>{m.label}</div>)}
       </div>
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {data.map((row, i) => (
+        {data.map(row => (
           <div key={row.entity} style={{ display: 'flex', alignItems: 'center', gap: 10 }}
             onMouseEnter={() => setHov(row.entity)} onMouseLeave={() => setHov(null)}>
             <div style={{ width: 130, flexShrink: 0, fontSize: 11, color: hov === row.entity ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{row.entity}</div>
-            <div style={{ flex: 1, height: 30, background: 'rgba(255,255,255,0.03)', borderRadius: 5, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
-              {/* Today line */}
-              <div style={{ position: 'absolute', left: `${Math.min(100, Math.max(0, (new Date().getTime() - minDate.getTime()) / (maxDate.getTime() - minDate.getTime()) * 100))}%`, top: 0, bottom: 0, width: 1.5, background: D.red, opacity: 0.8, zIndex: 2 }} />
-              {/* Bar */}
-              <div style={{ position: 'absolute', left: toX(row.start), width: ready ? toW(row.start, row.end) : '0%', top: 4, bottom: 4, borderRadius: 3, background: `linear-gradient(90deg, ${COLORS[i % COLORS.length]}, ${COLORS[i % COLORS.length]}88)`, transition: 'width 1.2s cubic-bezier(0.16,1,0.3,1)', display: 'flex', alignItems: 'center', paddingLeft: 8, boxShadow: hov === row.entity ? `0 0 12px ${COLORS[i % COLORS.length]}55` : 'none' }}>
-                <span style={{ fontSize: 9, color: 'rgba(0,0,0,0.8)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: 700 }}>{fmtDate(row.start)} → {fmtDate(row.end)}</span>
+            <div style={{ flex: 1, height: 28, background: D.panel2, borderRadius: 5, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
+              <div style={{ position: 'absolute', left: `${Math.min(100, Math.max(0, (Date.now() - minDate.getTime()) / (maxDate.getTime() - minDate.getTime()) * 100))}%`, top: 0, bottom: 0, width: 1.5, background: D.red, opacity: 0.8, zIndex: 2 }} />
+              <div style={{ position: 'absolute', left: toX(row.start), width: ready ? toW(row.start, row.end) : '0%', top: 4, bottom: 4, borderRadius: 3, background: hov === row.entity ? D.amberL : D.amber, transition: `width 1s ${EASE}`, display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+                <span style={{ fontSize: 9, color: '#fff', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: 600 }}>{fmtDate(row.start)} → {fmtDate(row.end)}</span>
               </div>
             </div>
           </div>
@@ -278,17 +233,18 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
   const entityGroups = data.reduce((acc, row) => { if (!acc[row.entity]) acc[row.entity] = []; acc[row.entity].push(row); return acc }, {} as Record<string, typeof data>)
   const [expanded, setExpanded] = useState<Set<string>>(new Set(Object.keys(entityGroups)))
   const displayMonths = months.slice(-8)
-  const SIDE_COLOR: Record<string, string> = { LHS: D.amber, RHS: D.blue, MEDIAN: D.green }
+  const SIDE_COLOR: Record<string, string> = { LHS: D.amber, RHS: D.muted, MEDIAN: D.green }
   const toggle = (e: string) => setExpanded(prev => { const n = new Set(prev); n.has(e) ? n.delete(e) : n.add(e); return n })
+  const th: React.CSSProperties = { padding: '9px 14px', color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, background: D.panel2, borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap' }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div style={{ overflowX: 'auto', border: `1px solid ${D.border}`, borderRadius: 10 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
-          <tr style={{ borderBottom: `1px solid ${D.border}` }}>
-            <th style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap', minWidth: 220 }}>Entity / Side</th>
-            {displayMonths.map(m => <th key={m} style={{ padding: '10px 14px', textAlign: 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em', whiteSpace: 'nowrap', minWidth: 100 }}>{fmtMonth(m)}</th>)}
-            <th style={{ padding: '10px 14px', textAlign: 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', whiteSpace: 'nowrap' }}>Total</th>
+          <tr>
+            <th style={{ ...th, textAlign: 'left', minWidth: 220 }}>Entity / Side</th>
+            {displayMonths.map(m => <th key={m} style={{ ...th, textAlign: 'right', minWidth: 100 }}>{fmtMonth(m)}</th>)}
+            <th style={{ ...th, textAlign: 'right' }}>Total</th>
           </tr>
         </thead>
         <tbody>
@@ -298,37 +254,37 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
             const entityTotal = validTotals.length > 0 ? validTotals.reduce((s, v) => s + v, 0) / validTotals.length : null
             return (
               <>
-                <tr key={`${entityName}-h`} onClick={() => toggle(entityName)} className="tbl-row-header" style={{ cursor: 'pointer', borderBottom: `1px solid ${D.border}`, background: 'rgba(255,255,255,0.02)' }}>
-                  <td style={{ padding: '11px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                <tr key={`${entityName}-h`} onClick={() => toggle(entityName)} className="tbl-row-header" style={{ cursor: 'pointer', borderBottom: `1px solid ${D.border}`, background: `${D.panel2}66` }}>
+                  <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontSize: 10, color: D.amber, transition: 'transform 0.2s', display: 'inline-block', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }}>▼</span>
+                      <span style={{ fontSize: 9, color: D.amber, display: 'inline-block', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
                       {entityName}
-                      <span style={{ fontSize: 9, color: D.sub, background: `${D.amber}10`, border: `1px solid ${D.amber}20`, padding: '1px 6px', borderRadius: 4 }}>{sideRows.length}</span>
+                      <span style={{ fontSize: 9, color: D.muted, background: D.panel2, border: `1px solid ${D.border}`, padding: '1px 6px', borderRadius: 4 }}>{sideRows.length}</span>
                     </div>
                   </td>
                   {displayMonths.map(m => <td key={m} />)}
-                  <td style={{ padding: '11px 14px', textAlign: 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{entityTotal != null ? `${entityTotal.toFixed(2)}%` : '—'}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', color: D.amber, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{entityTotal != null ? `${entityTotal.toFixed(2)}%` : '—'}</td>
                 </tr>
                 {isExpanded && sideRows.map(row => {
                   const sc = SIDE_COLOR[row.side] || D.muted
                   return (
                     <>
-                      <tr key={`${entityName}-${row.side}-l`} style={{ borderBottom: `1px solid rgba(255,255,255,0.02)`, background: 'rgba(255,255,255,0.01)' }}>
+                      <tr key={`${entityName}-${row.side}-l`} style={{ borderBottom: `1px solid ${D.border}`, background: `${D.panel2}33` }}>
                         <td style={{ padding: '7px 14px 3px 30px', color: sc, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 5, height: 5, borderRadius: '50%', background: sc, boxShadow: `0 0 6px ${sc}` }} />{row.side}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 5, height: 5, borderRadius: '50%', background: sc }} />{row.side}</div>
                         </td>
                         {displayMonths.map(m => <td key={m} />)}
                         <td style={{ padding: '7px 14px 3px', textAlign: 'right', color: row.total_completion != null ? sc : D.sub, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600 }}>{row.total_completion != null ? `${(row.total_completion as number).toFixed(2)}%` : '—'}</td>
                       </tr>
-                      <tr key={`${entityName}-${row.side}-c`} style={{ borderBottom: `1px solid rgba(255,255,255,0.015)` }}>
+                      <tr key={`${entityName}-${row.side}-c`} style={{ borderBottom: `1px solid ${D.border}` }}>
                         <td style={{ padding: '3px 14px 3px 42px', color: D.sub, fontFamily: 'var(--font-mono)', fontSize: 10 }}>Cumulative_%_Completion</td>
                         {displayMonths.map(m => { const val = row.months.find(mo => mo.month === m)?.cumulative_pct; return <td key={m} style={{ padding: '3px 14px', textAlign: 'right', color: val != null ? D.green : 'transparent', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{val != null ? `${val.toFixed(2)}%` : ''}</td> })}
                         <td style={{ padding: '3px 14px', textAlign: 'right', color: row.total_completion != null ? D.green : D.sub, fontFamily: 'var(--font-mono)', fontSize: 11 }}>{row.total_completion != null ? `${(row.total_completion as number).toFixed(2)}%` : '—'}</td>
                       </tr>
                       <tr key={`${entityName}-${row.side}-p`} style={{ borderBottom: `1px solid ${D.border}` }}>
                         <td style={{ padding: '3px 14px 8px 42px', color: D.sub, fontFamily: 'var(--font-mono)', fontSize: 10 }}>Cumulative_Pending_%</td>
-                        {displayMonths.map(m => { const val = row.months.find(mo => mo.month === m)?.cumulative_pct; const pv = val != null ? 100 - val : null; return <td key={m} style={{ padding: '3px 14px 8px', textAlign: 'right', color: pv != null ? D.amber : 'transparent', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pv != null ? `${pv.toFixed(2)}%` : ''}</td> })}
-                        <td style={{ padding: '3px 14px 8px', textAlign: 'right', color: row.total_completion != null ? D.amber : D.sub, fontFamily: 'var(--font-mono)', fontSize: 11 }}>{row.total_completion != null ? `${(100 - (row.total_completion as number)).toFixed(2)}%` : '—'}</td>
+                        {displayMonths.map(m => { const val = row.months.find(mo => mo.month === m)?.cumulative_pct; const pv = val != null ? 100 - val : null; return <td key={m} style={{ padding: '3px 14px 8px', textAlign: 'right', color: pv != null ? D.muted : 'transparent', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{pv != null ? `${pv.toFixed(2)}%` : ''}</td> })}
+                        <td style={{ padding: '3px 14px 8px', textAlign: 'right', color: row.total_completion != null ? D.muted : D.sub, fontFamily: 'var(--font-mono)', fontSize: 11 }}>{row.total_completion != null ? `${(100 - (row.total_completion as number)).toFixed(2)}%` : '—'}</td>
                       </tr>
                     </>
                   )
@@ -346,23 +302,23 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
 function DelayDonut({ delayed, onSchedule }: { delayed: number; onSchedule: number }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
-  useEffect(() => { const t = setTimeout(() => setReady(true), 400); return () => clearTimeout(t) }, [])
+  useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
   const total = delayed + onSchedule; if (!total) return null
-  const r = 62, sw = 20, circ = 2 * Math.PI * r
+  const r = 62, sw = 18, circ = 2 * Math.PI * r
   const onLen = (onSchedule / total) * circ, delLen = (delayed / total) * circ
   return (
-    <div style={{ display: 'flex', gap: 28, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 26, alignItems: 'center', flexWrap: 'wrap' }}>
       <svg width={160} height={160} viewBox="-80 -80 160 160" style={{ flexShrink: 0 }}>
-        <circle r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={sw} />
-        <circle r={r} fill="none" stroke={D.green} strokeWidth={sw} strokeDasharray={`${ready ? onLen : 0} ${circ}`} strokeLinecap="butt" style={{ transition: 'stroke-dasharray 1.2s cubic-bezier(0.16,1,0.3,1)', filter: ready ? `drop-shadow(0 0 6px ${D.green}66)` : 'none' }} />
-        <circle r={r} fill="none" stroke={D.amber} strokeWidth={sw} strokeDasharray={`${ready ? delLen : 0} ${circ}`} strokeDashoffset={-onLen} strokeLinecap="butt" style={{ transition: 'stroke-dasharray 1.2s cubic-bezier(0.16,1,0.3,1) 0.15s', filter: ready ? `drop-shadow(0 0 6px ${D.amber}66)` : 'none' }} />
-        <text x="0" y="-8" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="24">{total.toLocaleString()}</text>
-        <text x="0" y="12" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1.5">ENTITIES</text>
+        <circle r={r} fill="none" stroke={D.panel2} strokeWidth={sw} />
+        <circle r={r} fill="none" stroke={D.green} strokeWidth={sw} strokeDasharray={`${ready ? onLen : 0} ${circ}`} strokeLinecap="butt" style={{ transition: `stroke-dasharray 1s ${EASE}` }} />
+        <circle r={r} fill="none" stroke={D.red} strokeWidth={sw} strokeDasharray={`${ready ? delLen : 0} ${circ}`} strokeDashoffset={-onLen} strokeLinecap="butt" style={{ transition: `stroke-dasharray 1s ${EASE} 0.15s` }} />
+        <text x="0" y="-6" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="22" fontWeight="600">{total.toLocaleString()}</text>
+        <text x="0" y="12" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1">ENTITIES</text>
       </svg>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {[{ label: 'On Schedule', val: onSchedule, color: D.green }, { label: 'Delayed', val: delayed, color: D.amber }].map(({ label, val, color }) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {[{ label: 'On Schedule', val: onSchedule, color: D.green }, { label: 'Delayed', val: delayed, color: D.red }].map(({ label, val, color }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}` }} />
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
             <div>
               <div style={{ fontSize: 14, color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{val.toLocaleString()} <span style={{ fontSize: 10, color: D.muted }}>({Math.round(val / total * 100)}%)</span></div>
               <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>{label}</div>
@@ -379,7 +335,7 @@ function DaysByEntityChart({ data }: { data: ProgressData['daysByEntity'] }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<string | null>(null)
-  useEffect(() => { const t = setTimeout(() => setReady(true), 500); return () => clearTimeout(t) }, [])
+  useEffect(() => { const t = setTimeout(() => setReady(true), 400); return () => clearTimeout(t) }, [])
   const allVals = data.flatMap(d => [d.lhs, d.rhs, d.median].filter(Boolean) as number[])
   const maxVal = Math.max(...allVals, 1)
   const BAR_W = 13
@@ -400,7 +356,7 @@ function DaysByEntityChart({ data }: { data: ProgressData['daysByEntity'] }) {
               {([{ val: d.lhs, color: D.amber }, { val: d.median, color: D.muted }, { val: d.rhs, color: D.sub }] as const).map((b, bi) => (
                 <div key={bi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
                   {b.val != null && <span style={{ fontSize: 9, color: hov === d.entity ? D.text : D.sub, fontFamily: 'var(--font-mono)', marginBottom: 3, transition: 'color 0.2s' }}>{b.val}</span>}
-                  <div style={{ width: BAR_W, borderRadius: '3px 3px 0 0', height: ready && b.val != null ? `${(b.val / maxVal) * 100}%` : '0%', background: b.val != null ? b.color : 'transparent', transition: `height 1s cubic-bezier(0.16,1,0.3,1) ${i * 0.06}s`, opacity: hov && hov !== d.entity ? 0.3 : 1, boxShadow: hov === d.entity && b.val != null ? `0 0 10px ${b.color}66` : 'none' }} />
+                  <div style={{ width: BAR_W, borderRadius: '3px 3px 0 0', height: ready && b.val != null ? `${(b.val / maxVal) * 100}%` : '0%', background: b.val != null ? b.color : 'transparent', transition: `height 0.9s ${EASE} ${i * 0.05}s`, opacity: hov && hov !== d.entity ? 0.35 : 1 }} />
                 </div>
               ))}
             </div>
@@ -412,46 +368,78 @@ function DaysByEntityChart({ data }: { data: ProgressData['daysByEntity'] }) {
   )
 }
 
+/* ── shared table chrome ──────────────────────────────────── */
+function useTableStyles() {
+  const { colors: D } = useTheme()
+  const th: React.CSSProperties = { padding: '9px 14px', textAlign: 'left', color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, background: D.panel2, borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap' }
+  const td: React.CSSProperties = { padding: '9px 14px', borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap' }
+  const wrap: React.CSSProperties = { overflowX: 'auto', border: `1px solid ${D.border}`, borderRadius: 10 }
+  return { th, td, wrap, D }
+}
+function Pager({ page, total, pageSize, onPage }: { page: number; total: number; pageSize: number; onPage: (p: number) => void }) {
+  const { colors: D } = useTheme()
+  if (total <= pageSize) return null
+  const last = Math.ceil(total / pageSize) - 1
+  const btn: React.CSSProperties = { background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
+      <button onClick={() => onPage(Math.max(0, page - 1))} disabled={page === 0} style={{ ...btn, opacity: page === 0 ? 0.4 : 1 }}>‹ Prev</button>
+      <span style={{ fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total.toLocaleString()}</span>
+      <button onClick={() => onPage(Math.min(last, page + 1))} disabled={page === last} style={{ ...btn, opacity: page === last ? 0.4 : 1 }}>Next ›</button>
+    </div>
+  )
+}
+function Seg<T extends string>({ value, options, onChange }: { value: T; options: Array<{ key: T; label: string }>; onChange: (v: T) => void }) {
+  const { colors: D } = useTheme()
+  return (
+    <div style={{ display: 'inline-flex', border: `1px solid ${D.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      {options.map((o, i) => (
+        <button key={o.key} onClick={() => onChange(o.key)} style={{
+          fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 500,
+          color: value === o.key ? D.amber : D.muted, background: value === o.key ? `${D.amber}14` : D.panel,
+          border: 0, borderLeft: i ? `1px solid ${D.border}` : 0, padding: '6px 14px', cursor: 'pointer',
+        }}>{o.label}</button>
+      ))}
+    </div>
+  )
+}
+
 /* ── Delay Table ───────────────────────────────────────────── */
 function DelayTable({ data }: { data: ProgressData['delayData'] }) {
+  const { th, td, wrap } = useTableStyles()
   const { colors: D } = useTheme()
   const [page, setPage] = useState(0)
-  const PAGE = 20, total = data.length
+  const PAGE = 20
   const pageData = data.slice(page * PAGE, page * PAGE + PAGE)
   return (
     <div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Entity', 'Side', 'Planned Month', 'Started Date', 'Completed Date', 'Delay Days', 'Status'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+      <div style={wrap}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+          <thead><tr>{['Entity', 'Side', 'Planned Month', 'Started Date', 'Completed Date', 'Delay Days', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {pageData.map((r, i) => {
               const isD = r.performance_status === 'Delayed'
-              return <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
-                <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.entity_name || '—'}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.side || '—'}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{fmtDate(r.planned_date)}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{fmtDate(r.date_started)}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{fmtDate(r.date_completed)}</td>
-                <td style={{ padding: '10px 14px', color: isD ? D.amber : D.green, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{r.delay_days}</td>
-                <td style={{ padding: '10px 14px' }}><span style={{ background: isD ? 'rgba(212,160,64,0.12)' : 'rgba(52,211,153,0.12)', color: isD ? D.amber : D.green, border: `1px solid ${isD ? D.amber : D.green}30`, padding: '3px 10px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10 }}>{r.performance_status}</span></td>
+              return <tr key={i} className="tbl-row">
+                <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.entity_name || '—'}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.side || '—'}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{fmtDate(r.planned_date)}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{fmtDate(r.date_started)}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{fmtDate(r.date_completed)}</td>
+                <td style={{ ...td, color: isD ? D.red : D.green, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{r.delay_days}</td>
+                <td style={td}><Pill kind={isD ? 'crit' : 'ok'}>{r.performance_status}</Pill></td>
               </tr>
             })}
           </tbody>
         </table>
       </div>
-      {total > PAGE && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-          <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>‹ Prev</button>
-          <span style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, total)} of {total.toLocaleString()}</span>
-          <button className="btn-ghost" onClick={() => setPage(p => Math.min(Math.ceil(total / PAGE) - 1, p + 1))} style={{ background: 'transparent', color: D.amber, border: `1px solid ${D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>Next ›</button>
-        </div>
-      )}
+      <Pager page={page} total={data.length} pageSize={PAGE} onPage={setPage} />
     </div>
   )
 }
 
 /* ── BOQ Table ─────────────────────────────────────────────── */
 function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCategory: ProgressData['boqByCategory'] }) {
+  const { th, td, wrap } = useTableStyles()
   const { colors: D } = useTheme()
   const [view, setView] = useState<'summary' | 'detail'>('summary')
   const [page, setPage] = useState(0)
@@ -460,49 +448,45 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
   const totalQty = items.reduce((s, i) => s + (i.qty || 0), 0)
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-        <div style={{ background: 'rgba(212,160,64,0.08)', border: `1px solid rgba(212,160,64,0.2)`, borderRadius: 10, padding: '10px 18px' }}>
-          <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: 1.5, marginBottom: 3 }}>ACTUAL QUANTITY</div>
-          <div style={{ fontSize: 22, color: D.amber, fontFamily: 'var(--font-loader)', textShadow: `0 0 20px ${D.amber}44` }}>{(totalQty / 1000).toFixed(0)}K</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 8, padding: '8px 16px' }}>
+          <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', marginBottom: 3 }}>ACTUAL QUANTITY</div>
+          <div style={{ fontSize: 20, color: D.text, fontFamily: 'var(--font-loader)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{(totalQty / 1000).toFixed(0)}K</div>
         </div>
-        <div style={{ display: 'flex', gap: 6, background: D.bg, borderRadius: 8, padding: 4, border: `1px solid ${D.border}` }}>
-          {(['summary', 'detail'] as const).map(v => <button key={v} className={view === v ? undefined : 'seg-btn'} onClick={() => setView(v)} style={{ background: view === v ? D.amber : 'transparent', color: view === v ? '#000' : D.muted, border: 'none', borderRadius: 5, padding: '5px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: view === v ? 700 : 400 }}>{v}</button>)}
-        </div>
+        <Seg value={view} onChange={setView} options={[{ key: 'summary', label: 'Summary' }, { key: 'detail', label: 'Detail' }]} />
       </div>
       {view === 'summary' ? (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Category', 'Items', 'Total Qty', 'Amount'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {byCategory.map((r, i) => <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
-              <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.category}</td>
-              <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.items}</td>
-              <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-              <td style={{ padding: '10px 14px', color: r.amount > 0 ? D.green : D.sub, fontFamily: 'var(--font-mono)' }}>{r.amount > 0 ? r.amount.toLocaleString() : '—'}</td>
-            </tr>)}
-          </tbody>
-        </table>
-      ) : (
-        <>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Description', 'Category', 'Type', 'Qty', 'Unit', 'Reports'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+        <div style={wrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead><tr>{['Category', 'Items', 'Total Qty', 'Amount'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
-              {pageItems.map((r: any, i: number) => <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
-                <td style={{ padding: '10px 14px', color: D.text, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.activity_category}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.activity_type}</td>
-                <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.qty?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                <td style={{ padding: '10px 14px', color: D.sub, fontFamily: 'var(--font-mono)' }}>{r.unit}</td>
-                <td style={{ padding: '10px 14px', fontFamily: 'var(--font-mono)' }}>{r.report_count > 0 ? <span style={{ background: 'rgba(52,211,153,0.12)', color: D.green, border: `1px solid rgba(52,211,153,0.25)`, padding: '2px 8px', borderRadius: 5, fontSize: 10 }}>{r.report_count}</span> : <span style={{ color: D.sub }}>—</span>}</td>
+              {byCategory.map((r, i) => <tr key={i} className="tbl-row">
+                <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.category}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.items}</td>
+                <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)' }}>{r.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td style={{ ...td, color: r.amount > 0 ? D.green : D.sub, fontFamily: 'var(--font-mono)' }}>{r.amount > 0 ? r.amount.toLocaleString() : '—'}</td>
               </tr>)}
             </tbody>
           </table>
-          {items.length > PAGE && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-              <button className="btn-ghost" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ background: 'transparent', color: page === 0 ? D.sub : D.amber, border: `1px solid ${page === 0 ? D.sub : D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: page === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)' }}>‹ Prev</button>
-              <span style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)' }}>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, items.length)} of {items.length}</span>
-              <button className="btn-ghost" onClick={() => setPage(p => Math.min(Math.ceil(items.length / PAGE) - 1, p + 1))} style={{ background: 'transparent', color: D.amber, border: `1px solid ${D.amber}30`, borderRadius: 7, padding: '6px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>Next ›</button>
-            </div>
-          )}
+        </div>
+      ) : (
+        <>
+          <div style={wrap}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 640 }}>
+              <thead><tr>{['Description', 'Category', 'Type', 'Qty', 'Unit', 'Reports'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {pageItems.map((r: any, i: number) => <tr key={i} className="tbl-row">
+                  <td style={{ ...td, color: D.text, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.description}>{r.description}</td>
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.activity_category}</td>
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.activity_type}</td>
+                  <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)' }}>{r.qty?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                  <td style={{ ...td, color: D.sub, fontFamily: 'var(--font-mono)' }}>{r.unit}</td>
+                  <td style={td}>{r.report_count > 0 ? <Pill kind="ok">{r.report_count}</Pill> : <span style={{ color: D.sub }}>—</span>}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} total={items.length} pageSize={PAGE} onPage={setPage} />
         </>
       )}
     </div>
@@ -511,89 +495,95 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
 
 /* ── Activity Reports ──────────────────────────────────────── */
 function ActivityReportsPanel({ reportsByType, recentReports }: { reportsByType: ProgressData['reportsByType']; recentReports: ProgressData['recentReports'] }) {
+  const { th, td, wrap } = useTableStyles()
   const { colors: D } = useTheme()
   const [view, setView] = useState<'by_type' | 'recent'>('by_type')
+  const statusKind = (s: string): 'ok' | 'accent' | 'mut' => /complete/i.test(s) ? 'ok' : /progress|ongoing/i.test(s) ? 'accent' : 'mut'
   return (
     <div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: D.bg, borderRadius: 8, padding: 4, border: `1px solid ${D.border}`, width: 'fit-content' }}>
-        {([{ key: 'by_type', label: 'By Activity Type' }, { key: 'recent', label: 'Recent Reports' }] as const).map(v => <button key={v.key} className={view === v.key ? undefined : 'seg-btn'} onClick={() => setView(v.key)} style={{ background: view === v.key ? D.amber : 'transparent', color: view === v.key ? '#000' : D.muted, border: 'none', borderRadius: 5, padding: '5px 16px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: view === v.key ? 700 : 400 }}>{v.label}</button>)}
+      <div style={{ marginBottom: 16 }}>
+        <Seg value={view} onChange={setView} options={[{ key: 'by_type', label: 'By Activity Type' }, { key: 'recent', label: 'Recent Reports' }]} />
       </div>
       {view === 'by_type' ? (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Activity Type', 'Total Reports', 'Completed', 'In Progress', 'Linked Entities', 'Latest Activity'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {reportsByType.map((r, i) => <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
-              <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.type}</td>
-              <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)' }}>{r.count}</td>
-              <td style={{ padding: '10px 14px', color: D.green, fontFamily: 'var(--font-mono)' }}>{r.completed}</td>
-              <td style={{ padding: '10px 14px', color: D.amber, fontFamily: 'var(--font-mono)' }}>{r.inProgress}</td>
-              <td style={{ padding: '10px 14px', fontFamily: 'var(--font-mono)' }}>{r.linked ? <span style={{ background: 'rgba(96,165,250,0.12)', color: D.blue, border: `1px solid rgba(96,165,250,0.25)`, padding: '2px 8px', borderRadius: 5, fontSize: 10 }}>{r.linked}</span> : <span style={{ color: D.sub }}>—</span>}</td>
-              <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.latest ? new Date(r.latest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'}</td>
-            </tr>)}
-          </tbody>
-        </table>
+        <div style={wrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 640 }}>
+            <thead><tr>{['Activity Type', 'Total Reports', 'Completed', 'In Progress', 'Linked Entities', 'Latest Activity'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {reportsByType.map((r, i) => <tr key={i} className="tbl-row">
+                <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.type}</td>
+                <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)' }}>{r.count}</td>
+                <td style={{ ...td, color: D.green, fontFamily: 'var(--font-mono)' }}>{r.completed}</td>
+                <td style={{ ...td, color: D.amber, fontFamily: 'var(--font-mono)' }}>{r.inProgress}</td>
+                <td style={td}>{r.linked ? <Pill kind="accent">{r.linked}</Pill> : <span style={{ color: D.sub }}>—</span>}</td>
+                <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.latest ? new Date(r.latest).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>{['Date', 'Activity Type', 'Category', 'Status', 'Reporter', 'Section', 'Chainage'].map(h => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
-          <tbody>
-            {recentReports.map((r, i) => {
-              const sc: Record<string, string> = { Completed: D.green, Complete: D.green, 'In Progress': D.amber, Ongoing: D.amber, Pending: D.blue }
-              const statusColor = sc[r.activity_status] || D.sub
-              return <tr key={i} className="tbl-row" style={{ borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'}</td>
-                <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600, whiteSpace: 'nowrap' }}>{r.activity_type || '—'}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.activity_category || '—'}</td>
-                <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}><span style={{ background: `${statusColor}15`, color: statusColor, border: `1px solid ${statusColor}30`, padding: '3px 10px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 10 }}>{r.activity_status || '—'}</span></td>
-                <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.reporter_name || '—'}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.section_name || '—'}</td>
-                <td style={{ padding: '10px 14px', color: D.muted, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{r.start_chainage || '—'}</td>
-              </tr>
-            })}
-          </tbody>
-        </table>
+        <div style={wrap}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+            <thead><tr>{['Date', 'Activity Type', 'Category', 'Status', 'Reporter', 'Section', 'Chainage'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {recentReports.map((r, i) => (
+                <tr key={i} className="tbl-row">
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'}</td>
+                  <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{r.activity_type || '—'}</td>
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.activity_category || '—'}</td>
+                  <td style={td}>{r.activity_status ? <Pill kind={statusKind(r.activity_status)}>{r.activity_status}</Pill> : <span style={{ color: D.sub }}>—</span>}</td>
+                  <td style={{ ...td, color: D.text, fontFamily: 'var(--font-mono)' }}>{r.reporter_name || '—'}</td>
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.section_name || '—'}</td>
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{r.start_chainage || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
 }
 
-/* ── Skeleton ──────────────────────────────────────────────── */
+/* ── Skeleton ─────────────────────────────────────────────── */
 function Skeleton({ h }: { h: number }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ height: h, borderRadius: 16, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
-      <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, rgba(212,160,64,0.04) 50%, transparent 100%)`, animation: 'shimmer 2s ease-in-out infinite' }} />
+    <div style={{ height: h, borderRadius: 10, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
+      <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, ${D.panel2} 50%, transparent 100%)`, animation: 'shimmer 1.6s ease-in-out infinite' }} />
     </div>
   )
 }
 
-const IconCheck = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-const IconClock = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-const IconAlert = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-const IconList  = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+const IconCheck = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+const IconClock = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+const IconAlert = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+const IconList = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+
+const TABS = [{ key: 'overview', label: 'Overview' }, { key: 'planning', label: 'Planning' }, { key: 'boq', label: 'BOQ' }, { key: 'reports', label: 'Activity Reports' }] as const
 
 /* ── Main Page ─────────────────────────────────────────────── */
 function ProgressPageInner() {
-  const { colors: D, shadows: SH } = useTheme()
+  const { colors: D } = useTheme()
   const router = useRouter()
-  const [data, setData]           = useState<ProgressData | null>(null)
-  const [loading, setLoading]     = useState(true)
+  const [data, setData] = useState<ProgressData | null>(null)
+  const [loading, setLoading] = useState(true)
   const [filtering, setFiltering] = useState(false)
-  const [error, setError]         = useState('')
+  const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'overview' | 'planning' | 'boq' | 'reports'>('overview')
 
   const [filterEntity, setFilterEntity] = useState('')
-  const [filterSide,   setFilterSide]   = useState('')
-  const [filterMonth,  setFilterMonth]  = useState('')
-  const [chFrom,       setChFrom]       = useState('')
-  const [chTo,         setChTo]         = useState('')
+  const [filterSide, setFilterSide] = useState('')
+  const [filterMonth, setFilterMonth] = useState('')
+  const [chFrom, setChFrom] = useState('')
+  const [chTo, setChTo] = useState('')
   const [applied, setApplied] = useState({ entity: '', side: '', month: '', chFrom: '', chTo: '' })
 
   const loadData = useCallback((params: { entity: string; side: string; month: string; chFrom: string; chTo: string }, isFilter = false) => {
     if (isFilter) setFiltering(true); else setLoading(true)
     const qs = new URLSearchParams({ project: 'Coastal Road' })
     if (params.entity) qs.set('entity', params.entity)
-    if (params.side)   qs.set('side',   params.side)
-    if (params.month)  qs.set('month',  params.month)
+    if (params.side) qs.set('side', params.side)
+    if (params.month) qs.set('month', params.month)
     if (params.chFrom && params.chTo) { qs.set('ch_from', params.chFrom); qs.set('ch_to', params.chTo) }
     fetch(`/api/progress?${qs.toString()}`)
       .then(async r => {
@@ -613,140 +603,113 @@ function ProgressPageInner() {
     setApplied(params)
     loadData(params, true)
   }
-
   const clearFilters = () => {
     setFilterEntity(''); setFilterSide(''); setFilterMonth(''); setChFrom(''); setChTo('')
     const p = { entity: '', side: '', month: '', chFrom: '', chTo: '' }
     setApplied(p); loadData(p, true)
   }
-
   const hasFilters = !!(applied.entity || applied.side || applied.month || applied.chFrom)
 
-  const selectStyle: React.CSSProperties = { background: D.bg, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer', minWidth: 148, outline: 'none' }
-  const inputStyle:  React.CSSProperties = { ...selectStyle, minWidth: 108 }
-  const labelStyle:  React.CSSProperties = { fontSize: 10, color: D.muted, letterSpacing: 1.5, fontFamily: 'var(--font-mono)', textTransform: 'uppercase' as const, marginBottom: 5 }
-
-  const CHIP_COLORS: Record<string, string> = { entity: D.amber, side: D.blue, month: D.green, ch: D.purple }
+  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none' }
+  const selectStyle: React.CSSProperties = { ...field, minWidth: 150, cursor: 'pointer' }
+  const inputStyle: React.CSSProperties = { ...field, minWidth: 110 }
+  const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
 
   return (
-    <div style={{ minHeight: '100vh', background: D.bg, color: D.text, fontFamily: 'var(--font-dm-sans)', position: 'relative' }}>
-
-      {/* Ambient background glows */}
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', width: 800, height: 800, borderRadius: '50%', background: 'radial-gradient(circle, rgba(212,160,64,0.03) 0%, transparent 65%)', top: '-10%', right: '-10%', animation: 'float1 28s ease-in-out infinite' }} />
-        <div style={{ position: 'absolute', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(52,211,153,0.02) 0%, transparent 65%)', bottom: '5%', left: '-5%', animation: 'float2 34s ease-in-out infinite' }} />
-        {/* Subtle grid */}
-        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)', backgroundSize: '60px 60px', opacity: 0.6 }} />
-      </div>
-
-      {/* Sub-header */}
-      <div className="sub-header-bar" style={{ position: 'sticky', top: 52, zIndex: 50, background: `${D.bg}f2`, backdropFilter: 'blur(12px)', borderBottom: `1px solid ${D.border}`, padding: '0 32px', display: 'flex', alignItems: 'center', gap: 20, height: 46, overflowX: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <span style={{ fontFamily: 'var(--font-loader)', fontSize: '1.05rem', letterSpacing: '0.14em', color: D.amber, textShadow: `0 0 20px ${D.amber}44` }}>PROGRESS</span>
-          <span className="sub-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', letterSpacing: '0.14em', color: D.sub, textTransform: 'uppercase', background: D.panel, padding: '2px 8px', borderRadius: 4, border: `1px solid ${D.border}` }}>Coastal Road · 1b&c</span>
+    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+      {/* sub-header */}
+      <div className="sub-header-bar" style={{ position: 'sticky', top: '3.5rem', zIndex: 50, background: D.bg, borderBottom: `1px solid ${D.border}`, padding: '0 24px', display: 'flex', alignItems: 'center', gap: 18, height: 46, overflowX: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontWeight: 600, fontSize: 14, letterSpacing: '-0.01em', color: D.text }}>Progress</span>
+          <span className="sub-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.06em', color: D.sub, textTransform: 'uppercase' }}>Coastal Road · 1b&amp;c</span>
         </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, marginLeft: 20, background: D.bg, borderRadius: 8, padding: 3, border: `1px solid ${D.border}`, flexShrink: 0 }}>
-          {([{ key: 'overview', label: 'Overview' }, { key: 'planning', label: 'Planning' }, { key: 'boq', label: 'BOQ' }, { key: 'reports', label: 'Activity Reports' }] as const).map(t => (
-            <button key={t.key} className={activeTab === t.key ? undefined : 'seg-btn'} onClick={() => setActiveTab(t.key)} style={{ background: activeTab === t.key ? D.amber : 'transparent', color: activeTab === t.key ? '#000' : D.sub, border: 'none', borderRadius: 6, padding: '4px 14px', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: activeTab === t.key ? 700 : 400, boxShadow: activeTab === t.key ? `0 0 12px ${D.amber}44` : 'none' }}>{t.label}</button>
+        <div style={{ display: 'flex', gap: 2, marginLeft: 12, flexShrink: 0 }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              fontFamily: 'var(--font-body)', fontSize: 12.5, fontWeight: activeTab === t.key ? 600 : 500,
+              color: activeTab === t.key ? D.text : D.muted, background: 'transparent',
+              border: 0, borderBottom: `2px solid ${activeTab === t.key ? D.amber : 'transparent'}`,
+              padding: '12px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>{t.label}</button>
           ))}
         </div>
-
-        {/* Filter loading indicator */}
-        {filtering && <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-          <div style={{ width: 5, height: 5, borderRadius: '50%', background: D.amber, animation: 'pulse 1s ease-in-out infinite' }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: D.amber, letterSpacing: '0.1em' }}>FILTERING…</span>
-        </div>}
-
-        <div className="sub-date" style={{ marginLeft: filtering ? 0 : 'auto', flexShrink: 0, fontSize: '0.55rem', color: D.sub, fontFamily: 'var(--font-mono)' }}>
+        {filtering && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 10, color: D.amber, letterSpacing: '0.08em', flexShrink: 0 }}>FILTERING…</span>}
+        <span className="sub-date" style={{ marginLeft: filtering ? 0 : 'auto', flexShrink: 0, fontSize: 10.5, color: D.sub, fontFamily: 'var(--font-mono)' }}>
           {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-        </div>
+        </span>
       </div>
 
-      <div className="dash-content" style={{ padding: '28px 32px 80px', maxWidth: 1480, margin: '0 auto', position: 'relative', zIndex: 1 }}>
-        {error && <div style={{ background: 'rgba(248,113,113,0.06)', border: `1px solid rgba(248,113,113,0.2)`, borderRadius: 12, padding: '14px 18px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: '0.78rem', marginBottom: 20 }}>{error}</div>}
+      <div className="dash-content" style={{ padding: '24px', maxWidth: 1240, margin: '0 auto' }}>
+        {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
-        {/* ── Filter Bar ── */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px 20px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, marginBottom: 24, boxShadow: SH.panel, opacity: filtering ? 0.75 : 1, transition: `opacity 0.3s ${EASE}` }}>
+        {/* filter bar */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, marginBottom: 20 }}>
+          <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.muted }}>Filters</span>
           {[
             { label: 'Entity', el: <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select> },
-            { label: 'Side',   el: <select value={filterSide}   onChange={e => setFilterSide(e.target.value)}   style={{ ...selectStyle, minWidth: 110 }}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select> },
+            { label: 'Side', el: <select value={filterSide} onChange={e => setFilterSide(e.target.value)} style={{ ...selectStyle, minWidth: 110 }}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select> },
             { label: 'Planned Month', el: <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={{ ...selectStyle, minWidth: 140 }}><option value=''>All Months</option>{(data?.filterOptions.months ?? []).map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}</select> },
-            { label: 'Chainage From', el: <input type='number' placeholder='e.g. 20000' value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /> },
-            { label: 'Chainage To',   el: <input type='number' placeholder='e.g. 35000' value={chTo}   onChange={e => setChTo(e.target.value)}   style={inputStyle} /> },
+            { label: 'Chainage From', el: <input type='number' placeholder='20000' value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /> },
+            { label: 'Chainage To', el: <input type='number' placeholder='35000' value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /> },
           ].map(({ label, el }) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={labelStyle}>{label}</div>
-              {el}
-            </div>
+            <div key={label} style={{ display: 'flex', flexDirection: 'column' }}><span style={labelStyle}>{label}</span>{el}</div>
           ))}
-
-          <button className="btn-primary-amber" onClick={applyFilters} style={{ background: `linear-gradient(135deg, ${D.amber}, ${D.amberL})`, color: '#000', border: 'none', borderRadius: 8, padding: '7px 22px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end', fontWeight: 700, boxShadow: `0 4px 16px ${D.amber}44`, textTransform: 'uppercase' }}>
-            Apply
-          </button>
-
-          {hasFilters && <button className="btn-ghost" onClick={clearFilters} style={{ background: 'transparent', color: D.amber, border: `1px solid rgba(212,160,64,0.3)`, borderRadius: 8, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: 1, alignSelf: 'flex-end' }}>✕ Clear</button>}
-
+          <button onClick={applyFilters} style={{ background: D.amber, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', alignSelf: 'flex-end', fontWeight: 600 }}>Apply</button>
+          {hasFilters && <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
           {hasFilters && (
-            <div style={{ alignSelf: 'flex-end', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {applied.entity  && <span style={{ background: `rgba(212,160,64,0.1)`,  color: D.amber,  border: `1px solid rgba(212,160,64,0.25)`,  padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 10, animation: 'chipIn 0.3s cubic-bezier(0.16,1,0.3,1)' }}>{applied.entity}</span>}
-              {applied.side    && <span style={{ background: `rgba(96,165,250,0.1)`,  color: D.blue,   border: `1px solid rgba(96,165,250,0.25)`,  padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 10, animation: 'chipIn 0.3s cubic-bezier(0.16,1,0.3,1)' }}>{applied.side}</span>}
-              {applied.month   && <span style={{ background: `rgba(52,211,153,0.1)`,  color: D.green,  border: `1px solid rgba(52,211,153,0.25)`,  padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 10, animation: 'chipIn 0.3s cubic-bezier(0.16,1,0.3,1)' }}>{fmtMonth(applied.month)}</span>}
-              {applied.chFrom && applied.chTo && <span style={{ background: `rgba(167,139,250,0.1)`, color: D.purple, border: `1px solid rgba(167,139,250,0.25)`, padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 10, animation: 'chipIn 0.3s cubic-bezier(0.16,1,0.3,1)' }}>CH {Number(applied.chFrom).toLocaleString()} → {Number(applied.chTo).toLocaleString()}</span>}
+            <div style={{ alignSelf: 'center', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {applied.entity && <Pill kind="mut">{applied.entity}</Pill>}
+              {applied.side && <Pill kind="mut">{applied.side}</Pill>}
+              {applied.month && <Pill kind="mut">{fmtMonth(applied.month)}</Pill>}
+              {applied.chFrom && applied.chTo && <Pill kind="mut">CH {Number(applied.chFrom).toLocaleString()} → {Number(applied.chTo).toLocaleString()}</Pill>}
             </div>
           )}
         </div>
 
-        {/* Content */}
         {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>{[0,1,2,3,4].map(i => <Skeleton key={i} h={110} />)}</div>
-            <Skeleton h={320} /><Skeleton h={420} /><Skeleton h={320} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>{[0, 1, 2, 3, 4].map(i => <Skeleton key={i} h={100} />)}</div>
+            <Skeleton h={320} /><Skeleton h={420} />
           </div>
         ) : data && (
-          <div style={{ opacity: filtering ? 0.55 : 1, filter: filtering ? 'blur(1.5px) saturate(0.85)' : 'blur(0) saturate(1)', transform: filtering ? 'scale(0.997)' : 'scale(1)', pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.35s ${EASE}, filter 0.35s ${EASE}, transform 0.35s ${EASE}` }}>
+          <div style={{ opacity: filtering ? 0.6 : 1, pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
 
-            {/* ── OVERVIEW ── */}
             {activeTab === 'overview' && (
               <>
-                <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 20 }}>
-                  <KPICard label="Overall Completion"   value={data.summary.overallPct}    suffix="%" color={D.amber}  icon={<IconCheck />} delay={0}   glow={SH.glowAmber} />
-                  <KPICard label="Completed Activities" value={data.summary.totalCompleted}             color={D.green}  icon={<IconCheck />} delay={80}  glow={SH.glowGreen} />
-                  <KPICard label="Delayed Activities"   value={data.summary.delayed}                    color={D.red}    icon={<IconAlert />} delay={160} glow={SH.glowRed} />
-                  <KPICard label="On Schedule"          value={data.summary.onSchedule}                 color={D.green}  icon={<IconClock />} delay={240} glow={SH.glowGreen} />
-                  <KPICard label="Total Entity Types"   value={data.summary.totalEntities}              color={D.purple} icon={<IconList  />} delay={320} />
+                <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 16 }}>
+                  <KPICard label="Overall Completion" value={data.summary.overallPct} suffix="%" color={D.amber} icon={<IconCheck />} delay={0} />
+                  <KPICard label="Completed Activities" value={data.summary.totalCompleted} color={D.green} icon={<IconCheck />} delay={60} />
+                  <KPICard label="Delayed Activities" value={data.summary.delayed} color={D.red} icon={<IconAlert />} delay={120} />
+                  <KPICard label="On Schedule" value={data.summary.onSchedule} color={D.green} icon={<IconClock />} delay={180} />
+                  <KPICard label="Total Entity Types" value={data.summary.totalEntities} icon={<IconList />} delay={240} />
                 </div>
-                <Reveal style={{ marginBottom: 16 }}><Panel title="Progress Curve — Cumulative Completion %"><ProgressCurve data={data.progressCurve} /></Panel></Reveal>
-                <Reveal delay={60} style={{ marginBottom: 16 }}><Panel title="Monthly Progress"><MonthlyProgressTable data={data.monthlyProgress} months={data.allMonths} /></Panel></Reveal>
-                <Reveal delay={120} style={{ marginBottom: 16 }}><Panel title="Visual Progress of Completion — Gantt Chart"><GanttChart data={data.ganttData} /></Panel></Reveal>
+                <Reveal style={{ marginBottom: 14 }}><Card title="Progress Curve" sub="Cumulative completion %"><ProgressCurve data={data.progressCurve} /></Card></Reveal>
+                <Reveal delay={60} style={{ marginBottom: 14 }}><Card title="Monthly Progress"><MonthlyProgressTable data={data.monthlyProgress} months={data.allMonths} /></Card></Reveal>
+                <Reveal delay={120} style={{ marginBottom: 14 }}><Card title="Visual Progress of Completion" sub="Gantt chart"><GanttChart data={data.ganttData} /></Card></Reveal>
               </>
             )}
 
-            {/* ── PLANNING ── */}
             {activeTab === 'planning' && (
               <>
-                <Reveal style={{ marginBottom: 16 }}>
-                  <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
-                    <Panel title="Delayed vs On Schedule"><DelayDonut delayed={data.summary.delayed} onSchedule={data.summary.onSchedule} /></Panel>
-                    <Panel title="Number of Days for Completion by Entities"><DaysByEntityChart data={data.daysByEntity} /></Panel>
+                <Reveal style={{ marginBottom: 14 }}>
+                  <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+                    <Card title="Delayed vs On Schedule"><DelayDonut delayed={data.summary.delayed} onSchedule={data.summary.onSchedule} /></Card>
+                    <Card title="Days for Completion by Entity"><DaysByEntityChart data={data.daysByEntity} /></Card>
                   </div>
                 </Reveal>
-                <Reveal delay={60} style={{ marginBottom: 16 }}><Panel title="Activity Report for Planning"><DelayTable data={data.delayData} /></Panel></Reveal>
+                <Reveal delay={60} style={{ marginBottom: 14 }}><Card title="Activity Report for Planning"><DelayTable data={data.delayData} /></Card></Reveal>
               </>
             )}
 
-            {/* ── BOQ ── */}
             {activeTab === 'boq' && (
-              <Reveal style={{ marginBottom: 16 }}><Panel title="Activity Report in BOQ"><BOQTable items={data.boqItems} byCategory={data.boqByCategory} /></Panel></Reveal>
+              <Reveal style={{ marginBottom: 14 }}><Card title="Activity Report in BOQ"><BOQTable items={data.boqItems} byCategory={data.boqByCategory} /></Card></Reveal>
             )}
 
-            {/* ── REPORTS ── */}
             {activeTab === 'reports' && (
-              <Reveal style={{ marginBottom: 16 }}>
-                <Panel title={`Activity Reports — ${(data.summary.totalReports ?? 0).toLocaleString()} linked reports`}>
+              <Reveal style={{ marginBottom: 14 }}>
+                <Card title="Activity Reports" sub={`${(data.summary.totalReports ?? 0).toLocaleString()} linked reports`}>
                   <ActivityReportsPanel reportsByType={data.reportsByType ?? []} recentReports={data.recentReports ?? []} />
-                </Panel>
+                </Card>
               </Reveal>
             )}
           </div>
@@ -754,48 +717,22 @@ function ProgressPageInner() {
       </div>
 
       <style>{`
-        @keyframes pingAnim { 0% { transform: scale(1); opacity: 0.5; } 75%, 100% { transform: scale(2.8); opacity: 0; } }
-        @keyframes shimmer   { 0% { transform: translateX(-100%); } 100% { transform: translateX(600%); } }
-        @keyframes float1    { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-30px, 20px); } }
-        @keyframes float2    { 0%,100% { transform: translate(0,0); } 50% { transform: translate(20px,-30px); } }
-        @keyframes pulse     { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.4; transform:scale(0.8); } }
-        @keyframes chipIn    { from { opacity:0; transform:scale(0.85) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }
-        select:focus, input:focus { outline: none; border-color: rgba(212,160,64,0.4) !important; box-shadow: 0 0 0 2px rgba(212,160,64,0.1); }
-        select option { background: ${D.bg}; }
+        @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+        select:focus, input:focus { border-color: ${D.amber} !important; box-shadow: 0 0 0 3px ${D.amber}22 !important; }
+        select option { background: ${D.panel}; color: ${D.text}; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity: 0.3; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(212,160,64,0.2); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(212,160,64,0.4); }
-
-        /* ── Shared interactive states ─────────────────────────── */
-        .btn-ghost { transition: background 0.2s ${EASE}, border-color 0.2s ${EASE}, color 0.2s ${EASE}, transform 0.2s ${EASE} !important; }
-        .btn-ghost:not(:disabled):hover { background: rgba(212,160,64,0.1) !important; border-color: rgba(212,160,64,0.55) !important; color: ${D.amberL} !important; transform: translateY(-1px); }
-        .btn-ghost:not(:disabled):active { transform: translateY(0) scale(0.97); }
-        .btn-primary-amber { transition: transform 0.2s ${EASE}, box-shadow 0.2s ${EASE}; }
-        .btn-primary-amber:hover { transform: translateY(-1px); box-shadow: 0 6px 20px ${D.amber}55; }
-        .seg-btn { transition: background 0.2s ${EASE}, color 0.2s ${EASE}; }
-        .seg-btn:hover { background: rgba(255,255,255,0.05) !important; color: ${D.text} !important; }
-        .tbl-row { transition: background 0.15s ${EASE}; }
-        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.014); }
-        .tbl-row:hover { background: rgba(212,160,64,0.045) !important; }
-        .tbl-row-header { transition: background 0.2s ${EASE}; }
-        .tbl-row-header:hover { background: rgba(212,160,64,0.06) !important; }
-
-        /* ── Responsive ─────────────────────────────────────── */
-        @media (max-width: 1180px) {
+        .tbl-row { transition: background 0.12s ease; }
+        .tbl-row:nth-child(even) { background: ${D.panel2}66; }
+        .tbl-row:hover { background: ${D.amber}12 !important; }
+        .tbl-row-header:hover { background: ${D.amber}12 !important; }
+        @media (max-width: 1024px) {
           .kpi-grid { grid-template-columns: repeat(3,1fr) !important; }
-        }
-        @media (max-width: 900px) {
           .grid-responsive { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 640px) {
           .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
-          .dash-content { padding: 18px 14px 60px !important; }
-          .sub-header-bar { padding: 0 14px !important; gap: 12px !important; }
-        }
-        @media (max-width: 480px) {
-          .kpi-grid { grid-template-columns: repeat(1,1fr) !important; }
+          .dash-content { padding: 16px !important; }
+          .sub-header-bar { padding: 0 14px !important; }
           .sub-badge, .sub-date { display: none !important; }
         }
       `}</style>

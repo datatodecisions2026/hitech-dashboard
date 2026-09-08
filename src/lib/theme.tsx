@@ -1,18 +1,25 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { THEME_STORAGE_KEY } from './theme-constants'
+import { THEME_STORAGE_KEY, ThemeMode } from './theme-constants'
 
 export type ThemeName = 'light' | 'dark'
 
 /**
  * Single source of truth for every page's color/shadow tokens (dashboard,
  * progress, machines, personnel, login, DashHeader, SideNav, HitechMap).
- * Colors are plain hex/rgba strings (not CSS vars) because the whole
- * codebase relies on the `${D.amber}20` hex-alpha-suffix pattern for
- * tinted backgrounds/borders, which only works with literal hex — a CSS
- * var() reference can't be suffixed that way. Theme switching therefore
- * happens by re-rendering with a different literal object, via useTheme().
+ *
+ * The palette is now deliberately achromatic — greys for every surface and
+ * all body text — with ONE cold accent (sky) that only ever means
+ * "wayfinding": active nav, links, focus rings, the one primary action.
+ * Status colour (ok / warn — carried on `green` — and `red`) appears only
+ * where it means something.
+ *
+ * Field names are kept from the previous skeuomorphic palette so the ~300
+ * existing `${D.amber}20` hex-alpha-suffix call sites keep working without
+ * a codebase-wide rewrite: `amber` is now the sky accent, `blue`/`purple`
+ * collapse onto neutral/accent, the glow shadows are flattened to nothing.
+ * Theme switching happens by re-rendering with a different literal object.
  */
 export interface ColorTokens {
   bg: string; panel: string; panel2: string; border: string
@@ -28,74 +35,81 @@ export interface ShadowTokens {
   glowAmber: string; glowGreen: string; glowRed: string; borderGlow: string
 }
 
-const DARK_COLORS: ColorTokens = {
-  bg:     '#0e0e10',
-  panel:  '#141416',
-  panel2: '#1a1a1e',
-  border: 'rgba(255,255,255,0.06)',
-  text:   '#e8e2d8',
-  muted:  '#8c867e',
-  sub:    '#3d3b42',
-  amber:  '#d4a040',
-  amberL: '#f0c060',
-  amberD: '#8a6018',
-  red:    '#f87171',
-  green:  '#34d399',
-  blue:   '#60a5fa',
-  purple: '#a78bfa',
-  gold:   'linear-gradient(135deg, #d4a040 0%, #f0c060 50%, #b8860b 100%)',
-}
-
 const LIGHT_COLORS: ColorTokens = {
-  bg:     '#dde3ea',
-  panel:  '#f8f9fb',
-  panel2: '#eef1f5',
-  border: 'rgba(15,23,42,0.10)',
-  text:   '#1e293b',
-  muted:  '#64748b',
-  sub:    '#94a3b8',
-  amber:  '#b8860b',
-  amberL: '#d4a040',
-  amberD: '#8a6018',
-  red:    '#dc2626',
-  green:  '#059669',
-  blue:   '#2563eb',
-  purple: '#7c3aed',
-  gold:   'linear-gradient(135deg, #b8860b 0%, #d4a040 50%, #8a6018 100%)',
+  bg:     '#f5f7f9',   // --ground
+  panel:  '#ffffff',   // --surface
+  panel2: '#eef2f5',   // --surface-2
+  border: '#e3e8ed',   // --line
+  text:   '#0e151c',   // --ink
+  muted:  '#667583',   // --muted
+  sub:    '#9aa7b3',   // faintest text / disabled (between --muted and --line-2)
+  amber:  '#0369a1',   // --accent  (sky-700 — the single wayfinding colour)
+  amberL: '#0284c7',   // accent, bright / hover
+  amberD: '#075985',   // accent, deep
+  red:    '#c62a2f',   // --crit
+  green:  '#15803d',   // --ok
+  blue:   '#0369a1',   // collapsed onto the accent
+  purple: '#667583',   // neutralised
+  gold:   'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
 }
 
-const DARK_SHADOWS: ShadowTokens = {
-  card:       '0 4px 20px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05)',
-  cardLg:     '0 10px 36px rgba(0,0,0,0.82), 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(212,160,64,0.08)',
-  panel:      '0 4px 24px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.03)',
-  panelLg:    '0 10px 36px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03), 0 0 32px rgba(212,160,64,0.05)',
-  well:       'inset 4px 4px 14px rgba(0,0,0,0.88), inset -1px -1px 3px rgba(255,255,255,0.03)',
-  raised:     '3px 3px 10px rgba(0,0,0,0.78), -1px -1px 4px rgba(255,255,255,0.052), inset 0 1px 0 rgba(255,255,255,0.07)',
-  raisedLg:   '5px 5px 18px rgba(0,0,0,0.82), -2px -2px 6px rgba(255,255,255,0.062), inset 0 1px 0 rgba(255,255,255,0.09)',
-  inset:      'inset 0 2px 8px rgba(0,0,0,0.6), inset 0 1px 0 rgba(0,0,0,0.3)',
-  glowAmber:  '0 0 20px rgba(212,160,64,0.15), 0 0 60px rgba(212,160,64,0.05)',
-  glowGreen:  '0 0 20px rgba(52,211,153,0.15)',
-  glowRed:    '0 0 20px rgba(248,113,113,0.15)',
-  borderGlow: '1px solid rgba(212,160,64,0.15)',
+const DARK_COLORS: ColorTokens = {
+  bg:     '#0a0e13',
+  panel:  '#10161d',
+  panel2: '#171f28',
+  border: '#212a34',
+  text:   '#e7edf3',
+  muted:  '#7c8b99',
+  sub:    '#566573',
+  amber:  '#38bdf8',   // --accent (dark)
+  amberL: '#7dd3fc',
+  amberD: '#0ea5e9',
+  red:    '#f2696d',
+  green:  '#4ade80',
+  blue:   '#38bdf8',
+  purple: '#7c8b99',
+  gold:   'linear-gradient(135deg, #38bdf8 0%, #7dd3fc 100%)',
 }
 
 const LIGHT_SHADOWS: ShadowTokens = {
-  card:       '0 2px 10px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
-  cardLg:     '0 8px 28px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.06), 0 0 20px rgba(184,134,11,0.06)',
-  panel:      '0 2px 12px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.04)',
-  panelLg:    '0 8px 28px rgba(15,23,42,0.09), 0 2px 6px rgba(15,23,42,0.05), 0 0 22px rgba(184,134,11,0.05)',
-  well:       'inset 2px 2px 6px rgba(15,23,42,0.09), inset -1px -1px 2px rgba(255,255,255,0.6)',
-  raised:     '2px 2px 6px rgba(15,23,42,0.08), -1px -1px 3px rgba(255,255,255,0.7), inset 0 1px 0 rgba(255,255,255,0.5)',
-  raisedLg:   '3px 3px 10px rgba(15,23,42,0.10), -1px -1px 4px rgba(255,255,255,0.75), inset 0 1px 0 rgba(255,255,255,0.6)',
-  inset:      'inset 0 2px 6px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.5)',
-  glowAmber:  '0 0 16px rgba(184,134,11,0.14), 0 0 40px rgba(184,134,11,0.05)',
-  glowGreen:  '0 0 16px rgba(5,150,105,0.14)',
-  glowRed:    '0 0 16px rgba(220,38,38,0.14)',
-  borderGlow: '1px solid rgba(184,134,11,0.25)',
+  card:       '0 1px 2px rgba(14,21,28,.06)',
+  cardLg:     '0 1px 2px rgba(14,21,28,.06), 0 14px 44px -12px rgba(14,21,28,.14)',
+  panel:      '0 1px 2px rgba(14,21,28,.06)',
+  panelLg:    '0 1px 2px rgba(14,21,28,.06), 0 14px 44px -12px rgba(14,21,28,.14)',
+  well:       'inset 0 1px 2px rgba(14,21,28,.06)',
+  raised:     '0 1px 2px rgba(14,21,28,.06)',
+  raisedLg:   '0 1px 2px rgba(14,21,28,.06), 0 14px 44px -12px rgba(14,21,28,.14)',
+  inset:      'inset 0 1px 2px rgba(14,21,28,.06)',
+  glowAmber:  'none',
+  glowGreen:  'none',
+  glowRed:    'none',
+  borderGlow: '1px solid rgba(3,105,161,.30)',
+}
+
+const DARK_SHADOWS: ShadowTokens = {
+  card:       '0 1px 2px rgba(0,0,0,.5)',
+  cardLg:     '0 1px 2px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.6)',
+  panel:      '0 1px 2px rgba(0,0,0,.5)',
+  panelLg:    '0 1px 2px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.6)',
+  well:       'inset 0 1px 2px rgba(0,0,0,.4)',
+  raised:     '0 1px 2px rgba(0,0,0,.5)',
+  raisedLg:   '0 1px 2px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.6)',
+  inset:      'inset 0 1px 2px rgba(0,0,0,.4)',
+  glowAmber:  'none',
+  glowGreen:  'none',
+  glowRed:    'none',
+  borderGlow: '1px solid rgba(56,189,248,.30)',
 }
 
 interface ThemeContextValue {
+  /** Resolved theme actually in effect — always 'light' | 'dark'. */
   theme: ThemeName
+  /** The user's stored choice — 'light' | 'dark' | 'system'. */
+  mode: ThemeMode
+  setMode: (m: ThemeMode) => void
+  /** light → dark → system → light */
+  cycleMode: () => void
+  /** Back-compat alias for cycleMode() (old ThemeToggle contract). */
   toggleTheme: () => void
   colors: ColorTokens
   shadows: ShadowTokens
@@ -104,33 +118,48 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Always starts at 'dark' — the same value the server renders, since
-  // `document`/localStorage don't exist there. Reading the DOM here in the
-  // initializer would make the client's hydration render (document already
-  // has the blocking <head> script's data-theme attribute by then) disagree
-  // with the server's render, which is a hydration mismatch, not a fix for
-  // one. The real value is picked up in the effect below instead, which
-  // only runs after hydration completes — one extra re-render, but no
-  // server/client disagreement.
-  const [theme, setTheme] = useState<ThemeName>('dark')
+  // Server + first client (hydration) render both compute from these
+  // defaults, so they agree. The real stored mode and the live OS
+  // preference are read in the effect below, which only runs after
+  // hydration — one extra re-render, never a server/client mismatch.
+  const [mode, setModeState] = useState<ThemeMode>('system')
+  const [systemDark, setSystemDark] = useState(false)
 
   useEffect(() => {
-    const attr = document.documentElement.dataset.theme
-    if (attr === 'light' && attr !== theme) setTheme('light')
+    let stored: ThemeMode = 'system'
+    try {
+      const t = localStorage.getItem(THEME_STORAGE_KEY)
+      if (t === 'light' || t === 'dark' || t === 'system') stored = t
+    } catch {}
+    setModeState(stored)
+
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
+    setSystemDark(mql.matches)
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
   }, [])
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    try { localStorage.setItem(THEME_STORAGE_KEY, theme) } catch {}
-  }, [theme])
+  const theme: ThemeName = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
 
-  const toggleTheme = useCallback(() => {
-    setTheme(t => (t === 'dark' ? 'light' : 'dark'))
+  useEffect(() => {
+    // The no-FOUC script always resolves data-theme to 'light' | 'dark'
+    // (never leaves it unset), so CSS only needs [data-theme] blocks.
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem(THEME_STORAGE_KEY, mode) } catch {}
+  }, [theme, mode])
+
+  const setMode = useCallback((m: ThemeMode) => setModeState(m), [])
+  const cycleMode = useCallback(() => {
+    setModeState(m => (m === 'light' ? 'dark' : m === 'dark' ? 'system' : 'light'))
   }, [])
 
   const value: ThemeContextValue = {
     theme,
-    toggleTheme,
+    mode,
+    setMode,
+    cycleMode,
+    toggleTheme: cycleMode,
     colors: theme === 'light' ? LIGHT_COLORS : DARK_COLORS,
     shadows: theme === 'light' ? LIGHT_SHADOWS : DARK_SHADOWS,
   }

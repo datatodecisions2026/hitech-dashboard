@@ -53,7 +53,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ minHeight: 'calc(100vh - 52px)', background: D.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', padding: '24px 16px' }}>
+    <main style={{ minHeight: '100vh', background: D.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', padding: '24px 16px' }}>
       {/* Ambient glow */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
@@ -158,11 +158,11 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} style={{
               width: '100%', padding: '14px',
               background: loading ? `${D.amber}80` : D.amber,
-              color: '#1a1410', border: 'none', borderRadius: 11,
-              fontFamily: 'var(--font-loader)', fontWeight: 400, fontSize: '1rem',
+              color: '#ffffff', border: 'none', borderRadius: 11,
+              fontFamily: 'var(--font-loader)', fontWeight: 600, fontSize: '0.95rem',
               cursor: loading ? 'not-allowed' : 'pointer',
-              letterSpacing: '0.12em',
-              boxShadow: loading ? 'none' : `0 4px 24px ${D.amber}48`,
+              letterSpacing: '0.08em',
+              boxShadow: loading ? 'none' : `0 4px 24px ${D.amber}33`,
               transition: 'background 0.2s, box-shadow 0.2s',
               marginTop: 4,
             }}>

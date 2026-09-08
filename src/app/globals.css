@@ -1,9 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --font-display: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
-  --font-body:    var(--font-dm-sans), 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono:    var(--font-dm-mono), 'DM Mono', ui-monospace, monospace;
+  --font-display: var(--font-geist), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body:    var(--font-geist), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  /* kept for the ~300 existing `var(--font-loader)` call sites — display numbers
+     now render Geist (weight applied per element), no separate display face */
+  --font-loader:  var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  /* back-compat aliases — pages not yet migrated still reference these names */
+  --font-dm-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-dm-mono: var(--font-geist-mono), ui-monospace, monospace;
+  color-scheme: light;
 }
 
 html, body {
@@ -12,17 +19,26 @@ html, body {
 }
 
 body {
-  background: #0e0e10;
-  color: #e8e2d8;
+  background: #f5f7f9;
+  color: #0e151c;
   font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  transition: background 0.25s ease, color 0.25s ease;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-:root[data-theme='light'] body {
-  background: #dde3ea;
-  color: #1e293b;
+/* The no-FOUC script always resolves data-theme to an explicit value, so
+   [data-theme] is the source of truth; @media is the no-JS fallback. */
+:root[data-theme='dark'] { color-scheme: dark; }
+:root[data-theme='dark'] body { background: #0a0e13; color: #e7edf3; }
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='light'] body { background: #f5f7f9; color: #0e151c; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { color-scheme: dark; }
+  :root:not([data-theme='light']) body { background: #0a0e13; color: #e7edf3; }
 }
 
 * {
@@ -40,6 +56,22 @@ pre, code {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+:focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+:root[data-theme='dark'] :focus-visible { outline-color: #38bdf8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) :focus-visible { outline-color: #38bdf8; }
+}
+
+/* thin neutral scrollbars (was amber) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(102,117,131,0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(102,117,131,0.55); }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
@@ -82,13 +114,13 @@ pre, code {
 }
 
 @keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 6px rgba(212,160,64,0.25), 0 0 18px rgba(212,160,64,0.08); }
-  50%       { box-shadow: 0 0 14px rgba(212,160,64,0.55), 0 0 36px rgba(212,160,64,0.18); }
+  0%, 100% { opacity: 0.7; }
+  50%       { opacity: 1; }
 }
 
 @keyframes accentBarPulse {
   0%, 100% { opacity: 0.7; }
-  50%       { opacity: 1; box-shadow: 0 0 10px currentColor; }
+  50%       { opacity: 1; }
 }
 
 @keyframes borderFlicker {
