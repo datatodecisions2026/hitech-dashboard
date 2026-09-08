@@ -1,11 +1,12 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-const HitechMapComponent = dynamic(() => import('@/components/HitechMap'), { ssr: false })
+const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false })
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
+import { useMapView } from '@/lib/map-view'
 
 /* ── motion ────────────────────────────────────────────────── */
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
@@ -639,7 +640,7 @@ function DashboardPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [firstName, setFirstName] = useState('')
-  const [focusReport, setFocusReport] = useState<DashData['recentReports'][number] | null>(null)
+  const { setFocusRequest } = useMapView()
   const requestIdRef = useRef(0)
   const pendingExtraRef = useRef<{ reqId: number; x: Partial<DashData> } | null>(null)
   const mapPanelRef = useRef<HTMLDivElement>(null)
@@ -703,10 +704,26 @@ function DashboardPageInner() {
   }
 
   function handleSelectReport(r: DashData['recentReports'][number]) {
-    const currentProject = data?.activeFilters.filterProject || 'Coastal Road'
-    const reportWord = (r.project_name || '').trim().split(' ')[0].toLowerCase()
-    if (reportWord && !currentProject.toLowerCase().includes(reportWord)) handleFilter('project', r.project_name)
-    setFocusReport(r)
+    // Zoom the shared map to this report's real location. Calabar/Kebbi/Ogun
+    // reports carry real GPS; Section 1 reports are positioned by chainage on
+    // the map itself, so passing their raw GPS (also present) is fine here.
+    const s = `${r.section_name || ''} ${r.project_name || ''}`.toLowerCase()
+    const enableLayer =
+      s.includes('calabar') ? 'calabar' as const :
+      s.includes('ogun')    ? 'ogun' as const :
+      (s.includes('kebbi') || s.includes('sokoto')) ? 'kebbi' as const :
+      'reports' as const
+    const lat = r.start_chainage_lat  ? parseFloat(r.start_chainage_lat)  : NaN
+    const lng = r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN
+    setFocusRequest({
+      lat, lng, zoom: 16, reportId: r.id, enableLayer,
+      popup: {
+        activity_category: r.activity_category, activity_type: r.activity_type,
+        activity_status: r.activity_status, reporter_name: r.reporter_name,
+        section_name: r.section_name, date_of_activity: r.date_of_activity,
+        start_chainage: r.start_chainage, end_chainage: r.end_chainage,
+      },
+    })
     mapPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
@@ -783,14 +800,12 @@ function DashboardPageInner() {
 
             <Reveal style={{ marginBottom: 16 }}>
               <div ref={mapPanelRef}>
-                <Card title="Activity Map" sub="GPS coordinates by project" bodyPad={false}>
+                <Card title="Activity Map" sub="All sections — road line, activity reports, and surveyed assets" bodyPad={false}>
                   <div style={{ padding: 12 }}>
-                    <HitechMapComponent
-                      project={data.activeFilters.filterProject || 'Coastal Road'}
+                    <UnifiedMap
                       chFrom={data.activeFilters.filterChFrom}
                       chTo={data.activeFilters.filterChTo}
                       category={data.activeFilters.filterCategory}
-                      focusReport={focusReport}
                     />
                   </div>
                 </Card>

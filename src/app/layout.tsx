@@ -5,6 +5,7 @@ import './globals.css'
 import AppShell from '@/components/AppShell'
 import { ThemeProvider } from '@/lib/theme'
 import { SidebarProvider } from '@/lib/sidebar'
+import { MapViewProvider } from '@/lib/map-view'
 import { THEME_STORAGE_KEY } from '@/lib/theme-constants'
 
 // Runs before hydration so there is no flash of the wrong theme. Resolves
@@ -31,7 +32,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${fontDisplay.variable} ${fontBody.variable} ${fontMono.variable}`} suppressHydrationWarning>
         <ThemeProvider>
           <SidebarProvider>
-            <AppShell>{children}</AppShell>
+            <MapViewProvider>
+              <AppShell>{children}</AppShell>
+            </MapViewProvider>
           </SidebarProvider>
         </ThemeProvider>
       </body>

@@ -5,6 +5,10 @@
 // stub instead of the real value, which breaks at runtime.
 export const THEME_STORAGE_KEY = 'hitech-theme'
 export const SIDEBAR_STORAGE_KEY = 'hitech-sidebar'
+// Shared map (UnifiedMap / MapViewProvider) — remembers which layers are on
+// and the colour-by mode across route changes and reloads. The camera and
+// any pending focus request are session-only, not persisted here.
+export const MAP_VIEW_STORAGE_KEY = 'hitech-map-view'
 
 // Rail geometry — imported by both SideNav (the fixed rail itself) and
 // AppShell (the content column's matching left offset) so the two never

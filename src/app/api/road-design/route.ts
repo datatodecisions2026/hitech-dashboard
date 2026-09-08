@@ -150,7 +150,7 @@ export async function GET(req: NextRequest) {
   const config = ROAD_DESIGN_LAYERS[project]
 
   // Not every project has design CAD data (only Coastal Road / Section 1c
-  // today) — this is an expected, non-error case, not a 404. HitechMap's
+  // today) — this is an expected, non-error case, not a 404. UnifiedMap's
   // fetch is unconditional per-project; the empty response is what makes
   // that safe.
   if (!config) return NextResponse.json({ project, source: 'none', layers: [] })

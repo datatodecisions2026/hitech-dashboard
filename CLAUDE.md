@@ -18,7 +18,7 @@ src/
     dashboard/page.tsx      # Main dashboard (skeuomorphic, ~990 lines, self-contained)
     progress/page.tsx       # Construction progress dashboard (~820 lines, self-contained — own Panel/KPICard/Reveal, not shared with dashboard/page.tsx)
     machines/page.tsx       # Machines-focused view of dashboard data, self-contained (own Panel/KPICard/FilterBar)
-    personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx)
+    personnel/page.tsx      # Personnel-focused view of dashboard data, self-contained (near-identical structure to machines/page.tsx). Also hosts the "Personnel History" section — an HR-roster audit-trail table backed by GET /api/personnel-history, independent of the dashboard filter bar. See 2026-09-08 (6) changelog
     planning-implementation/page.tsx  # Per-section Total/Planned/Implemented activity comparison COMBINED with the 7.27M-row road_assets map/KPIs/section breakdown — project+section filter bar cross-filters both, self-contained (own Panel/KPICard/Reveal). See 2026-08-05 changelog
     road-assets/page.tsx    # Redirect only (next/navigation redirect('/planning-implementation')) — the map-clustering view of road_assets is no longer a standalone page, folded into planning-implementation/page.tsx. Kept so old links don't 404. See 2026-08-05 changelog
     road-assets-coverage/page.tsx    # Calabar/Ogun/Kebbi as-built asset-layer coverage page, self-contained — own Panel/KPICard/Reveal. Overview + Timeline (gauges/bar chart/histogram/Gantt) + By Chainage (real per-segment coverage bar + fabricated itemized completion log, entity/date/chainage filters) tabs — real data mixed with a fabricated planned schedule throughout, not visually distinguished in the UI as of 2026-08-01 (3). A different view of the road_assets table than the map-clustering one now embedded in planning-implementation/page.tsx — two people independently built two different views in parallel; both kept, see the 2026-08-05 changelog entry. See 2026-08-01 changelog entries
@@ -33,14 +33,16 @@ src/
       road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
       planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC, PLUS road_assets stats (summary/project/section/entity-type) and a combined total/implemented figure (session-guarded). See 2026-08-05 changelog
       road-assets/route.ts  # GET — clustered road-design asset points + summary/project/section/entity-type stats from Supabase (session-guarded) — still used by RoadAssetsMap, now embedded in /planning-implementation rather than its own page. See 2026-08-04/2026-08-05 changelog
+      personnel-history/route.ts  # GET — HR staff roster (surveycollection_employee) + merged audit trail from surveycollection_employee_history + surveycollection_employee_status_history (session-guarded). Tiny tables — one payload, no RPC. Backs the /personnel "Personnel History" section. See 2026-09-08 (6) changelog
       road-assets-coverage/route.ts  # GET  — as-built asset-layer coverage/gap stats for road_assets (session-guarded). See 2026-08-01 changelog
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
     SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Planning & Implementation/Asset Coverage), sticky below header, hidden on /login and <640px. Road Assets was removed as a separate entry 2026-08-05 — merged into Planning & Implementation. Streetlights removed 2026-09-07 — see changelog
-    HitechMap.tsx           # Google Maps JS API map (hybrid/satellite) — chainage stations + report points + ArcGIS road-design CAD overlay, used on /dashboard. Was Mapbox GL until 2026-07-22 — see changelog
-    RoadAssetsMap.tsx       # Google Maps JS API map for the 7.27M-row road_assets table — clustered points, project/section filtering, no images. Was originally modeled on StreetlightsMap.tsx (removed 2026-09-07, see changelog) — internal comments still reference it as design lineage. See 2026-08-04 changelog
+    UnifiedMap.tsx          # THE map. One Google Maps (hybrid) instance used on both /dashboard and /planning-implementation, showing every section with geolocation at once: Coastal Road chainage line + 1km ticks, ~1k activity-report pins (all projects, incl. Calabar/Kebbi/Ogun), Calabar/Ogun/Kebbi road_assets clusters (one /api/road-assets call per enabled section), and the ArcGIS road-design CAD overlay. Layer toggles + colour-by + last camera live in src/lib/map-view.tsx so the view is restored across page changes. Absorbed the old HitechMap.tsx + RoadAssetsMap.tsx (both deleted). See 2026-09-09 changelog
+    (HitechMap.tsx / RoadAssetsMap.tsx — deleted 2026-09-09, merged into UnifiedMap.tsx)
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
+    map-view.tsx            # MapViewProvider / useMapView() — shared state for UnifiedMap (mounted in layout.tsx). Layer toggles + colour-by + last camera; layers/colour persisted to localStorage['hitech-map-view'], camera too (the app navigates with plain <a href>, not SPA, so context alone resets every page change). See 2026-09-09 changelog
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs, road-assets-migration.sql (one-off SQL for /road-assets-coverage — see 2026-08-01 changelog)
 scripts/sql/                # One-off Postgres migration SQL not tracked by any Supabase CLI setup in this repo — apply manually via the Supabase SQL editor or MCP. add_planning_implementation_rpc.sql adds progress_section_breakdown(); add_road_assets_infra.sql adds the road_assets clustering/cache infrastructure. See 2026-08-04 changelog
 sync_to_supabase.py         # Pulls Main_Survey_Data/photos/employees/supervisors/engineers/machines from Google Drive Excel, upserts into hitech_report_* tables (dedupes on globalid)
@@ -243,14 +245,15 @@ Reads from `hitech_construction_entities`, `hitech_construction_blocks`, `hitech
 
 ### `GET /api/map`
 
-Returns chainage stations and geotagged activity reports for `HitechMap`, keyed by project. **No session guard** — do not add sensitive data to this response without adding one.
+Returns chainage stations and geotagged activity reports for `UnifiedMap`, keyed by project. **No session guard** — do not add sensitive data to this response without adding one.
 
 **Query params:**
 ```
 project                          — project display name (default "Coastal Road"), mapped to a numeric project_id via a hardcoded PROJECT_ID_MAP in the route file — add new projects there when onboarding a new road
 zoom                              — current map zoom level; chooses a chainage-sampling interval (coarser when zoomed out) via intervalForZoom() in the route file
 swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12 (at lower zoom the viewport already ≈ the whole road)
-category                          — matched via .ilike() on activity_category; filters the reports array only (not chainage stations) — used by HitechMap to also zoom to fit that category's reports
+category                          — matched via .ilike() on activity_category; filters the reports array only (not chainage stations) — used by UnifiedMap to also zoom to fit that category's reports
+all                              — "1" → return reports across EVERY project/section, not just `project` (UnifiedMap needs Calabar/Kebbi/Ogun pins alongside Coastal's). PostgREST hard-caps any one response at 1000 rows, so all=1 runs two queries — the Coastal set + a keyword-targeted grab of the ~35 geolocated Calabar/Ogun/Kebbi rows (section_name/project_name ilike, `*` wildcard — the embedded or() syntax, not `%`) — and merges them by id. Stations still scoped to `project`.
 ```
 
 `stations` is sampled, not exhaustive — see `hitech_report_chainage` below and the 2026-07-22 "map freezing" changelog entry for why (that table is one row per metre of road, up to 423k rows for one project).
@@ -457,6 +460,37 @@ A `clusters` entry only carries `id`/`entityType`/`project`/`section`/`side`/`st
 
 ---
 
+### `GET /api/personnel-history`
+
+Returns the HR staff roster plus its full change history, for the "Personnel History" section on `/personnel`. Session-guarded. No query params. **Not filtered** by the dashboard's category/project/chainage params — those describe activity reports, and neither history table links to one.
+
+The three source tables are tiny (~12 + 25 + 7 rows), so everything is returned in one payload and the client groups by `employee.id` locally — clicking an employee is instant, no per-employee round trip. No RPC / pagination.
+
+**Response (200):**
+```json
+{
+  "employees": [
+    { "id": 42, "name": "Joshua Samuelson", "role": "Engineer", "status": "Active",
+      "projectName": "Coastal Road", "sectionName": "Section 3 - Ogun", "dateAdded": "2026-07-21", "removed": false },
+    { "id": 39, "name": "Hey Test", "role": "—", "status": "Removed",
+      "projectName": null, "sectionName": null, "dateAdded": null, "removed": true }
+  ],
+  "history": [
+    { "employeeId": 42, "kind": "field",  "field": "role",   "oldValue": "Administrator", "newValue": "Engineer",
+      "changedBy": "joshua samuelson", "changedAt": "2026-08-10T10:53:22.124643+00:00" },
+    { "employeeId": 38, "kind": "status", "field": "status", "oldValue": "Inactive", "newValue": "Active",
+      "changedBy": "joshua samuelson", "changedAt": "2026-07-30T08:33:01.807297+00:00" }
+  ]
+}
+```
+
+- `employees` is `surveycollection_employee` (the same roster the main portal's `/api/employees` manages) with `removed: true` entries appended for `employee_id`s that appear only in the history tables — deleted staff whose audit trail is retained. Their `name` comes from the denormalized `employee_name` on the history rows.
+- `history` merges both source tables into one normalized shape, sorted `changedAt` desc. `kind: 'field'` rows come from `surveycollection_employee_history` (any edited column — `role`, `phone_number`, `project_name`, `section_name`, and `status` typed as a generic field). `kind: 'status'` rows come from `surveycollection_employee_status_history` (its `previous_status`/`new_status` mapped to `oldValue`/`newValue`).
+- **Dedup:** the portal writes a status transition into *both* tables (~a fraction of a second apart), so the route drops the generic `field_name='status'` copy when a dedicated status-history row covers the same employee + old→new value within a ~2s window. Each real change shows once.
+- Blank/empty strings are normalized to `null` (rendered as an italic "empty" in the timeline).
+
+---
+
 ## Database Tables (Supabase / PostgreSQL)
 
 The dashboard's core data lives in two tables, cross-referenced by four HR join tables and a few progress/mapping tables added later:
@@ -546,6 +580,14 @@ Cache tables refreshed every 10 minutes by the `refresh_streetlights_summary_cac
 ### `road_assets_grid_mv` / `road_assets_summary_cache` / `road_assets_project_stats` / `road_assets_section_stats` / `road_assets_entity_type_stats`
 Same category of cache infrastructure as the streetlights tables above, one size up (7.27M vs 3M rows) and with one structural difference: `road_assets_grid_mv` is keyed by `(grid_lat, grid_lon, project, section)`, not just `(grid_lat, grid_lon)` — this is what lets a `project`/`section` filter with no map bbox stay cheap (`'Kebbi - Sokoto project'` alone is 5.5M rows, too large for streetlights' "any filter goes live" shortcut to be safe here). Refreshed every 15 minutes (vs streetlights' 10 — this data looks static/survey-sourced rather than live-sensor, so a slower cadence was judged acceptable, adjustable in the SQL) by `road_assets_refresh_summary_cache()` via `pg_cron`. All four `_stats`/`_cache` tables additionally track a `geolocated_point_count`/`geolocated_estimate` alongside the plain row count, specifically because of the NULL lat/lon issue on Ogun — see `GET /api/road-assets` above.
 
+### `surveycollection_employee_history` / `surveycollection_employee_status_history`
+
+Django-managed audit tables written by the **main portal** (not this app), read by `GET /api/personnel-history`. Both keyed by `employee_id` → `surveycollection_employee.id`, with a denormalized `employee_name` snapshot on every row (used to name staff who were later deleted from the roster).
+
+- `surveycollection_employee_history` (~25 rows): one row per edited field. Columns `field_name` (`role`/`phone_number`/`project_name`/`section_name`/`status`), `old_value`, `new_value`, `changed_by` (free text — sometimes an email, sometimes a name), `changed_at` (timestamptz).
+- `surveycollection_employee_status_history` (~7 rows): one row per status transition. Columns `previous_status`, `new_status`, `changed_by`, `changed_at`. A status change is recorded here **and** as a `field_name='status'` row in the table above — `GET /api/personnel-history` dedupes them (see that route).
+- `surveycollection_employee` itself (the roster, ~12 rows) is documented in `docs/platform-api.md` (`/api/employees`). Its names barely overlap with `hitech_report_hitechemployee.employee_name` (the field crew named on activity reports, which is what `/personnel`'s "Activities Reported by Employees" chart ranks) — the two are effectively separate populations.
+
 ---
 
 ## Auth Flow
@@ -624,6 +666,50 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-09 — One unified, persistent map: merged HitechMap + RoadAssetsMap, all sections on one map, report-click zooms to the right section
+
+**Files changed:** `src/components/UnifiedMap.tsx` (new — absorbs the two old map components), `src/lib/map-view.tsx` (new), `src/lib/theme-constants.ts` (+`MAP_VIEW_STORAGE_KEY`), `src/app/layout.tsx` (mount `MapViewProvider`), `src/app/api/map/route.ts` (`all=1` scope), `src/app/dashboard/page.tsx`, `src/app/planning-implementation/page.tsx`, **deleted** `src/components/HitechMap.tsx` + `src/components/RoadAssetsMap.tsx`.
+
+**What the user asked for:** the dashboard map only knew Coastal Road Section 1B/1C; `/planning-implementation` had a *separate* map for the Calabar/Ogun/Kebbi road_assets. Wanted **one map, used everywhere a map appears, that persists its view across pages**, showing **every section that has geolocation** at once, and — on `/dashboard` — clicking any activity report should zoom to *that report's real section* (a Calabar report → Calabar), not just Section 1. Confirmed via `AskUserQuestion`: shared component + saved camera (not one hoisted instance); all layers on with toggle chips; sections = Coastal 1A/1B/1C/2 + Calabar + Kebbi + Ogun (Ogun ~28% geolocated — show those; "Kogi" was a typo for Kebbi); report-zoom uses the report's own GPS + auto-enables that area's asset layer.
+
+**Data checked live first** (project `cwqfyhapaycabynqwczx`): activity reports *do* carry real GPS for the other regions — 12 `Section 3 - Calabar`, 21 `Kebbi section` (filed under project `SBS ... highway`/`Sokoto road`, not `Coastal Road`), 2 Ogun — all with `start_chainage_lat/long`. `road_assets` lat/lon: Calabar 1.34M / Kebbi 5.53M fully geolocated, **Ogun 289k of 401k NULL**. The `chainages` table (Calabar/Ogun/Kebbi station refs) has **northing/easting only, no lat/lon** — so those 3 get cluster points but no drawn road-alignment line (only Coastal + the Kebbi corridor via `hitech_report_chainage` pid 7 have a line).
+
+**`src/lib/map-view.tsx` — `MapViewProvider` / `useMapView()`** (pattern: `src/lib/sidebar.tsx`), mounted in `layout.tsx` inside `ThemeProvider`→`SidebarProvider`. Holds `layers` (`coastalLine`/`reports`/`calabar`/`ogun`/`kebbi`/`design`, all default-on), `colorBy`, `camera`, and a `focusRequest` (`{lat,lng,zoom,reportId,enableLayer,popup}`) consumed once then cleared. **All of it (camera included) is persisted to `localStorage['hitech-map-view']`** — the app navigates with plain `<a href>` (SideNav/DashHeader are not `<Link>`), so a full page load happens on every nav and React context alone would reset the view each time. `readPersistedCamera()` is a synchronous export because a child effect (UnifiedMap init) runs *before* the provider's hydrate effect.
+
+**`src/components/UnifiedMap.tsx`** — one Google Maps `hybrid` instance, `dynamic(ssr:false)` at both call sites. Layers, all `idle`/viewport-driven:
+- **Coastal line + 1km ticks + report pins** — one `/api/map?all=1&project=Coastal Road&<bbox>` call. Section 1 reports snap to the nearest sampled chainage station (unchanged from the old HitechMap — stale Coastal GPS, see 2026-07-22); Calabar/Kebbi/Ogun reports (detected by section/project keyword in `regionOf()`) render at their raw GPS.
+- **Kebbi corridor line** — `/api/map?project=SBS Sokoto Badagry highway&zoom=9`, fetched once when the Kebbi layer is on (background context only).
+- **road_assets clusters** — one `/api/road-assets?project=X&section=Y&<bbox>` per enabled section (`ASSET_SECTIONS` map, `Promise.all`, per-call `.catch` so one transient Supabase SSL blip doesn't sink the others), merged and tagged with their `LayerKey` so a toggle removes them at any zoom (MV-mode cells carry no section). Aggregated timing → `onLoadStats` for `/planning-implementation`'s "Map Load Time" KPI (still works).
+- **ArcGIS road-design overlay** — carried over verbatim from HitechMap (`/api/road-design`, Coastal only).
+- **Camera:** seeds from `camera ?? readPersistedCamera() ?? REGION_CAMERA[section|national]`; every `idle` writes it back (state + localStorage). **No automatic fitBounds** — the persisted view always wins on load. The only camera moves after init: a `focusRequest`, `/planning-implementation`'s section filter (`REGION_CAMERA`, fires only on a real non-empty change), and a dashboard chainage/category filter change (`filterFitRef`-guarded so it never fights the restored view on a plain load).
+
+**`/api/map` `all=1`** — see the API section above. Two queries merged by id (Coastal set + `.or()` keyword grab of the ~35 other-region rows); note PostgREST's embedded `or()` uses `*` wildcards, not `%` (hit this — `%calabar%` silently matched nothing).
+
+**`/dashboard`** — `HitechMapComponent` → `UnifiedMap`; `handleSelectReport` no longer flips the `project` filter, it just computes `enableLayer` from the report's section/project keyword and calls `setFocusRequest({lat,lng,zoom:16,reportId,enableLayer,popup})`. The dead `focusReport` state is gone.
+
+**`/planning-implementation`** — `RoadAssetsMap` → `UnifiedMap initialSection={activeSection} onLoadStats={setLoadStats}`. `assetsName` on the `PROJECTS` array is now unused (UnifiedMap uses `ASSET_SECTIONS` internally) but left as reference data.
+
+**Verified:** `tsc --noEmit` + `next build` clean (23 routes). Playwright against `next start` + minted session: `/dashboard` map renders Coastal line + 1,035 report pins + Calabar/Ogun/Kebbi asset clusters with all 6 layer chips, 0 console errors; clicking one of the 12 Calabar report rows pans the map to lat 5.18 / lng 8.31 zoom 16 with the report popup open; setting the map to Kebbi (11.8/4.5/z9) then navigating `/dashboard`→`/planning-implementation`→back restores 11.8/4.5/z9 both times (localStorage); `/planning-implementation` section filter → picking "Section 3 - Calabar" recentres to 4.98/8.33/z11; "Map Load Time" KPI still populates. One transient `/api/road-assets` 500 seen once (Supabase `SSL alert number 51` — network blip, the per-section `.catch` handled it).
+
+### 2026-09-08 (6) — New "Personnel History" section on `/personnel`: click a staff member → merged audit trail
+
+**Files changed:** `src/app/api/personnel-history/route.ts` (new), `src/app/personnel/page.tsx`, `CLAUDE.md`
+
+**What the user asked for:** a new table on the personnel tab — click an employee, see that person's history from `surveycollection_employee_history` and `surveycollection_employee_status_history`.
+
+**What the live data showed (checked before building, via Supabase MCP):**
+
+- Three source tables, all tiny: `surveycollection_employee` (12 rows), `surveycollection_employee_history` (25), `surveycollection_employee_status_history` (7). No perf concern — no RPC, no pagination, one payload, group-by-employee on the client so clicking is instant.
+- **The roster is a different population from the `/personnel` bar chart.** That chart ranks `hitech_report_hitechemployee.employee_name` (hundreds of field crew named on activity reports). `surveycollection_employee` is the HR staff directory the main portal's `/api/employees` manages — mostly test accounts + a few real staff, ~zero name overlap (only "Mustapha Ayuba" had meaningful report mentions). So wiring click-to-history onto the existing chart rows would show "no history" for ~everyone. Built a **self-contained roster table** instead, driven by `surveycollection_employee`.
+- **A status change is written to both tables** (~0.1s apart) — once into `_status_history`, once into `_history` as a generic `field_name='status'` row. The route dedupes: drop the `_history` copy when a `_status_history` row covers the same employee + old→new value within ~2s. Verified: 32 merged events → 27 after dedup, no real change lost.
+- **One orphaned employee** ("Hey Test", id 39): history rows exist but the roster row was deleted. An audit trail that vanishes with the record isn't an audit trail — the route appends `removed: true` roster entries for any `employee_id` that appears only in the history tables, named from the denormalized `employee_name`. They sort to the bottom of the roster and render a "removed from roster" tag.
+
+**`GET /api/personnel-history`** (session-guarded, no params, `Cache-Control: private, max-age=20`): returns `{ employees, history }`. `history` is both tables normalized to one shape (`{ employeeId, kind: 'field'|'status', field, oldValue, newValue, changedBy, changedAt }`), sorted `changedAt` desc. Empty strings → `null`. `.error` on any of the 3 queries → `503` (not a silent empty 200 — the `/progress` "silent zeros" lesson). Deliberately **not** narrowed by the dashboard's category/project/chainage params — neither history table links to an activity report.
+
+**`/personnel` page:** new `PersonnelHistory` component in a `Reveal` below the Supervisors grid — its own `fetch`, independent of the filter bar. Two-pane: a scrollable roster list (name, role, status pill, change count, sorted by most-recent change) and a vertical timeline for the selected employee (defaults to the freshest). Each event: a mono field-label chip, `old → new` (null shown as italic "empty"), `by {changedBy} · {formatted date}`, a dot coloured by kind (status = accent, field = muted) with a connector line. Empty states for staff with no history and for a load failure. Stacks under 760px. Uses the page's existing `Card`/`EmptyState`/`Skel`/`useTheme` primitives — no new shared components.
+
+**Verified:** `tsc --noEmit` + `next build` clean (24 routes, `/api/personnel-history` registered). Live: `curl` → 401 without cookie, `{employees:13, history:27}` with a minted session (12 roster + 1 removed). Playwright pass (light + dark, 1280–1440px): 13 roster rows, removed employee sorted last with its tag, clicking `ddjzphxwxg` swaps the timeline to its 8 deduped events, "Hey Test" shows the retained-history subheader, `Kwame Asante` (no history) shows the empty state — 0 console errors in either theme.
 
 ### 2026-09-08 (5) — `/machines` "Ownership Breakdown": merge to Hitech vs Subcontractor (renting/third-party counts as subcontractor)
 

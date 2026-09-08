@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useTheme } from '@/lib/theme'
 
-const RoadAssetsMap = dynamic(() => import('@/components/RoadAssetsMap'), { ssr: false })
+const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false })
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
@@ -14,8 +14,9 @@ const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 // case-insensitive there). `assetsName` is the exact literal string
 // road_assets.project actually holds — confirmed live it does NOT match
 // `label`'s casing ("Coastal road" vs "Coastal Road"), and /api/road-assets
-// matches project by strict equality, so RoadAssetsMap needs the exact
-// string, not a normalized one. Add a project here when onboarding a new
+// matches project by strict equality (UnifiedMap uses the fixed
+// project/section pairs in ASSET_SECTIONS for its cluster fetches). Add a
+// project here when onboarding a new
 // one — same config-edit convention as PROJECT_ID_MAP/ROAD_DESIGN_LAYERS.
 const PROJECTS = [
   { key: 'coastal-road', label: 'Coastal Road', assetsName: 'Coastal road' },
@@ -534,8 +535,8 @@ function PlanningImplementationPageInner() {
             </Reveal>
 
             <Reveal delay={60} style={{ marginBottom: 14 }}>
-              <Card title={`Road Assets Map${activeProject ? ` · ${activeProject.label}` : ''}${activeSection ? ` · ${activeSection}` : ''}`}>
-                <RoadAssetsMap project={activeProject?.assetsName ?? ''} section={activeSection} onLoadStats={setLoadStats} />
+              <Card title={`Activity Map${activeProject ? ` · ${activeProject.label}` : ''}${activeSection ? ` · ${activeSection}` : ''}`}>
+                <UnifiedMap initialSection={activeSection} onLoadStats={setLoadStats} />
               </Card>
             </Reveal>
 
