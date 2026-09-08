@@ -263,6 +263,174 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
   )
 }
 
+/* ── personnel history (HR roster audit trail) ────────────── */
+interface RosterEmployee {
+  id: number; name: string; role: string; status: string
+  projectName: string | null; sectionName: string | null; dateAdded: string | null
+  removed?: boolean
+}
+interface HistoryEvent {
+  employeeId: number; kind: 'field' | 'status'; field: string
+  oldValue: string | null; newValue: string | null; changedBy: string; changedAt: string
+}
+interface HistoryPayload { employees: RosterEmployee[]; history: HistoryEvent[] }
+
+const fieldLabel = (f: string) =>
+  f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
+function fmtWhen(iso: string) {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function StatusPill({ status }: { status: string }) {
+  const { colors: D } = useTheme()
+  const s = status.toLowerCase()
+  const c = s === 'active' ? D.green : s === 'on leave' ? D.amber : s.includes('inactive') ? D.red : D.muted
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', color: c, textTransform: 'uppercase' }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: c, flexShrink: 0 }} />{status}
+    </span>
+  )
+}
+
+function ChangeValue({ v }: { v: string | null }) {
+  const { colors: D } = useTheme()
+  if (v == null) return <span style={{ color: D.sub, fontStyle: 'italic' }}>empty</span>
+  return <span>{v}</span>
+}
+
+function PersonnelHistory() {
+  const { colors: D } = useTheme()
+  const [payload, setPayload] = useState<HistoryPayload | null>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  useEffect(() => {
+    let live = true
+    fetch('/api/personnel-history')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: HistoryPayload) => {
+        if (!live) return
+        setPayload(d)
+        setState('ready')
+      })
+      .catch(() => { if (live) setState('error') })
+    return () => { live = false }
+  }, [])
+
+  // roster sorted by most-recent change, so the first row is the freshest story
+  const lastChangeAt = useCallback((empId: number) => {
+    const evs = payload?.history.filter(h => h.employeeId === empId) ?? []
+    return evs.length ? evs[0].changedAt : ''
+  }, [payload])
+
+  const roster = (payload?.employees ?? []).slice().sort((a, b) => {
+    if (!!a.removed !== !!b.removed) return a.removed ? 1 : -1
+    const la = lastChangeAt(a.id), lb = lastChangeAt(b.id)
+    if (la && lb) return lb.localeCompare(la)
+    if (la) return -1
+    if (lb) return 1
+    return a.name.localeCompare(b.name)
+  })
+
+  const activeId = selectedId ?? roster[0]?.id ?? null
+  const selected = roster.find(e => e.id === activeId) ?? null
+  const events = (payload?.history ?? []).filter(h => h.employeeId === activeId)
+
+  return (
+    <Card title="Personnel History" note="Audit trail for the HR staff roster — role, status, project & section changes. Separate from activity-report mentions above.">
+      {state === 'loading' && (
+        <div style={{ display: 'flex', gap: 12, minHeight: 200 }}>
+          <Skel h={200} /><div style={{ flex: 1 }}><Skel h={200} /></div>
+        </div>
+      )}
+      {state === 'error' && <EmptyState label="Couldn't load personnel history" />}
+      {state === 'ready' && roster.length === 0 && <EmptyState label="No staff records found" />}
+      {state === 'ready' && roster.length > 0 && (
+        <div className="phist-layout" style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+          {/* roster */}
+          <div className="phist-roster" style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+            {roster.map(e => {
+              const isActive = e.id === activeId
+              const n = (payload?.history.filter(h => h.employeeId === e.id).length) ?? 0
+              return (
+                <button key={e.id} onClick={() => setSelectedId(e.id)}
+                  style={{
+                    textAlign: 'left', font: 'inherit', cursor: 'pointer', borderRadius: 8,
+                    padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 5,
+                    background: isActive ? D.panel2 : 'transparent',
+                    border: `1px solid ${isActive ? `${D.amber}44` : D.border}`,
+                    borderLeft: `2px solid ${isActive ? D.amber : 'transparent'}`,
+                    transition: `background 0.15s ${EASE}, border-color 0.15s ${EASE}`,
+                  }}>
+                  <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</span>
+                    <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: n ? D.amber : D.sub, flexShrink: 0 }}>{n} {n === 1 ? 'change' : 'changes'}</span>
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {e.removed
+                      ? <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textTransform: 'uppercase', color: D.sub, border: `1px solid ${D.border}`, borderRadius: 5, padding: '0 5px' }}>removed from roster</span>
+                      : <><span style={{ fontSize: 11, color: D.sub }}>{e.role}</span><StatusPill status={e.status} /></>}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* timeline */}
+          <div className="phist-timeline" style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${D.border}`, paddingLeft: 16 }}>
+            {selected && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: D.text }}>{selected.name}</div>
+                <div style={{ fontSize: 11.5, color: D.muted, marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {selected.removed
+                    ? <span style={{ color: D.sub }}>Removed from roster — history retained</span>
+                    : <>
+                        <span>{selected.role}</span>
+                        {selected.projectName && <span>· {selected.projectName}</span>}
+                        {selected.sectionName && <span>· {selected.sectionName}</span>}
+                        {selected.dateAdded && <span>· added {selected.dateAdded}</span>}
+                      </>}
+                </div>
+              </div>
+            )}
+            {events.length === 0 ? (
+              <EmptyState label="No recorded changes for this employee" />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: 420, overflowY: 'auto' }}>
+                {events.map((ev, i) => {
+                  const dot = ev.kind === 'status' ? D.amber : D.muted
+                  return (
+                    <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: i === events.length - 1 ? 0 : 14 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, paddingTop: 3 }}>
+                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: dot, border: `2px solid ${D.panel}`, boxShadow: `0 0 0 1px ${dot}55` }} />
+                        {i !== events.length - 1 && <span style={{ flex: 1, width: 1, background: D.border, marginTop: 3 }} />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, paddingBottom: 2 }}>
+                        <div style={{ fontSize: 12.5, color: D.text, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: D.muted, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 5, padding: '1px 6px' }}>{fieldLabel(ev.field)}</span>
+                          <span style={{ color: D.muted }}><ChangeValue v={ev.oldValue} /></span>
+                          <span style={{ color: D.sub }}>→</span>
+                          <span style={{ fontWeight: 600 }}><ChangeValue v={ev.newValue} /></span>
+                        </div>
+                        <div style={{ fontSize: 11, color: D.sub, marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                          by {ev.changedBy} · {fmtWhen(ev.changedAt)}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /* ── skeleton ─────────────────────────────────────────────── */
 function Skel({ h }: { h: number }) {
   const { colors: D } = useTheme()
@@ -375,6 +543,10 @@ function PersonnelPageInner() {
                 </Card>
               </div>
             </Reveal>
+
+            <Reveal delay={160} style={{ marginTop: 14 }}>
+              <PersonnelHistory />
+            </Reveal>
           </div>
         )}
       </div>
@@ -387,6 +559,13 @@ function PersonnelPageInner() {
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
         @media (max-width: 1024px) { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } }
         @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(1,1fr) !important; } }
+        .phist-roster::-webkit-scrollbar, .phist-timeline div::-webkit-scrollbar { width: 6px; }
+        .phist-roster::-webkit-scrollbar-thumb, .phist-timeline div::-webkit-scrollbar-thumb { background:${D.border}; border-radius:3px; }
+        @media (max-width: 760px) {
+          .phist-layout { flex-direction: column !important; }
+          .phist-roster { width: 100% !important; max-height: 260px !important; }
+          .phist-timeline { border-left: none !important; padding-left: 0 !important; border-top: 1px solid ${D.border} !important; padding-top: 14px !important; }
+        }
       `}</style>
     </div>
   )
