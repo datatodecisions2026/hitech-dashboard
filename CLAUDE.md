@@ -667,6 +667,18 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-09 (3) — `/dashboard`: click a report row → Site Media shows only that report's own submitted photos
+
+**Files changed:** `src/app/api/report-media/route.ts` (new), `src/app/dashboard/page.tsx`
+
+**What the user asked for:** clicking a row in "Recent Activity Reports" already zooms the map to that report — they also wanted the Site Media panel to then show *only* the photos/videos submitted on that one report.
+
+**`GET /api/report-media?id=<reportId>`** (new, session-guarded, `Cache-Control: private, max-age=60`): returns `{ items: [{ file, media_type, project_name: '' }] }` straight from `hitech_report_hitechphoto` where `report_id = id` (tiny per report — no RPC/pagination). A dedicated fetch rather than reusing the page's `mediaItems`, because that array carries no `report_id` and, under a broad filter, is a 600-row *recent* sample that often won't contain a given report's photos at all.
+
+**`/dashboard` page:** new `reportMedia` state (`{ id, label, items, loading }`) + `ReportMedia` component. `handleSelectReport` now also sets `reportMedia`, fetches `/api/report-media`, and scrolls the (new `mediaPanelRef`-wrapped) Site Media card into view — the existing map `setFocusRequest` is unchanged. While `reportMedia` is set, the card renders the isolated view (photos/videos `MediaBox`es, or "No photos or videos were submitted on this report", or "Loading…") with a `← All filtered media` action button; it also carries a stale-fetch guard (`prev.id === r.id`). The view clears on that button **or** any filter/nav change (`setReportMedia(null)` at the top of `loadData`).
+
+**Verified:** `tsc --noEmit` + `next build` clean (24 routes, `/api/report-media` registered). Query logic checked against live data (report 87701 → 2 photos, 87713 → 1, a report with no rows → `items: []` → the empty state). Not exercised in a browser this pass.
+
 ### 2026-09-09 (2) — `/dashboard`: fix Site Media / Recent Reports / Calendar going empty on a filter change, and make the map follow the Section filter
 
 **Files changed:** `src/app/dashboard/page.tsx`, `src/components/UnifiedMap.tsx`
