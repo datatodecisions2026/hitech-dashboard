@@ -31,6 +31,7 @@ interface DashData {
   byEngineer:   Array<{ name: string; count: number }>
   bySupervisor: Array<{ name: string; count: number }>
   byOwnership:  Array<{ name: string; count: number }>
+  unattributed?: Record<string, number>
   mediaItems:   MediaItem[]
   mapPoints:    MapPoint[]
   activityCalendar: CalDay[]
@@ -770,7 +771,7 @@ function DashboardPageInner() {
             <Reveal delay={60} style={{ marginBottom: 16 }}>
               <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14 }}>
                 <Card title="Top Projects by Reports"><HBarChart data={data.byProject} activeName={data.activeFilters.filterProject} onBarClick={name => handleFilter('project', name)} /></Card>
-                <Card title="Weather Conditions"><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
+                <Card title="Weather Conditions" sub={data.unattributed?.byWeather ? `No weather recorded: ${data.unattributed.byWeather.toLocaleString()} not shown in ranking` : undefined}><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
               </div>
             </Reveal>
 

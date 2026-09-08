@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getIronSession } from 'iron-session'
 import { sessionOptions, AppSession } from '@/lib/session'
-import { dashboardRpcArgs, activeFiltersFrom, rpcWithRetry, makeTtlCache } from './_lib'
+import { dashboardRpcArgs, activeFiltersFrom, rpcWithRetry, makeTtlCache, normalizePartySeries, applyUnknownHandling } from './_lib'
 
 /**
  * Core dashboard payload: KPIs, every chart series, the HR breakdowns, and
@@ -34,7 +34,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load dashboard data, please retry.' }, { status: 503 })
   }
 
-  const body = { ...(data as Record<string, unknown>), activeFilters: activeFiltersFrom(searchParams) }
+  // 1) collapse dirty party-label variants, 2) pull "Unknown" out of the ranked
+  // person/weather breakdowns into `unattributed` — see _lib.ts.
+  const core = {
+    ...(data as Record<string, unknown>),
+    byEngineerParty:   normalizePartySeries((data as Record<string, unknown>).byEngineerParty),
+    bySupervisorParty: normalizePartySeries((data as Record<string, unknown>).bySupervisorParty),
+  }
+  const body = {
+    ...core,
+    ...applyUnknownHandling(core),
+    activeFilters: activeFiltersFrom(searchParams),
+  }
   CACHE.set(key, body)
   return NextResponse.json(body, { headers: { ...HDRS, 'x-cache': 'miss' } })
 }

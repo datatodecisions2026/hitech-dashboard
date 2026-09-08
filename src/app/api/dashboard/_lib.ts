@@ -41,6 +41,86 @@ export function dashboardRpcArgs(sp: URLSearchParams) {
   }
 }
 
+// ── party-label normalization ────────────────────────────────────────────────
+// The raw `party` column on hitech_report_hitechengineer / hitechsupervisor has
+// dirty values that are really only two buckets: "Hitech Employees" (also stored
+// as "HITECH Employees") and "Sub-contractor" (also misspelled "Sub-contactor").
+// _titlecase() in SQL only fixes the first letter of each word, so those variants
+// still render as 4 separate donut slices. Collapse them here, after the RPC, so
+// "Engineers by Party" / "Supervisors by Party" show one slice per real party.
+// The emitted label is the highest-count raw value in each bucket, so clicking a
+// slice still filters by a value that matches the bulk of its rows.
+type Series = Array<{ name: string; count: number }>
+
+function partyBucket(name: string): string {
+  const n = name.toLowerCase()
+  if (n.includes('hitech')) return 'hitech'
+  if (/sub[-\s]?cont/.test(n)) return 'sub'
+  return n // leave any other value as its own bucket
+}
+
+export function normalizePartySeries(series: unknown): Series {
+  if (!Array.isArray(series)) return [] as Series
+  const groups = new Map<string, { total: number; top: { name: string; count: number } }>()
+  for (const row of series as Series) {
+    if (!row || typeof row.name !== 'string') continue
+    const key = partyBucket(row.name)
+    const g = groups.get(key)
+    if (!g) {
+      groups.set(key, { total: row.count, top: { name: row.name, count: row.count } })
+    } else {
+      g.total += row.count
+      if (row.count > g.top.count) g.top = { name: row.name, count: row.count }
+    }
+  }
+  return [...groups.values()]
+    .map(g => ({ name: g.top.name, count: g.total }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
+// ── "Unknown" handling ───────────────────────────────────────────────────────
+// _dash_group() emits the literal label "Unknown" for any blank raw value. For
+// the person / weather breakdowns a large blank bucket is real missing data
+// (e.g. 4,499 of 6,689 engineer rows have no name recorded, 3,676 of 9,776
+// reports have no weather). We don't fabricate that onto real people — instead
+// the "Unknown" entry is pulled out of the ranked series so the chart ranks and
+// percentages are over named entities only, and its count is surfaced separately
+// as `unattributed` so the page can still disclose the gap. See the 2026-09-08
+// changelog. Employee blanks are handled upstream in dashboard_core (name falls
+// back to employee_missing_name), so this rarely fires for byEmployee.
+const UNKNOWN_SPLIT_KEYS = [
+  'byEngineer', 'bySupervisor', 'byEmployee', 'byMachine', 'byDriver', 'byOwnership',
+  'byWeather', 'byEmployeeRole', 'byEngineerParty', 'bySupervisorParty',
+] as const
+
+function splitUnknown(series: unknown): { series: Series; unattributed: number } {
+  if (!Array.isArray(series)) return { series: [] as Series, unattributed: 0 }
+  let unattributed = 0
+  const kept: Series = []
+  for (const row of series as Series) {
+    if (row && typeof row.name === 'string' && row.name.trim().toLowerCase() === 'unknown') {
+      unattributed += row.count || 0
+    } else if (row) {
+      kept.push(row)
+    }
+  }
+  return { series: kept, unattributed }
+}
+
+// Strip "Unknown" from every configured breakdown on the core payload, returning
+// the cleaned fields plus an `unattributed` map (only non-zero entries).
+export function applyUnknownHandling(core: Record<string, unknown>) {
+  const out: Record<string, unknown> = {}
+  const unattributed: Record<string, number> = {}
+  for (const k of UNKNOWN_SPLIT_KEYS) {
+    if (!(k in core)) continue
+    const { series, unattributed: n } = splitUnknown(core[k])
+    out[k] = series
+    if (n > 0) unattributed[k] = n
+  }
+  return { ...out, unattributed }
+}
+
 export function activeFiltersFrom(sp: URLSearchParams) {
   const g = (k: string) => sp.get(k) || ''
   return {

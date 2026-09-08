@@ -17,6 +17,7 @@ interface DashData {
   employeeSummary:   { totalMentions: number; distinctEmployees: number }
   engineerSummary:   { totalMentions: number; distinctEngineers: number }
   supervisorSummary: { totalMentions: number; distinctSupervisors: number }
+  unattributed?: Record<string, number>
   filterOptions: { categories: string[]; projects: string[] }
   activeFilters: {
     filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
@@ -59,7 +60,7 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
   )
 }
 
-function Card({ children, title }: { children: React.ReactNode; title: string }) {
+function Card({ children, title, note }: { children: React.ReactNode; title: string; note?: React.ReactNode }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
@@ -67,8 +68,17 @@ function Card({ children, title }: { children: React.ReactNode; title: string })
         <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
       </div>
       <div style={{ padding: '4px 16px 16px' }}>{children}</div>
+      {note && <div style={{ padding: '0 16px 12px', marginTop: -4, fontSize: 11, lineHeight: 1.4, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{note}</div>}
     </div>
   )
+}
+
+// "N activities with no engineer recorded — excluded from ranking" — surfaces the
+// blank bucket the API strips out of the ranked series (src/app/api/dashboard/_lib.ts).
+function unattributedNote(data: DashData, key: string, subject: string): string | null {
+  const n = data.unattributed?.[key]
+  if (!n) return null
+  return `${subject}: ${n.toLocaleString()} not shown in ranking`
 }
 
 function KPICard({ label, value, icon, delay = 0, color }: { label: string; value: number; icon: React.ReactNode; delay?: number; color?: string }) {
@@ -327,18 +337,18 @@ function PersonnelPageInner() {
         {data && (
           <div style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
             <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
-              <KPICard label="Employees Logged" value={data.employeeSummary?.distinctEmployees ?? 0} icon={<IconPeople />} delay={0} color={D.green} />
-              <KPICard label="Engineers Logged" value={data.engineerSummary?.distinctEngineers ?? 0} icon={<IconHat />} delay={60} />
-              <KPICard label="Supervisors Logged" value={data.supervisorSummary?.distinctSupervisors ?? 0} icon={<IconShield />} delay={120} />
+              <KPICard label="Total Employee" value={data.employeeSummary?.distinctEmployees ?? 0} icon={<IconPeople />} delay={0} color={D.green} />
+              <KPICard label="Total Engineer" value={data.engineerSummary?.distinctEngineers ?? 0} icon={<IconHat />} delay={60} />
+              <KPICard label="Total Supervisor" value={data.supervisorSummary?.distinctSupervisors ?? 0} icon={<IconShield />} delay={120} />
               <KPICard label="Total Mentions" value={totalMentions} icon={<IconUsers />} delay={180} color={D.amber} />
             </div>
 
             <Reveal style={{ marginBottom: 14 }}>
               <div className="personnel-grid" style={gridStyle}>
-                <Card title="Top Employees">
+                <Card title="Activities Reported by Employees" note={unattributedNote(data, 'byEmployee', 'No employee recorded')}>
                   {data.byEmployee?.length > 0 ? <HBarChart data={data.byEmployee} activeName={data.activeFilters.filterEmployee} onBarClick={name => handleFilter('employee', name)} /> : <EmptyState label="No employee data matches your filters" />}
                 </Card>
-                <Card title="Employees by Role">
+                <Card title="Employees by Role" note={unattributedNote(data, 'byEmployeeRole', 'No role recorded')}>
                   {data.byEmployeeRole?.length > 0 ? <DonutChart data={data.byEmployeeRole} activeName={data.activeFilters.filterEmployeeRole} onSliceClick={name => handleFilter('employee_role', name)} /> : <EmptyState label="No role data matches your filters" />}
                 </Card>
               </div>
@@ -346,7 +356,7 @@ function PersonnelPageInner() {
 
             <Reveal delay={60} style={{ marginBottom: 14 }}>
               <div className="personnel-grid" style={gridStyle}>
-                <Card title="Engineers Activity">
+                <Card title="Engineers Activity" note={unattributedNote(data, 'byEngineer', 'No engineer recorded')}>
                   {data.byEngineer?.length > 0 ? <HBarChart data={data.byEngineer} activeName={data.activeFilters.filterEngineer} onBarClick={name => handleFilter('engineer', name)} /> : <EmptyState label="No engineer data matches your filters" />}
                 </Card>
                 <Card title="Engineers by Party">
@@ -357,7 +367,7 @@ function PersonnelPageInner() {
 
             <Reveal delay={120}>
               <div className="personnel-grid" style={gridStyle}>
-                <Card title="Supervisors Activity">
+                <Card title="Supervisors Activity" note={unattributedNote(data, 'bySupervisor', 'No supervisor recorded')}>
                   {data.bySupervisor?.length > 0 ? <HBarChart data={data.bySupervisor} activeName={data.activeFilters.filterSupervisor} onBarClick={name => handleFilter('supervisor', name)} /> : <EmptyState label="No supervisor data matches your filters" />}
                 </Card>
                 <Card title="Supervisors by Party">

@@ -197,6 +197,8 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
 
 `byMachine`/`byEmployee`/`byEngineer`/`bySupervisor`/`byOwnership` are computed by cross-referencing the HR join tables (fetched in full every request, joined in-memory via `report_id`) against whichever reports match the active filters — see the 2026-07-16/2026-07-18 changelog entries below for the filtering/remount bugs this shape was built to fix.
 
+The `by*` person/weather series have the literal `"Unknown"` entry (blank raw value) **stripped out** in the route (`applyUnknownHandling` in `src/app/api/dashboard/_lib.ts`) so charts rank/percent over named entities only; the removed counts come back as a separate `unattributed: { byEngineer: 4499, byWeather: 3676, … }` map (non-zero keys only) which the pages surface as a muted "N not shown in ranking" caption. Blank `employee_name` additionally falls back to `employee_missing_name` inside `dashboard_core`. See the 2026-09-08 (3)/(4) changelog entries. `byEngineerParty`/`bySupervisorParty` are also run through `normalizePartySeries` to merge dirty label variants (`HITECH employees`, `Sub-contactor` typo) down to the two real parties.
+
 ---
 
 ### `GET /api/progress`
@@ -622,6 +624,38 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-08 (4) — "Unknown" buckets: recover blank employee names, strip the rest out of the ranked charts (no fabrication)
+
+**Files changed:** `scripts/sql/add_dashboard_unknown_handling.sql` (new) + Supabase migration `add_dashboard_unknown_handling`, `src/app/api/dashboard/_lib.ts`, `src/app/api/dashboard/route.ts`, `src/app/personnel/page.tsx`, `src/app/machines/page.tsx`, `src/app/dashboard/page.tsx`
+
+**What the user asked for:** remove the big "Unknown" bar from the person/weather charts (e.g. Engineers Activity was 67% "Unknown"), and "split the data of unknown to the highest and second highest personnel in each table", for every "Unknown" across the project.
+
+**Why it wasn't done as literally asked:** `AskUserQuestion` up front with the real numbers — redistributing 4,499 unattributed engineer activities onto "Believe" (1,151) and "TONY" (563) 3–5×'s two real people's apparent workload with work the records don't tie to them, on a dashboard used to judge who did what, and it's irreversible once screenshotted / used for a staffing or payment call. Same class of integrity call as the 2026-08-01 synthetic-data entries. User picked **"Recover + relabel"**, not the redistribution.
+
+**What "Unknown" actually is (checked live before proposing anything):**
+- engineer name: 4,499 / 6,689 rows (67%) have no `engineer_name` and no `engineer_missing_name` — genuinely blank, nothing to recover.
+- supervisor name: 266 / 6,720 (4%) genuinely blank.
+- weather: 3,676 / 9,776 reports (38%) blank.
+- driver: ~3,711 machine mentions blank.
+- employee name: only 67 blank, but **53** of those have a real name typed into the ignored `employee_missing_name` free-text column ("person wasn't in the dropdown") — recoverable.
+- reporter / project / category / section / status: zero blanks — those charts never had an "Unknown".
+
+**SQL migration `add_dashboard_unknown_handling`** (recreates `dashboard_core` + `dashboard_filtered_ids` in full — a SQL function body can't be partially altered; diff is only the 4 employee expressions, each marked `-- CHANGED`): everywhere those two functions read `employee_name`, it's now `coalesce(nullif(btrim(employee_name),''), employee_missing_name)` — the `byEmployee` group array, the `distinct_tc` 'emp' row, the `emp` CTE `p_employee` predicate, and the `p_employee` EXISTS predicate in `dashboard_filtered_ids`. Net effect: the 53 blank-name employee rows now resolve to their real typed-in name in the ranking and are filterable by it. Nothing else changes; verified `dashboard_core()` still returns the same shape and `byEmployee` no longer contains "Unknown". The `.sql` file is checked in per this repo's convention (no Supabase CLI migrations dir) and was applied to the live project via MCP.
+
+**API route (`_lib.ts` + `route.ts`)** — after the RPC returns, and after `normalizePartySeries` (see the 2026-09-08 (3) entry): `applyUnknownHandling(core)` pulls any entry literally named `"Unknown"` (what `_dash_group` emits for a blank raw value) out of `byEngineer`, `bySupervisor`, `byEmployee`, `byMachine`, `byDriver`, `byOwnership`, `byWeather`, `byEmployeeRole`, `byEngineerParty`, `bySupervisorParty`. The cleaned series replace the originals (so the frontend ranks and computes % over named entities only), and the removed counts are attached as a new `unattributed: { byEngineer: 4499, byWeather: 3676, byDriver: 3711, … }` map (non-zero entries only). Recomputes correctly per active filter (checked `?category=Earthworks` → `byEngineer` unattributed 1,282). `byCategory`/`byProject`/`byStatus` are deliberately **not** in the list — no blanks there, and a fabricated-looking "Unknown status" split would be worse than leaving it.
+
+**Frontend disclosure** — the gap is still shown, just not fabricated onto anyone or counted in the ranks:
+- `personnel/page.tsx`, `machines/page.tsx`: `Card` gained an optional `note` prop (muted mono line under the chart body); a local `unattributedNote(data, key, subject)` helper renders `"No engineer recorded: 4,499 not shown in ranking"` under Engineers/Supervisors/Employees-by-role and Machines/Ownership/Drivers when `unattributed[key] > 0`.
+- `dashboard/page.tsx`: the Weather Conditions card passes the same text through its existing `sub` prop.
+
+**Verified:** `tsc --noEmit` + `next build` clean (23 routes). Live Playwright pass (minted session): `/personnel` — Engineers chart now leads with Believe (53% of recorded), no "Unknown" bar anywhere on the page, the three footnotes render (`No engineer recorded: 4,499` / `No supervisor recorded: 266` / `No role recorded: 1`), party donuts still show the merged 2 slices, 0 console errors. `/dashboard` — Weather is now Sunny 95% of recorded with `No weather recorded: 3,676 not shown in ranking` under the title, 0 console errors.
+
+### 2026-09-08 (3) — `/personnel` "Engineers by Party" / "Supervisors by Party": merge dirty label variants
+
+**Files changed:** `src/app/api/dashboard/_lib.ts`, `src/app/api/dashboard/route.ts`
+
+**What changed:** the raw `party` column on `hitech_report_hitechengineer` / `hitechsupervisor` has variants that are really only two parties — `Hitech employees` / `HITECH employees`, and `Sub-contractor` / `Sub-contactor` (misspelled). SQL `_titlecase()` only fixes the first letter of each word, so those rendered as 4 separate donut slices. Added `normalizePartySeries()` in `_lib.ts` (buckets any label containing `hitech` → one slice, any `sub-cont…` → one slice, sums the counts, labels each bucket with its highest-count raw value so click-to-filter still matches the bulk of the rows), applied to `byEngineerParty` / `bySupervisorParty` in `route.ts` before the response is cached. Verified against live data: supervisors collapse to `Hitech Employees` (6,240) + `Sub-contractor` (480); engineers to `Hitech Employees` (6,489) + `Sub-contactor` (200). `tsc` + `next build` clean. **Caveat:** clicking the merged `Sub-contractor` slice filters by that exact string, so the 63 typo'd `Sub-contactor` supervisor rows aren't included in that filtered view (they were their own slice before) — a `dashboard_filtered_ids` party-predicate tweak would be needed to sweep the misspelling in too. Real root cause is the portal writing the dirty values; normalizing at read time here.
 
 ### 2026-09-08 (2) — Shell "premium" pass: new type system, genuinely fixed rail, full-bleed content, and a latent font bug fixed
 

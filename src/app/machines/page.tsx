@@ -12,6 +12,7 @@ interface DashData {
   byOwnership: Array<{ name: string; count: number }>
   byDriver:    Array<{ name: string; count: number }>
   machineSummary: { totalMentions: number; distinctMachines: number; distinctDrivers: number }
+  unattributed?: Record<string, number>
   filterOptions: { categories: string[]; projects: string[] }
   activeFilters: {
     filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
@@ -54,7 +55,7 @@ function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode;
   )
 }
 
-function Card({ children, title }: { children: React.ReactNode; title: string }) {
+function Card({ children, title, note }: { children: React.ReactNode; title: string; note?: React.ReactNode }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
@@ -62,8 +63,17 @@ function Card({ children, title }: { children: React.ReactNode; title: string })
         <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
       </div>
       <div style={{ padding: '4px 16px 16px' }}>{children}</div>
+      {note && <div style={{ padding: '0 16px 12px', marginTop: -4, fontSize: 11, lineHeight: 1.4, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{note}</div>}
     </div>
   )
+}
+
+// Surfaces the blank bucket the API strips out of the ranked series — see
+// src/app/api/dashboard/_lib.ts.
+function unattributedNote(data: DashData, key: string, subject: string): string | null {
+  const n = data.unattributed?.[key]
+  if (!n) return null
+  return `${subject}: ${n.toLocaleString()} not shown in ranking`
 }
 
 function KPICard({ label, value, icon, delay = 0, color }: { label: string; value: number; icon: React.ReactNode; delay?: number; color?: string }) {
@@ -327,17 +337,17 @@ function MachinesPageInner() {
 
             <Reveal>
               <div className="mach-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-                <Card title="Machines Used">
+                <Card title="Machines Used" note={unattributedNote(data, 'byMachine', 'No machine name recorded')}>
                   {data.byMachine?.length > 0
                     ? <HBarChart data={data.byMachine} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)} />
                     : <EmptyState label="No machine data matches your filters" />}
                 </Card>
-                <Card title="Ownership Breakdown">
+                <Card title="Ownership Breakdown" note={unattributedNote(data, 'byOwnership', 'No ownership recorded')}>
                   {data.byOwnership?.length > 0
                     ? <DonutChart data={data.byOwnership} activeName={data.activeFilters.filterOwnership} onSliceClick={name => handleFilter('ownership', name)} />
                     : <EmptyState label="No ownership data matches your filters" />}
                 </Card>
-                <Card title="Top Drivers">
+                <Card title="Top Drivers" note={unattributedNote(data, 'byDriver', 'No driver recorded')}>
                   {data.byDriver?.length > 0
                     ? <HBarChart data={data.byDriver} activeName={data.activeFilters.filterDriver} onBarClick={name => handleFilter('driver', name)} />
                     : <EmptyState label="No driver data matches your filters" />}
