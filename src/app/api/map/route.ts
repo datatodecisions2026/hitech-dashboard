@@ -6,6 +6,35 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// PostgREST hard-caps any single response at 1000 rows, project-wide — a
+// requested .limit(5000)/.limit(1000) is silently capped, not honoured (see
+// the 2026-07-22 "map freezing" changelog). Confirmed live 2026-09-15: a
+// Coastal "Earthworks" filter has 1,788 real matching reports; the old
+// single-query fetch only ever returned the first 1,000, so the map's fit
+// bounds / pin count / clustering (see the 2026-09-15 UnifiedMap entry) were
+// silently working off a truncated 56% of the real matches whenever a
+// category matched more than 1000 rows. Same page-until-exhausted pattern as
+// src/app/api/progress/route.ts's fetchAll(). hitech_report_hitechreport is
+// ~9.7k rows total — comfortably fine to page through in full (this project's
+// own precedent: never fetchAll() road_assets/streetlights-scale tables,
+// but this table is two-plus orders of magnitude smaller than those).
+// MAX_PAGES is a defensive ceiling, not an expected limit, in case the table
+// grows unexpectedly — 30 pages = 30,000 rows, ~3x today's real total.
+async function fetchAll<T = Record<string, unknown>>(query: any): Promise<T[]> {
+  const all: T[] = []
+  const PAGE = 1000
+  const MAX_PAGES = 30
+  let from = 0
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, error } = await query.range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    all.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all
+}
+
 // hitech_report_chainage is one row per metre of road (423,696 rows for the
 // largest project alone) — never fetchAll() it. map_chainage_line() samples
 // at a metre interval chosen from the requested zoom level, so the whole
@@ -43,9 +72,10 @@ export async function GET(req: NextRequest) {
   const category  = searchParams.get('category') || ''
   // all=1 → return reports across every project/section, not just `project`
   // (the UnifiedMap needs Calabar/Kebbi/Ogun report pins alongside Coastal's).
-  // Still one bounded query — the whole table is ~9.7k rows. Stations still
-  // come from the `project` param, so all=1&project=Coastal Road gives every
-  // report + the Coastal road line in a single call.
+  // Paged in full via fetchAll() below — the whole table is ~9.7k rows, well
+  // within what's fine to page through (see fetchAll's own comment). Stations
+  // still come from the `project` param, so all=1&project=Coastal Road gives
+  // every report + the Coastal road line in one response.
   const allReports = searchParams.get('all') === '1'
 
   const zoomParam = searchParams.get('zoom')
@@ -65,13 +95,11 @@ export async function GET(req: NextRequest) {
     'reporter_name, date_of_activity, project_name, section_name, ' +
     'start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long'
 
-  // PostgREST hard-caps ANY single response at 1000 rows (project-wide, can't
-  // be raised from the client — see the 2026-07-22 "map freezing" changelog).
-  // For all=1 that means one flat query would only ever return the first 1000
-  // reports, which are all Coastal Section 1 — the ~35 geolocated
-  // Calabar/Kebbi/Ogun reports the UnifiedMap needs would never appear. So
-  // all=1 runs the Coastal set AND a targeted grab of the other regions
-  // (by section/project keyword — ~35 rows) and merges them.
+  // all=1 still splits into a Coastal query + a targeted grab of the other
+  // ~35 geolocated Calabar/Kebbi/Ogun rows (by section/project keyword),
+  // rather than one flat query — both now go through fetchAll() so the
+  // 1000-row cap itself is no longer the reason for the split, but keeping
+  // it targeted still means the ~35-row "other" set never needs to page.
   // Note: PostgREST's embedded or() filter syntax uses `*` as the LIKE
   // wildcard, NOT `%` (unlike the standalone .ilike() builder).
   const OTHER_REGION_OR =
@@ -81,17 +109,16 @@ export async function GET(req: NextRequest) {
   async function fetchReports(): Promise<any[]> {
     if (!allReports) {
       let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS)
-        .ilike('project_name', `%${project.split(' ')[0]}%`).limit(5000)
+        .ilike('project_name', `%${project.split(' ')[0]}%`)
       if (category) q = q.ilike('activity_category', category)
-      const { data } = await q
-      return data ?? []
+      return fetchAll(q)
     }
-    let coastal = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).ilike('project_name', '%Coastal%').limit(1000)
-    let other   = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).or(OTHER_REGION_OR).limit(1000)
+    let coastal = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).ilike('project_name', '%Coastal%')
+    let other   = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).or(OTHER_REGION_OR)
     if (category) { coastal = coastal.ilike('activity_category', category); other = other.ilike('activity_category', category) }
-    const [c, o] = await Promise.all([coastal, other])
+    const [c, o] = await Promise.all([fetchAll(coastal), fetchAll(other)])
     const byId = new Map<number, any>()
-    for (const r of [...((c.data ?? []) as any[]), ...((o.data ?? []) as any[])]) byId.set(r.id, r)
+    for (const r of [...c, ...o] as any[]) byId.set(r.id, r)
     return [...byId.values()]
   }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
-import { MarkerClusterer } from '@googlemaps/markerclusterer'
+import { MarkerClusterer, NoopAlgorithm } from '@googlemaps/markerclusterer'
 import { useMapView, readPersistedCamera, type MapLayerKey } from '@/lib/map-view'
 
 /* ──────────────────────────────────────────────────────────────
@@ -177,6 +177,10 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
   const [reportsLoading,   setReportsLoading] = useState(true)
   const [assetClusters,    setAssetClusters]  = useState<AssetCluster[]>([])
   const [assetsRefreshing, setAssetsRefreshing] = useState(false)
+  // What's actually plotted after the chainage-range filter below narrows
+  // `reports` (which itself is only ever server-narrowed by category) — the
+  // "N reports" readout should match what's on the map, not the fetched set.
+  const [visibleReportCount, setVisibleReportCount] = useState(0)
 
   const [designData, setDesignData] = useState<RoadDesignData | null>(null)
   const [designLoading, setDesignLoading] = useState(false)
@@ -192,6 +196,7 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
   const tickMarkersRef   = useRef<google.maps.Marker[]>([])
   const reportLinesRef   = useRef<google.maps.Polyline[]>([])
   const reportClustererRef = useRef<MarkerClusterer | null>(null)
+  const reportClusterModeRef = useRef<boolean | null>(null)
   const assetClustererRef  = useRef<MarkerClusterer | null>(null)
   const designLinesRef   = useRef<google.maps.Polyline[]>([])
 
@@ -201,6 +206,7 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
   const lastFocusRef    = useRef<number | string | null>(null)
   const lastSectionFitRef = useRef<string | null>(null)
   const filterFitRef    = useRef<string | null>(null)
+  const catFitRef       = useRef<string | null>(null)
 
   const bbox = (v: ViewState | null) =>
     v && v.zoom >= 12
@@ -229,9 +235,42 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
       .then(d => {
         setCoastalStations(d.stations ?? [])
         setReports(d.reports ?? [])
+
+        // Fit the camera to a *category* filter right here, off the response
+        // that was actually just fetched for it — not in a separate effect
+        // keyed on the `category` prop, which fires as soon as the prop
+        // changes and would otherwise race this fetch, computing bounds from
+        // the *previous* category's reports still sitting in state. Only a
+        // real category change fits (first run / unchanged value seeds and
+        // returns, same convention as the other fit effects below).
+        const catKey = category || ''
+        if (catFitRef.current === null) { catFitRef.current = catKey; return }
+        if (catFitRef.current === catKey) return
+        catFitRef.current = catKey
+        if (!category || !mapRef.current) return
+        const secRegion = initialSection ? sectionRegion(initialSection) : ''
+        if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
+
+        const map = mapRef.current
+        const b = new google.maps.LatLngBounds()
+        let points = 0
+        for (const r of (d.reports ?? []) as ActivityReport[]) {
+          const lat = r.start_chainage_lat ? parseFloat(r.start_chainage_lat) : NaN
+          const lng = r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN
+          if (!isNaN(lat) && !isNaN(lng)) { b.extend({ lat, lng }); points++ }
+        }
+        if (points === 0) return
+        if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
+          map.panTo(b.getCenter())
+          map.setZoom(16)
+        } else {
+          map.fitBounds(b, 70)
+          google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
+        }
       })
       .catch(() => setError('Failed to load map data'))
       .finally(() => setReportsLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers.coastalLine, layers.reports, category, viewState])
 
   /* ── Fetch: Kebbi corridor line (static context, fixed coarse zoom) ── */
@@ -488,6 +527,16 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
 
     /* Report pins */
     if (layers.reports) {
+      // An active category and/or a fully-set chainage range both narrow which
+      // reports actually render — when either is on, the clusterer below is
+      // swapped to NoopAlgorithm so the (now much smaller) matching set shows
+      // as individual pins rather than a bubbled count, matching the "zoom to
+      // the filtered point(s), no clusters" behaviour asked for.
+      const chF = chFrom ? Number(chFrom) : NaN
+      const chT = chTo ? Number(chTo) : NaN
+      const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
+      const hasActiveFilter = !!category || chActive
+
       const markers: google.maps.Marker[] = []
       const lines: google.maps.Polyline[] = []
       reports
@@ -504,6 +553,14 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
           const endLat = endStation?.latitude  ?? (r.end_chainage_lat  ? parseFloat(r.end_chainage_lat)  : undefined)
           const endLng = endStation?.longitude ?? (r.end_chainage_long ? parseFloat(r.end_chainage_long) : undefined)
           if (startLat == null || startLng == null || isNaN(startLat) || isNaN(startLng)) return
+
+          // Chainage filter only has meaning for Coastal (chainage-tracked)
+          // reports — apply it there, leave Calabar/Ogun/Kebbi pins alone.
+          if (chActive && region === 'reports') {
+            const rStart = startCh ?? endCh
+            const rEnd   = endCh   ?? startCh
+            if (rStart == null || rEnd == null || rEnd < chF || rStart > chT) return
+          }
 
           const endTooFar = endLat != null && endLng != null && !isNaN(endLat) && !isNaN(endLng)
             && Math.hypot(endLng - startLng, endLat - startLat) > 0.05
@@ -528,12 +585,21 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
           }
         })
       reportLinesRef.current = lines
+      setVisibleReportCount(markers.length + lines.length)
 
+      // Swap the clusterer's algorithm (only settable at construction) when
+      // filter state flips between "cluster nearby pins" and "show every
+      // matching pin individually" — recreate rather than mutate in place.
+      if (reportClustererRef.current && reportClusterModeRef.current !== hasActiveFilter) {
+        reportClustererRef.current.setMap(null)
+        reportClustererRef.current = null
+      }
       if (reportClustererRef.current) {
         reportClustererRef.current.addMarkers(markers)
       } else {
         reportClustererRef.current = new MarkerClusterer({
           map, markers,
+          algorithm: hasActiveFilter ? new NoopAlgorithm({}) : undefined,
           renderer: { render: ({ count, position }) => {
             const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
             return new google.maps.Marker({
@@ -544,7 +610,10 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
             })
           } },
         })
+        reportClusterModeRef.current = hasActiveFilter
       }
+    } else {
+      setVisibleReportCount(0)
     }
   }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi])
 
@@ -647,10 +716,17 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
     clearFocusRequest()
   }, [focusRequest, mapLoaded, setLayer, clearFocusRequest])
 
-  /* ── Fit to an active chainage / category filter (dashboard) ───────────
-     Only when the filter value actually changes — a normal load must leave
-     the persisted camera alone. First run seeds the ref so a page opened
-     with a filter already in the URL doesn't yank the view. */
+  /* ── Fit to an active chainage-only filter (dashboard) ──────────────────
+     The category case is fitted where its data actually arrives (the
+     reports-fetch effect above) — computing it here from `reports` state
+     races that fetch and ends up fitting to the *previous* category's
+     already-loaded reports (a real bug, not hypothetical — caught live:
+     selecting a category moved the camera only slightly, toward whatever
+     the stale full/previous report set's centroid was, not the new
+     category's actual location).
+     Only fires when the filter value actually changes — a normal load must
+     leave the persisted camera alone. First run seeds the ref so a page
+     opened with a filter already in the URL doesn't yank the view. */
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return
     const key = `${category || ''}|${chFrom || ''}|${chTo || ''}`
@@ -658,34 +734,33 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
     if (filterFitRef.current === key) return
     filterFitRef.current = key
     if (key === '||') return // filters cleared — keep current view
+    if (category) return // handled by the reports-fetch effect instead
 
     // A regional section filter (Calabar/Ogun/Kebbi) owns the camera via the
-    // section-fit effect above. The category / chainage bounds computed below
-    // are Coastal-only, so without this they'd drag the view back to Lagos.
+    // section-fit effect above. The chainage bounds computed below are
+    // Coastal-only, so without this they'd drag the view back to Lagos.
     const secRegion = initialSection ? sectionRegion(initialSection) : ''
     if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
 
     const map = mapRef.current
     const b = new google.maps.LatLngBounds()
-    let has = false
-    if (category) {
-      reports.forEach(r => {
-        if (regionOf(r) !== 'reports') return
-        const lat = r.start_chainage_lat ? parseFloat(r.start_chainage_lat) : NaN
-        const lng = r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN
-        if (!isNaN(lat) && !isNaN(lng)) { b.extend({ lat, lng }); has = true }
-      })
-    } else {
-      const f = chFrom ? Number(chFrom) : NaN, t = chTo ? Number(chTo) : NaN
-      if (!isNaN(f) && !isNaN(t) && t > f) {
-        coastalStations.filter(s => s.label >= f && s.label <= t).forEach(s => { b.extend({ lat: s.latitude, lng: s.longitude }); has = true })
-      }
+    let points = 0
+    const f = chFrom ? Number(chFrom) : NaN, t = chTo ? Number(chTo) : NaN
+    if (!isNaN(f) && !isNaN(t) && t > f) {
+      coastalStations.filter(s => s.label >= f && s.label <= t).forEach(s => { b.extend({ lat: s.latitude, lng: s.longitude }); points++ })
     }
-    if (has) {
+    if (points === 0) return
+    // A single matched point (or a degenerate zero-area bounds) can't be
+    // "fit" meaningfully — go straight to a close, deterministic zoom on
+    // it instead of leaving fitBounds to guess.
+    if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
+      map.panTo(b.getCenter())
+      map.setZoom(16)
+    } else {
       map.fitBounds(b, 70)
       google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
     }
-  }, [mapLoaded, category, chFrom, chTo, reports, coastalStations, initialSection])
+  }, [mapLoaded, category, chFrom, chTo, coastalStations, initialSection])
 
   /* ── Render ───────────────────────────────────────────────── */
   const legendItems = colorBy === 'category' ? Object.entries(CAT_COLORS) : Object.entries(STATUS_COLORS)
@@ -740,7 +815,7 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
         )}
 
         <span style={{ marginLeft: 'auto', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {reports.length} reports · {assetClusters.length.toLocaleString()} asset points
+          {visibleReportCount.toLocaleString()} reports · {assetClusters.length.toLocaleString()} asset points
           {busy && <span style={{ color: D.amber }}>· refining…</span>}
         </span>
       </div>
