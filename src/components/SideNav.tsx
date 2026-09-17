@@ -16,6 +16,7 @@ const IconPeople = mk(<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><c
 const IconTrending = mk(<><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></>)
 const IconClipboard = mk(<><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="m9 14 2 2 4-4" /></>)
 const IconLayers = mk(<><polygon points="12 2 22 8.5 12 15 2 8.5 12 2" /><polyline points="2 15.5 12 22 22 15.5" /><polyline points="2 12 12 18.5 22 12" /></>)
+const IconSatellite = mk(<><path d="m13 7 4 4-6.5 6.5a4.95 4.95 0 1 1-7-7L10 4l4 4" /><path d="m14.5 4.5 5 5" /><path d="m21 3-3.5 3.5" /><path d="m3 21 3.5-3.5" /></>)
 
 type NavItem = { label: string; href: string; icon: () => React.ReactElement }
 type NavGroup = { label: string; items: NavItem[] }
@@ -34,6 +35,7 @@ const NAV: NavGroup[] = [
   ]},
   { label: 'Coverage', items: [
     { label: 'Asset Coverage', href: '/road-assets-coverage', icon: IconLayers },
+    { label: 'Road Corridors', href: '/road-corridors', icon: IconSatellite },
   ]},
 ]
 

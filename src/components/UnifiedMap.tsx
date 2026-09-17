@@ -144,6 +144,11 @@ interface Props {
   chFrom?: string
   chTo?: string
   category?: string
+  /** From /dashboard's Project filter — when set, drops the default all=1
+     (every-project) report fetch in favor of scoping to just this project
+     (see the reports-fetch effect below), and counts as an active filter
+     for both clusterers' decluster check. */
+  project?: string
   /** From /planning-implementation's section filter — fits that region once
      on mount / when it changes. '' = show everything (national). */
   initialSection?: string
@@ -162,7 +167,7 @@ const regionOf = (r: { project_name?: string | null; section_name?: string | nul
 }
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function UnifiedMap({ chFrom, chTo, category, initialSection, onLoadStats }: Props) {
+export default function UnifiedMap({ chFrom, chTo, category, project, initialSection, onLoadStats }: Props) {
   const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
 
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -198,6 +203,7 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
   const reportClustererRef = useRef<MarkerClusterer | null>(null)
   const reportClusterModeRef = useRef<boolean | null>(null)
   const assetClustererRef  = useRef<MarkerClusterer | null>(null)
+  const assetClusterModeRef = useRef<boolean | null>(null)
   const designLinesRef   = useRef<google.maps.Polyline[]>([])
 
   const mapReqKeyRef    = useRef<string>('')
@@ -213,18 +219,26 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
       ? { swLat: v.swLat, swLng: v.swLng, neLat: v.neLat, neLng: v.neLng }
       : null
 
-  /* ── Fetch: Coastal stations + ALL reports (one call) ────────
-     all=1 returns every project's reports, so Calabar/Kebbi/Ogun pins come
-     down alongside Coastal's. Stations still scoped to Coastal Road. Skipped
-     entirely when neither the road-line nor the reports layer is on. */
+  /* ── Fetch: Coastal stations + reports ────────────────────────
+     No project filter selected: all=1 returns every project's reports, so
+     Calabar/Kebbi/Ogun pins come down alongside Coastal's, and stations
+     default to Coastal Road. Once a project IS selected (confirmed with the
+     user, see the 2026-09-17 (7) changelog — chosen over "just decluster,
+     keep showing every project"), all=1 is dropped and `project` is sent
+     as the real filter value instead of the hardcoded default — /api/map's
+     own existing project-scoping (.ilike('project_name', ...), same
+     convention as /api/progress) then does the narrowing, so a project
+     change actually reduces which pins show, not just whether they cluster.
+     Skipped entirely when neither the road-line nor the reports layer is on. */
   useEffect(() => {
     if (!layers.coastalLine && !layers.reports) { setReports([]); setCoastalStations([]); setReportsLoading(false); return }
     const b = bbox(viewState)
-    const key = `${layers.reports}|${category || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
+    const key = `${layers.reports}|${category || ''}|${project || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
     if (mapReqKeyRef.current === key) return
     mapReqKeyRef.current = key
 
-    const p = new URLSearchParams({ project: COASTAL_PROJECT, all: '1' })
+    const p = new URLSearchParams({ project: project || COASTAL_PROJECT })
+    if (!project) p.set('all', '1')
     if (category) p.set('category', category)
     if (viewState) p.set('zoom', String(viewState.zoom))
     if (b) { p.set('swLat', String(b.swLat)); p.set('swLng', String(b.swLng)); p.set('neLat', String(b.neLat)); p.set('neLng', String(b.neLng)) }
@@ -236,18 +250,19 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
         setCoastalStations(d.stations ?? [])
         setReports(d.reports ?? [])
 
-        // Fit the camera to a *category* filter right here, off the response
-        // that was actually just fetched for it — not in a separate effect
-        // keyed on the `category` prop, which fires as soon as the prop
-        // changes and would otherwise race this fetch, computing bounds from
-        // the *previous* category's reports still sitting in state. Only a
-        // real category change fits (first run / unchanged value seeds and
-        // returns, same convention as the other fit effects below).
-        const catKey = category || ''
-        if (catFitRef.current === null) { catFitRef.current = catKey; return }
-        if (catFitRef.current === catKey) return
-        catFitRef.current = catKey
-        if (!category || !mapRef.current) return
+        // Fit the camera to a *category or project* filter right here, off
+        // the response that was actually just fetched for it — not in a
+        // separate effect keyed on the category/project props, which fires
+        // as soon as a prop changes and would otherwise race this fetch,
+        // computing bounds from the *previous* filter's reports still
+        // sitting in state. Only a real change fits (first run / unchanged
+        // value seeds and returns, same convention as the other fit effects
+        // below).
+        const filterKey = `${category || ''}|${project || ''}`
+        if (catFitRef.current === null) { catFitRef.current = filterKey; return }
+        if (catFitRef.current === filterKey) return
+        catFitRef.current = filterKey
+        if ((!category && !project) || !mapRef.current) return
         const secRegion = initialSection ? sectionRegion(initialSection) : ''
         if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
 
@@ -271,7 +286,7 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
       .catch(() => setError('Failed to load map data'))
       .finally(() => setReportsLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers.coastalLine, layers.reports, category, viewState])
+  }, [layers.coastalLine, layers.reports, category, project, viewState])
 
   /* ── Fetch: Kebbi corridor line (static context, fixed coarse zoom) ── */
   useEffect(() => {
@@ -527,15 +542,19 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
 
     /* Report pins */
     if (layers.reports) {
-      // An active category and/or a fully-set chainage range both narrow which
-      // reports actually render — when either is on, the clusterer below is
-      // swapped to NoopAlgorithm so the (now much smaller) matching set shows
-      // as individual pins rather than a bubbled count, matching the "zoom to
-      // the filtered point(s), no clusters" behaviour asked for.
+      // An active category, project, and/or a fully-set chainage range all
+      // narrow which reports actually render — when any is on, the
+      // clusterer below is swapped to NoopAlgorithm so the (now much
+      // smaller) matching set shows as individual pins rather than a
+      // bubbled count, matching the "zoom to the filtered point(s), no
+      // clusters" behaviour asked for. `project` added 2026-09-17 (7) —
+      // previously this only checked category/chainage, so selecting a
+      // project (which does genuinely narrow `reports`, see the fetch
+      // effect above) still left the map clustered.
       const chF = chFrom ? Number(chFrom) : NaN
       const chT = chTo ? Number(chTo) : NaN
       const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
-      const hasActiveFilter = !!category || chActive
+      const hasActiveFilter = !!category || !!project || chActive
 
       const markers: google.maps.Marker[] = []
       const lines: google.maps.Polyline[] = []
@@ -615,13 +634,30 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
     } else {
       setVisibleReportCount(0)
     }
-  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi])
+  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi])
 
   /* ── Render: road-asset clusters ──────────────────────────── */
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return
     const map = mapRef.current
-    assetClustererRef.current?.clearMarkers()
+
+    // Same "no clusters once something is filtered" behaviour the report
+    // pins already have (see the "Report pins" block below) — extended here
+    // on direct user ask, since this clusterer previously never checked any
+    // filter state at all and stayed bubbled regardless. category/project/
+    // chFrom/chTo don't actually narrow road_assets' own data (it has no
+    // activity_category or project_name column matching the reports side),
+    // and initialSection does narrow which Calabar/Ogun/Kebbi section is
+    // fetched — but the user confirmed they want ALL of these treated as
+    // "a filter is active" for this layer, for one consistent whole-map
+    // behaviour rather than a data-semantics distinction a viewer wouldn't
+    // necessarily notice either way. `project` added 2026-09-17 (7) for the
+    // same reason (a project selection is just as much "a filter is
+    // active" as category ever was, even though it doesn't narrow assets).
+    const chF = chFrom ? Number(chFrom) : NaN
+    const chT = chTo ? Number(chTo) : NaN
+    const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
+    const hasActiveFilter = !!category || !!project || chActive || !!initialSection
 
     const markers = assetClusters.map(c => {
       const single = c.count === 1 && c.id != null
@@ -634,11 +670,17 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
       return m
     })
 
+    if (assetClustererRef.current && assetClusterModeRef.current !== hasActiveFilter) {
+      assetClustererRef.current.setMap(null)
+      assetClustererRef.current = null
+    }
     if (assetClustererRef.current) {
+      assetClustererRef.current.clearMarkers()
       assetClustererRef.current.addMarkers(markers)
     } else {
       assetClustererRef.current = new MarkerClusterer({
         map, markers,
+        algorithm: hasActiveFilter ? new NoopAlgorithm({}) : undefined,
         renderer: { render: ({ count, position }) => {
           const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
           return new google.maps.Marker({
@@ -649,8 +691,9 @@ export default function UnifiedMap({ chFrom, chTo, category, initialSection, onL
           })
         } },
       })
+      assetClusterModeRef.current = hasActiveFilter
     }
-  }, [mapLoaded, assetClusters])
+  }, [mapLoaded, assetClusters, category, project, chFrom, chTo, initialSection])
 
   /* ── Render: ArcGIS road-design overlay ───────────────────── */
   useEffect(() => {
