@@ -70,6 +70,12 @@ export async function GET(req: NextRequest) {
   const project   = searchParams.get('project') || 'Coastal Road'
   const projectId = PROJECT_ID_MAP[project] ?? 1
   const category  = searchParams.get('category') || ''
+  // Same convention as category — case-insensitive column match, filters the
+  // reports array only (not stations). Added so UnifiedMap can zoom/decluster
+  // for a Weather-chart click the same way it already does for category —
+  // previously weather never reached this route at all, see the
+  // "map still shows clusters after clicking a filter" changelog entry.
+  const weather   = searchParams.get('weather') || ''
   // all=1 → return reports across every project/section, not just `project`
   // (the UnifiedMap needs Calabar/Kebbi/Ogun report pins alongside Coastal's).
   // Paged in full via fetchAll() below — the whole table is ~9.7k rows, well
@@ -111,11 +117,13 @@ export async function GET(req: NextRequest) {
       let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS)
         .ilike('project_name', `%${project.split(' ')[0]}%`)
       if (category) q = q.ilike('activity_category', category)
+      if (weather) q = q.ilike('weather', weather)
       return fetchAll(q)
     }
     let coastal = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).ilike('project_name', '%Coastal%')
     let other   = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).or(OTHER_REGION_OR)
     if (category) { coastal = coastal.ilike('activity_category', category); other = other.ilike('activity_category', category) }
+    if (weather) { coastal = coastal.ilike('weather', weather); other = other.ilike('weather', weather) }
     const [c, o] = await Promise.all([fetchAll(coastal), fetchAll(other)])
     const byId = new Map<number, any>()
     for (const r of [...c, ...o] as any[]) byId.set(r.id, r)
@@ -140,5 +148,6 @@ export async function GET(req: NextRequest) {
     projectId,
     project,
     category,
+    weather,
   })
 }

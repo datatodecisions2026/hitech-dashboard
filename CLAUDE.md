@@ -255,6 +255,7 @@ project                          — project display name (default "Coastal Road
 zoom                              — current map zoom level; chooses a chainage-sampling interval (coarser when zoomed out) via intervalForZoom() in the route file
 swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12 (at lower zoom the viewport already ≈ the whole road)
 category                          — matched via .ilike() on activity_category; filters the reports array only (not chainage stations) — used by UnifiedMap to also zoom to fit that category's reports
+weather                          — matched via .ilike() on weather, same treatment as category (filters reports only, feeds UnifiedMap's zoom/decluster) — added 2026-09-18 (2) so the dashboard's Weather Conditions chart zooms the map the same way Category/Project already do
 all                              — "1" → return reports across EVERY project/section, not just `project` (UnifiedMap needs Calabar/Kebbi/Ogun pins alongside Coastal's). PostgREST hard-caps any one response at 1000 rows, so all=1 runs two queries — the Coastal set + a keyword-targeted grab of the ~35 geolocated Calabar/Ogun/Kebbi rows (section_name/project_name ilike, `*` wildcard — the embedded or() syntax, not `%`) — and merges them by id. Stations still scoped to `project`.
 ```
 
@@ -714,6 +715,20 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-18 (2) — `UnifiedMap`: the Weather Conditions chart never zoomed/decluttered the map, unlike Category/Project
+
+**Files changed:** `src/app/api/map/route.ts`, `src/components/UnifiedMap.tsx`, `src/app/dashboard/page.tsx`
+
+**What the user reported:** "the map on the main dashboard page... needs to specifically zoom in to the points whenever a filter is clicked on" — a follow-up on the already-fixed 2026-09-15/2026-09-17 (7) behavior.
+
+**Root-caused before assuming it was a repeat of an already-fixed bug**: of the three click-to-filter chart dimensions on `/dashboard` (`grep`'d directly — `onSliceClick`/`onBarClick` wiring for Category, Project, and Weather), only Weather had never been threaded into `UnifiedMap` at all — no `weather` query param on `GET /api/map`, no `weather` prop on `UnifiedMap`, and neither `hasActiveFilter` check (reports clusterer, road-asset clusterer) nor the camera-fit trigger knew it existed. Category and Project were already fully wired (2026-09-15 and 2026-09-17 (7) entries) — this was a gap specific to the one remaining dimension, not a regression.
+
+**Fix, mirroring `category`'s existing treatment exactly** (same pattern the 2026-09-17 (7) `project` fix used): `GET /api/map` now accepts `weather`, applied via `.ilike('weather', weather)` in both `fetchReports()` code paths (single-project and the `all=1` merged-region path), and echoed back in the response. `UnifiedMap` gained a `weather?: string` prop, added to: the reports-fetch effect's cache key, its URL params (`p.set('weather', weather)`), its `filterKey` camera-fit trigger and the "nothing to fit" guard, and its dependency array; both `hasActiveFilter` computations (report-pin clusterer, road-asset clusterer) now also check `!!weather`, with `weather` added to both effects' dependency arrays. `dashboard/page.tsx`'s `<UnifiedMap>` call now passes `weather={data.activeFilters.filterWeather}`.
+
+**Verified live**: direct `curl` against `/api/map?all=1&project=Coastal+Road&weather=Sunny` confirmed the server-side filter narrows 9,746 reports down to 5,763 real Sunny-weather matches. A scripted Playwright pass against a fresh `next start` clicked the "Rainy" bar (67 real reports, 1% of the dataset — the smallest slice, chosen so a real camera move would be visually obvious) on a real running dashboard: the URL correctly became `?weather=Rainy`, the confirmed network request was `/api/map?project=Coastal+Road&all=1&weather=Rainy&zoom=6`, and a before/after screenshot comparison showed the map camera moving from the wide unfiltered national view (a single large "5542" cluster bubble sitting over open water at the default zoom) to a real close-up of the actual Coastal Road/Lagos-Lekki coastline at zoom ~10 with individual (non-bubbled) pins — the KPI/report count correctly dropped to 63/67 matching reports too. Zero console errors. `npx tsc --noEmit` and `npx next build` both clean (26 routes).
+
+**Why:** Direct user report, investigated by re-confirming which chart dimensions actually reach the map (rather than assuming the fix was the same shape as a previous entry) — this is what surfaced that Weather specifically had been skipped while Category/Project were already fixed, and the fix reused the exact code pattern `project` was wired in with (2026-09-17 (7)) for consistency rather than inventing a new approach for the third dimension.
 
 ### 2026-09-18 — `/road-corridors` overview rendering: `ST_Simplify` cuts payload/query time by ~97% with no visible quality loss
 

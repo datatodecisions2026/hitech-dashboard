@@ -149,6 +149,11 @@ interface Props {
      (see the reports-fetch effect below), and counts as an active filter
      for both clusterers' decluster check. */
   project?: string
+  /** From /dashboard's Weather Conditions chart — same treatment as
+     category: narrows which reports are fetched (see the reports-fetch
+     effect below) and counts as an active filter for both clusterers'
+     decluster check + the camera-fit trigger. */
+  weather?: string
   /** From /planning-implementation's section filter — fits that region once
      on mount / when it changes. '' = show everything (national). */
   initialSection?: string
@@ -167,7 +172,7 @@ const regionOf = (r: { project_name?: string | null; section_name?: string | nul
 }
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function UnifiedMap({ chFrom, chTo, category, project, initialSection, onLoadStats }: Props) {
+export default function UnifiedMap({ chFrom, chTo, category, project, weather, initialSection, onLoadStats }: Props) {
   const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
 
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -233,13 +238,14 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
   useEffect(() => {
     if (!layers.coastalLine && !layers.reports) { setReports([]); setCoastalStations([]); setReportsLoading(false); return }
     const b = bbox(viewState)
-    const key = `${layers.reports}|${category || ''}|${project || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
+    const key = `${layers.reports}|${category || ''}|${project || ''}|${weather || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
     if (mapReqKeyRef.current === key) return
     mapReqKeyRef.current = key
 
     const p = new URLSearchParams({ project: project || COASTAL_PROJECT })
     if (!project) p.set('all', '1')
     if (category) p.set('category', category)
+    if (weather) p.set('weather', weather)
     if (viewState) p.set('zoom', String(viewState.zoom))
     if (b) { p.set('swLat', String(b.swLat)); p.set('swLng', String(b.swLng)); p.set('neLat', String(b.neLat)); p.set('neLng', String(b.neLng)) }
 
@@ -255,23 +261,61 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
         // separate effect keyed on the category/project props, which fires
         // as soon as a prop changes and would otherwise race this fetch,
         // computing bounds from the *previous* filter's reports still
-        // sitting in state. Only a real change fits (first run / unchanged
-        // value seeds and returns, same convention as the other fit effects
-        // below).
-        const filterKey = `${category || ''}|${project || ''}`
-        if (catFitRef.current === null) { catFitRef.current = filterKey; return }
-        if (catFitRef.current === filterKey) return
-        catFitRef.current = filterKey
-        if ((!category && !project) || !mapRef.current) return
+        // sitting in state. Only a real change fits — EXCEPT the very first
+        // run, which used to always seed-and-skip (to avoid yanking a
+        // restored/persisted camera on a plain page load). That was wrong
+        // whenever the URL already specifies a filter on first load (e.g.
+        // navigating straight to /dashboard?category=Earthworks) — there's
+        // no meaningful "previous view" to protect in that case, and the map
+        // was silently sitting at whatever camera was last persisted,
+        // completely unrelated to the filter (confirmed live: a fresh load
+        // of ?category=Earthworks showed a random leftover close-up zoom).
+        // So: seed-and-skip only when there's genuinely no filter yet.
+        const filterKey = `${category || ''}|${project || ''}|${weather || ''}`
+        const hasFilter = !!category || !!project || !!weather
+        if (catFitRef.current === null) {
+          catFitRef.current = filterKey
+          if (!hasFilter) return
+        } else {
+          if (catFitRef.current === filterKey) return
+          catFitRef.current = filterKey
+        }
+        if (!hasFilter || !mapRef.current) return
         const secRegion = initialSection ? sectionRegion(initialSection) : ''
         if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
+
+        // Resolve each report's position the SAME way the render effect
+        // does (nearest-chainage-station snap for Coastal reports, raw GPS
+        // only as a fallback) — not raw start_chainage_lat/long directly.
+        // That field is known-unreliable at scale (2026-07-22 changelog: a
+        // single stuck/cached GPS value is reused across thousands of
+        // reports spanning completely different chainages) — computing
+        // bounds from it can pull the fit toward a location that has
+        // nothing to do with where the pins actually render.
+        const stations = (d.stations ?? []) as Station[]
+        const nearestStationForFit = (targetLabel: number): Station | undefined => {
+          let best: Station | undefined, bestDist = Infinity
+          for (const s of stations) {
+            const dist = Math.abs(s.label - targetLabel)
+            if (dist < bestDist) { best = s; bestDist = dist }
+          }
+          return best
+        }
+        const chainageNumForFit = (val?: number | null, text?: number | null): number | null => {
+          if (val != null && !isNaN(val)) return val
+          if (text != null) { const n = Number(String(text).replace('+', '')); if (!isNaN(n)) return n }
+          return null
+        }
 
         const map = mapRef.current
         const b = new google.maps.LatLngBounds()
         let points = 0
         for (const r of (d.reports ?? []) as ActivityReport[]) {
-          const lat = r.start_chainage_lat ? parseFloat(r.start_chainage_lat) : NaN
-          const lng = r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN
+          const snap = regionOf(r) === 'reports'
+          const ch = chainageNumForFit(r.start_chainage_val, r.start_chainage)
+          const station = snap && ch != null ? nearestStationForFit(ch) : undefined
+          const lat = station?.latitude  ?? (r.start_chainage_lat  ? parseFloat(r.start_chainage_lat)  : NaN)
+          const lng = station?.longitude ?? (r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN)
           if (!isNaN(lat) && !isNaN(lng)) { b.extend({ lat, lng }); points++ }
         }
         if (points === 0) return
@@ -286,7 +330,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
       .catch(() => setError('Failed to load map data'))
       .finally(() => setReportsLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers.coastalLine, layers.reports, category, project, viewState])
+  }, [layers.coastalLine, layers.reports, category, project, weather, viewState])
 
   /* ── Fetch: Kebbi corridor line (static context, fixed coarse zoom) ── */
   useEffect(() => {
@@ -554,7 +598,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
       const chF = chFrom ? Number(chFrom) : NaN
       const chT = chTo ? Number(chTo) : NaN
       const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
-      const hasActiveFilter = !!category || !!project || chActive
+      const hasActiveFilter = !!category || !!project || !!weather || chActive
 
       const markers: google.maps.Marker[] = []
       const lines: google.maps.Polyline[] = []
@@ -583,7 +627,13 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
 
           const endTooFar = endLat != null && endLng != null && !isNaN(endLat) && !isNaN(endLng)
             && Math.hypot(endLng - startLng, endLat - startLat) > 0.05
-          const samePoint = endLat == null || endLng == null || (startLat === endLat && startLng === endLng) || endTooFar
+          // While a filter narrows the view, always render a single point
+          // per report (ArcGIS/Power BI convention — one dot per record)
+          // rather than a line spanning its start→end chainage. The
+          // unfiltered default view keeps the extent-line, which is useful
+          // context for browsing all activity along the road at once.
+          const samePoint = hasActiveFilter || endLat == null || endLng == null
+            || (startLat === endLat && startLng === endLng) || endTooFar
           const color = colorFor(r)
 
           if (samePoint) {
@@ -634,7 +684,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
     } else {
       setVisibleReportCount(0)
     }
-  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi])
+  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi])
 
   /* ── Render: road-asset clusters ──────────────────────────── */
   useEffect(() => {
@@ -657,7 +707,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
     const chF = chFrom ? Number(chFrom) : NaN
     const chT = chTo ? Number(chTo) : NaN
     const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
-    const hasActiveFilter = !!category || !!project || chActive || !!initialSection
+    const hasActiveFilter = !!category || !!project || !!weather || chActive || !!initialSection
 
     const markers = assetClusters.map(c => {
       const single = c.count === 1 && c.id != null
@@ -693,7 +743,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, initialSec
       })
       assetClusterModeRef.current = hasActiveFilter
     }
-  }, [mapLoaded, assetClusters, category, project, chFrom, chTo, initialSection])
+  }, [mapLoaded, assetClusters, category, project, weather, chFrom, chTo, initialSection])
 
   /* ── Render: ArcGIS road-design overlay ───────────────────── */
   useEffect(() => {

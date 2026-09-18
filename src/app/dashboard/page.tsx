@@ -849,6 +849,7 @@ function DashboardPageInner() {
                       chTo={data.activeFilters.filterChTo}
                       category={data.activeFilters.filterCategory}
                       project={data.activeFilters.filterProject}
+                      weather={data.activeFilters.filterWeather}
                       initialSection={data.activeFilters.filterSection}
                     />
                   </div>
