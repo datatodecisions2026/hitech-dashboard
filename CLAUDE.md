@@ -356,6 +356,8 @@ swLat, swLng, neLat, neLng        — current map viewport bounds; applied once 
 
 The detail path is **paginated server-side, up to 5,000 segments**: PostgREST hard-caps any single response at 1,000 rows project-wide, so the route calls `road_corridor_segments()` in a loop (up to 5 pages) using a `p_after_id` keyset cursor, stopping early once a page returns fewer than 1,000 rows. This exists because a real dense hotspot can hold many more than 1,000 fragments in a tiny area (confirmed live: 6,000+ in one measured ~555m-radius Calabar box) — a single un-paginated call there returns only an arbitrary, patchy 1,000-row subset, which visibly under-represents how compact the real geometry is (see the 2026-09-17 (4) changelog). `path` is already flattened from GeoJSON to `{lat,lng}[]` server-side, same convention as `/api/road-design`'s `paths`.
 
+Every geometry is also run through PostGIS `ST_Simplify` before being sent — the overview path's longest representative segments can be genuinely huge (Kebbi's biggest is 5,835 points/111km), and since a real highway alignment is mostly straight/gently-curving over long stretches, nearly all of that vertex density is visually redundant once zoomed out. Confirmed live: this cut Kebbi's default overview response from 691KB/964ms to 16KB/418ms (97.7% smaller) with no visible shape change — see the 2026-09-18 changelog for the full measurement.
+
 ---
 
 ### `GET /api/road-assets-coverage`
@@ -712,6 +714,22 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-18 — `/road-corridors` overview rendering: `ST_Simplify` cuts payload/query time by ~97% with no visible quality loss
+
+**Files changed:** `scripts/sql/add_road_corridors_infra.sql`
+
+**What the user asked for:** optimize the speed of the road-corridors map rendering.
+
+**Measured before touching anything, not assumed**: profiled real payload sizes and timings for the default (no-bbox) overview fetch per region. Calabar: 1,356ms / 35,583 bytes. Ogun: 478ms / 2,119 bytes (already tiny). Kebbi: **964ms / 691,512 bytes** — by far the biggest outlier. Investigated why: Kebbi's overview only returns 106 segments (the grid-cache "longest fragment per cell" representatives), but the top 10 of those 106 carry between 886 and 5,835 points each, together accounting for 96.6% of all transferred coordinate pairs — the other 96 segments average a median of 4 points. This is a direct, expected consequence of the "keep the longest fragment per cell" overview rule (2026-09-17 (2) changelog) combined with this data's real shape: a handful of genuinely long, densely-vertexed alignment stretches exist alongside hundreds of thousands of tiny fragments, and the overview heuristic — correctly — always surfaces the long ones.
+
+**Verified the fix would actually help before writing any SQL**: pulled the real 5,835-point/111km Kebbi segment and ran Douglas-Peucker simplification locally in Python at several tolerances — even an ~11m tolerance collapsed it to 107 points (98.2% fewer), because a real highway alignment is mostly straight or gently curving over long stretches, so the vast majority of its vertices are nearly collinear and visually redundant at any zoom where the whole region (or even a large chunk of it) is on screen at once.
+
+**Fix**: applied PostGIS's built-in `ST_Simplify` (the same Douglas-Peucker algorithm) to both of `road_corridor_segments()`'s query paths. The zoomed-out **overview** path scales its tolerance with the caller's `p_grid_deg` (`p_grid_deg / 20.0`) — conservative (~5.5m) right at the boundary with the close-zoom detail path, more aggressive (~275m, still imperceptible at that scale) at the widest whole-region view — so simplification strength tracks how much detail is actually visible. The close-zoom **detail** path gets a small fixed ~2m tolerance — mostly a no-op since those fragments are already short (median 2 points, see `road_corridors`' own table comment), but a safety net for the rare longer fragment that does show up there.
+
+**Verified live, before/after**: re-measured all three regions' default overview fetch after applying the migration. Calabar 1,356ms/35,583B → 1,000ms/4,357B (88% smaller). Kebbi 964ms/691,512B → 418ms/16,185B (**97.7% smaller**, more than 2x faster). Confirmed segment *selection* was unaffected (same 106 Kebbi segments both before and after — only each one's own geometry got lighter) and confirmed visually via a Playwright screenshot of Kebbi's overview that the simplified line is indistinguishable in shape from the original at this zoom, still correctly following the real road alignment through Birnin Kebbi/Gulumbe/Jega/Maiyema. The combined "All Regions" default page load (3 concurrent per-region fetches, the actual first-visit experience) dropped from ~729KB combined to 22KB, completing in under 1 second. `tsc --noEmit` clean (SQL-only change, no TypeScript touched).
+
+**Why:** Direct ask to optimize rendering speed — investigated by measuring real payload/timing per region first (rather than guessing where the cost was), which immediately surfaced Kebbi as a 15-300x outlier versus the other two regions, then traced that outlier to its actual cause (a few very long, densely-vertexed representative segments) before reaching for a fix, and verified the fix's expected benefit locally (Python Douglas-Peucker on the real problem segment) before writing any SQL — consistent with this project's established "measure, don't assume" discipline applied here to a performance question rather than a correctness one.
 
 ### 2026-09-17 (7) — `UnifiedMap` was never project-aware at all: selecting a Project on `/dashboard` did nothing to the map
 

@@ -240,8 +240,14 @@ begin
     -- p_after_id comment above the function signature for the full story
     -- (confirmed live via EXPLAIN ANALYZE that ordering is cheap here, not
     -- assumed).
+    --
+    -- ST_Simplify at a tiny fixed ~2m tolerance: most fragments here are
+    -- already short (median 2 points, see road_corridors' own comment), so
+    -- this is usually a no-op, but the rare longer fragment that does
+    -- appear in a close-zoom bbox still benefits, and 2m is well below
+    -- anything visible even at the deepest zoom this path serves.
     return query
-    select rc.id, rc.length_m, rc.npoints, ST_AsGeoJSON(rc.geom)
+    select rc.id, rc.length_m, rc.npoints, ST_AsGeoJSON(ST_Simplify(rc.geom, 0.00002))
     from public.road_corridors rc
     where rc.region = p_region
       and rc.geom && ST_MakeEnvelope(p_min_lng, p_min_lat, p_max_lng, p_max_lat, 4326)
@@ -263,6 +269,25 @@ begin
   -- This path (grid-cache-backed, one representative-by-length segment per
   -- re-bucketed cell) is still exactly right for a zoomed-out overview —
   -- only the close-zoom case above needed the raw-table detail path.
+  --
+  -- Real finding, not assumed: the "keep the longest fragment per cell"
+  -- rule (by construction) always keeps the longest fragments — and this
+  -- data's longest fragments can be genuinely huge (Kebbi's single longest
+  -- is 5,835 points, 111km). Measured live: a real whole-Kebbi overview
+  -- response was 691KB, with the top 10 (of only 106) segments alone
+  -- accounting for 96.6% of all transferred points — the other 96
+  -- contributed a median of 4 points each. A real highway alignment is
+  -- mostly straight/gently-curving over long stretches, so nearly all of
+  -- that point density is visually redundant at overview zoom: locally
+  -- verified via Douglas-Peucker simplification that the 5,835-point
+  -- segment above collapses to 107 points (98.2% fewer) at an ~11m
+  -- tolerance with no visible shape change at any zoom this path serves.
+  -- ST_Simplify's tolerance scales with p_grid_deg (coarser zoom → more
+  -- simplification, since less detail is visible anyway) rather than a
+  -- fixed value, so it stays conservative right at the boundary with the
+  -- close-zoom detail path above (p_grid_deg near 0.001 → ~5.5m tolerance)
+  -- and more aggressive at the widest whole-region view (p_grid_deg 0.05 →
+  -- ~275m tolerance, still far below what's perceptible at that scale).
   with base as (
     select g.id, g.length_m, g.npoints,
            floor(g.gx::double precision / v_factor) as cgx,
@@ -279,7 +304,7 @@ begin
            row_number() over (partition by base.cgx, base.cgy order by base.length_m desc) as rn
     from base
   )
-  select ranked.id, ranked.length_m, ranked.npoints, ST_AsGeoJSON(rc.geom)
+  select ranked.id, ranked.length_m, ranked.npoints, ST_AsGeoJSON(ST_Simplify(rc.geom, p_grid_deg / 20.0))
   from ranked
   join public.road_corridors rc on rc.id = ranked.id
   where ranked.rn = 1
