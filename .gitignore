@@ -12,3 +12,7 @@ out/
 *.xlsx
 
 docs/
+
+# Python bytecode cache (sync_*.py scripts)
+__pycache__/
+*.pyc
