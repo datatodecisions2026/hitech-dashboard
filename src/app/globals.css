@@ -29,8 +29,8 @@ body {
   --font-dm-sans: var(--font-fira-sans), ui-sans-serif, system-ui, sans-serif;
   --font-dm-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
-  background: #f5f7f9;
-  color: #0e151c;
+  background: #f6f6f4;
+  color: #13253d;
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.6;
@@ -49,13 +49,13 @@ h1, h2, h3, h4, h5 {
 /* The no-FOUC script always resolves data-theme to an explicit value, so
    [data-theme] is the source of truth; @media is the no-JS fallback. */
 :root[data-theme='dark'] { color-scheme: dark; }
-:root[data-theme='dark'] body { background: #0a0e13; color: #e7edf3; }
+:root[data-theme='dark'] body { background: #070d16; color: #edf2f7; }
 :root[data-theme='light'] { color-scheme: light; }
-:root[data-theme='light'] body { background: #f5f7f9; color: #0e151c; }
+:root[data-theme='light'] body { background: #f6f6f4; color: #13253d; }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) { color-scheme: dark; }
-  :root:not([data-theme='light']) body { background: #0a0e13; color: #e7edf3; }
+  :root:not([data-theme='light']) body { background: #070d16; color: #edf2f7; }
 }
 
 * {
@@ -75,13 +75,13 @@ pre, code {
 }
 
 :focus-visible {
-  outline: 2px solid #0369a1;
+  outline: 2px solid #b8872e;
   outline-offset: 2px;
   border-radius: 4px;
 }
-:root[data-theme='dark'] :focus-visible { outline-color: #38bdf8; }
+:root[data-theme='dark'] :focus-visible { outline-color: #e0b64a; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) :focus-visible { outline-color: #38bdf8; }
+  :root:not([data-theme='light']) :focus-visible { outline-color: #e0b64a; }
 }
 
 /* thin neutral scrollbars (was amber) */

@@ -157,7 +157,7 @@ export default function LoginPage() {
 
             <button type="submit" disabled={loading} style={{
               width: '100%', padding: '14px',
-              background: loading ? `${D.amber}80` : D.amber,
+              background: loading ? `${D.amberD}80` : D.amberD,
               color: '#ffffff', border: 'none', borderRadius: 11,
               fontFamily: 'var(--font-loader)', fontWeight: 600, fontSize: '0.95rem',
               cursor: loading ? 'not-allowed' : 'pointer',

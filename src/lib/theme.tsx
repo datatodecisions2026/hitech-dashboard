@@ -9,16 +9,19 @@ export type ThemeName = 'light' | 'dark'
  * Single source of truth for every page's color/shadow tokens (dashboard,
  * progress, machines, personnel, login, DashHeader, SideNav, HitechMap).
  *
- * The palette is now deliberately achromatic — greys for every surface and
- * all body text — with ONE cold accent (sky) that only ever means
- * "wayfinding": active nav, links, focus rings, the one primary action.
- * Status colour (ok / warn — carried on `green` — and `red`) appears only
- * where it means something.
+ * 2026-09-19: swapped from the achromatic sky-blue palette to a navy + gold
+ * theme (confirmed with the user via AskUserQuestion against a reference
+ * Power BI real-estate dashboard) — deep navy for headers/text/dark-mode
+ * surfaces, a warm gold as the one accent (active nav, KPI highlight
+ * numbers, focus rings, the one primary action), white cards in light mode.
+ * Status colour (ok / warn — carried on `green` — and `red`) still only
+ * appears where it means something; unchanged from before.
  *
- * Field names are kept from the previous skeuomorphic palette so the ~300
- * existing `${D.amber}20` hex-alpha-suffix call sites keep working without
- * a codebase-wide rewrite: `amber` is now the sky accent, `blue`/`purple`
- * collapse onto neutral/accent, the glow shadows are flattened to nothing.
+ * Field names are kept from the previous (sky-blue) and original
+ * (skeuomorphic amber) palettes before that, so the ~300 existing
+ * `${D.amber}20` hex-alpha-suffix call sites keep working without a
+ * codebase-wide rewrite: `amber` is now the gold accent, `blue` is the navy
+ * secondary tone, `purple`/`gold` stay neutralised/unused respectively.
  * Theme switching happens by re-rendering with a different literal object.
  */
 export interface ColorTokens {
@@ -36,39 +39,39 @@ export interface ShadowTokens {
 }
 
 const LIGHT_COLORS: ColorTokens = {
-  bg:     '#f5f7f9',   // --ground
-  panel:  '#ffffff',   // --surface
-  panel2: '#eef2f5',   // --surface-2
-  border: '#e3e8ed',   // --line
-  text:   '#0e151c',   // --ink
-  muted:  '#667583',   // --muted
-  sub:    '#9aa7b3',   // faintest text / disabled (between --muted and --line-2)
-  amber:  '#0369a1',   // --accent  (sky-700 — the single wayfinding colour)
-  amberL: '#0284c7',   // accent, bright / hover
-  amberD: '#075985',   // accent, deep
+  bg:     '#f6f6f4',   // --ground (warm off-white, matches the reference's page background)
+  panel:  '#ffffff',   // --surface (white cards)
+  panel2: '#eef1f4',   // --surface-2
+  border: '#e1e5ea',   // --line
+  text:   '#13253d',   // --ink (deep navy — headers, KPI numbers, body text)
+  muted:  '#5b6b7d',   // --muted (navy-tinted gray)
+  sub:    '#93a0ac',   // faintest text / disabled
+  amber:  '#b8872e',   // --accent (warm gold — the single wayfinding colour)
+  amberL: '#d1a24a',   // accent, bright / hover
+  amberD: '#93691f',   // accent, deep
   red:    '#c62a2f',   // --crit
   green:  '#15803d',   // --ok
-  blue:   '#0369a1',   // collapsed onto the accent
-  purple: '#667583',   // neutralised
-  gold:   'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
+  blue:   '#1c3f66',   // navy secondary (headers/hero backgrounds, not the accent)
+  purple: '#5b6b7d',   // neutralised
+  gold:   'linear-gradient(135deg, #d4af37 0%, #f0d078 100%)',
 }
 
 const DARK_COLORS: ColorTokens = {
-  bg:     '#0a0e13',
-  panel:  '#10161d',
-  panel2: '#171f28',
-  border: '#212a34',
-  text:   '#e7edf3',
-  muted:  '#7c8b99',
-  sub:    '#566573',
-  amber:  '#38bdf8',   // --accent (dark)
-  amberL: '#7dd3fc',
-  amberD: '#0ea5e9',
+  bg:     '#070d16',
+  panel:  '#0e1c2e',
+  panel2: '#132842',
+  border: '#1f3855',
+  text:   '#edf2f7',
+  muted:  '#93a4b8',
+  sub:    '#5b7086',
+  amber:  '#e0b64a',   // --accent (dark) — brighter gold for contrast on navy
+  amberL: '#f2cd75',
+  amberD: '#c99a2e',
   red:    '#f2696d',
   green:  '#4ade80',
-  blue:   '#38bdf8',
-  purple: '#7c8b99',
-  gold:   'linear-gradient(135deg, #38bdf8 0%, #7dd3fc 100%)',
+  blue:   '#5b8fc9',   // navy secondary, lightened for legibility on dark bg
+  purple: '#93a4b8',
+  gold:   'linear-gradient(135deg, #e0b64a 0%, #f2cd75 100%)',
 }
 
 const LIGHT_SHADOWS: ShadowTokens = {
@@ -83,7 +86,7 @@ const LIGHT_SHADOWS: ShadowTokens = {
   glowAmber:  'none',
   glowGreen:  'none',
   glowRed:    'none',
-  borderGlow: '1px solid rgba(3,105,161,.30)',
+  borderGlow: '1px solid rgba(184,135,46,.30)',
 }
 
 const DARK_SHADOWS: ShadowTokens = {
@@ -98,7 +101,7 @@ const DARK_SHADOWS: ShadowTokens = {
   glowAmber:  'none',
   glowGreen:  'none',
   glowRed:    'none',
-  borderGlow: '1px solid rgba(56,189,248,.30)',
+  borderGlow: '1px solid rgba(224,182,74,.30)',
 }
 
 interface ThemeContextValue {

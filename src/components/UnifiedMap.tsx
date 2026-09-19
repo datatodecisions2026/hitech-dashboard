@@ -159,6 +159,13 @@ interface Props {
   initialSection?: string
   /** Aggregate road-asset fetch stats, for the planning page's load-time KPI. */
   onLoadStats?: (stats: { queryMs: number; clientMs: number; count: number; mode: 'live' | 'mv' }) => void
+  /** Map → filter bidirectional wiring: a "Filter by…" button inside a
+     report/asset popup calls this with the same (key, value) shape
+     dashboard/page.tsx's own handleFilter already accepts — clicking the
+     already-active value again is expected to clear it, same convention as
+     every chart's click-to-filter elsewhere on the page. Omit to leave
+     popups info-only (no filter action offered). */
+  onFilterRequest?: (key: 'category' | 'project' | 'section', value: string) => void
 }
 
 setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '', v: 'weekly' })
@@ -172,7 +179,7 @@ const regionOf = (r: { project_name?: string | null; section_name?: string | nul
 }
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function UnifiedMap({ chFrom, chTo, category, project, weather, initialSection, onLoadStats }: Props) {
+export default function UnifiedMap({ chFrom, chTo, category, project, weather, initialSection, onLoadStats, onFilterRequest }: Props) {
   const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
 
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -198,6 +205,15 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const [selReport, setSelReport] = useState<ActivityReport | null>(null)
   const [selDesign, setSelDesign] = useState<{ feature: DesignFeature; layer: DesignLayer } | null>(null)
   const [selCell,   setSelCell]   = useState<AssetCluster | null>(null)
+
+  // Clickable legend (PowerBI/ArcGIS-style series toggling) — clicking a
+  // legend swatch hides/shows just that category, status, or design layer
+  // without touching the coarser LAYER_CHIPS on/off toggles above the map.
+  // Kept as two separate sets (not one, reset on colorBy change) so
+  // switching Color By doesn't lose whichever set isn't currently in view.
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set())
+  const [hiddenStatuses,   setHiddenStatuses]   = useState<Set<string>>(new Set())
+  const [hiddenDesignLayers, setHiddenDesignLayers] = useState<Set<number>>(new Set())
 
   // Overlay refs (no Mapbox-style setData — clear + rebuild each time)
   const primaryLineRef   = useRef<google.maps.Polyline | null>(null)
@@ -625,6 +641,12 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
             if (rStart == null || rEnd == null || rEnd < chF || rStart > chT) return
           }
 
+          // Clickable-legend hide: skip whichever dimension is currently
+          // being colour-coded (and thus shown in the legend) if the user
+          // clicked that swatch to hide it.
+          if (colorBy === 'category' && hiddenCategories.has(r.activity_category)) return
+          if (colorBy === 'status'   && hiddenStatuses.has(r.activity_status))     return
+
           const endTooFar = endLat != null && endLng != null && !isNaN(endLat) && !isNaN(endLng)
             && Math.hypot(endLng - startLng, endLat - startLat) > 0.05
           // While a filter narrows the view, always render a single point
@@ -635,9 +657,14 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           const samePoint = hasActiveFilter || endLat == null || endLng == null
             || (startLat === endLat && startLng === endLng) || endTooFar
           const color = colorFor(r)
+          // Native browser tooltip on hover — cheap at this marker count
+          // (no per-marker mouseover/mouseout JS needed) and matches the
+          // "hover for a quick look" ask without a custom overlay.
+          const hoverTitle = `${r.activity_category} · ${r.activity_type}\n${r.activity_status} · ${r.section_name || r.project_name}`
 
           if (samePoint) {
             const m = new google.maps.Marker({
+              title: hoverTitle,
               position: { lat: startLat, lng: startLng },
               icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 0.9, strokeColor: 'rgba(0,0,0,0.6)', strokeWeight: 2, scale: 7 },
               zIndex: 5,
@@ -645,6 +672,11 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
             m.addListener('click', () => { setSelReport(r); setSelCell(null); setSelDesign(null) })
             markers.push(m)
           } else {
+            // google.maps.Polyline has no native `title`/hover-tooltip
+            // support (Marker-only) — lines only ever appear in the
+            // unfiltered default view now (see samePoint above), so this is
+            // click-only; a custom cursor-following overlay wasn't worth
+            // the complexity for the secondary case.
             const line = new google.maps.Polyline({
               path: [{ lat: startLat, lng: startLng }, { lat: endLat!, lng: endLng! }],
               strokeColor: color, strokeOpacity: 0.85, strokeWeight: 6, clickable: true, zIndex: 4, map,
@@ -684,7 +716,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     } else {
       setVisibleReportCount(0)
     }
-  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi])
+  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses])
 
   /* ── Render: road-asset clusters ──────────────────────────── */
   useEffect(() => {
@@ -712,6 +744,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     const markers = assetClusters.map(c => {
       const single = c.count === 1 && c.id != null
       const m = new google.maps.Marker({
+        title: single ? `${c.entityType || 'Asset'} · ${c.section || c.layer}` : `Cluster of ${c.count.toLocaleString()} — ${c.layer}`,
         position: { lat: c.lat, lng: c.lng },
         icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: single ? D.green : D.blue, fillOpacity: 0.85, strokeColor: 'rgba(0,0,0,0.55)', strokeWeight: 2, scale: single ? 6 : 8 },
         zIndex: single ? 400 : 90,
@@ -763,6 +796,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     }
     const lines: google.maps.Polyline[] = []
     designData.layers.forEach(layer => {
+      if (hiddenDesignLayers.has(layer.id)) return // clickable-legend hide
       const icons = dashIcons(layer.dash)
       layer.features.forEach(feature => {
         feature.paths.forEach(path => {
@@ -777,7 +811,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       })
     })
     designLinesRef.current = lines
-  }, [mapLoaded, designData, layers.design])
+  }, [mapLoaded, designData, layers.design, hiddenDesignLayers])
 
   /* ── Consume a focus request (report row clicked elsewhere) ── */
   useEffect(() => {
@@ -945,6 +979,22 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
               <InfoRow label="Date" value={selReport.date_of_activity} />
               {selReport.start_chainage != null && <InfoRow label="Chainage" value={`${selReport.start_chainage} → ${selReport.end_chainage}`} />}
             </div>
+            {onFilterRequest && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${D.sub}33` }}>
+                <FilterPill
+                  label={category === selReport.activity_category ? 'Clear category filter' : `Filter: ${selReport.activity_category}`}
+                  active={category === selReport.activity_category}
+                  onClick={() => onFilterRequest('category', category === selReport.activity_category ? '' : selReport.activity_category)}
+                />
+                {selReport.project_name && (
+                  <FilterPill
+                    label={project === selReport.project_name ? 'Clear project filter' : `Filter: ${selReport.project_name}`}
+                    active={project === selReport.project_name}
+                    onClick={() => onFilterRequest('project', project === selReport.project_name ? '' : selReport.project_name)}
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -966,6 +1016,15 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
               {selCell.id != null && <InfoRow label="ID" value={selCell.id} />}
               {selCell.count > 1 && <div style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)', marginTop: 4 }}>Zoom in for exact positions</div>}
             </div>
+            {onFilterRequest && selCell.section && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${D.sub}33` }}>
+                <FilterPill
+                  label={initialSection === selCell.section ? 'Clear section filter' : `Filter: ${selCell.section}`}
+                  active={initialSection === selCell.section}
+                  onClick={() => onFilterRequest('section', initialSection === selCell.section ? '' : selCell.section!)}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -988,24 +1047,39 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         )}
       </div>
 
-      {/* Legend */}
+      {/* Legend — clickable, PowerBI/ArcGIS-style series toggling. The
+         "Road assets" swatch stays non-interactive (that whole layer is
+         already toggled by the Calabar/Ogun/Kebbi LAYER_CHIPS above, so a
+         second toggle here would be redundant, not complementary). */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: D.blue }} />
           <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>Road assets (Calabar/Ogun/Kebbi)</span>
         </div>
-        {designData && designData.layers.length > 0 && designData.layers.map(l => (
-          <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
-            <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>{l.label}</span>
-          </div>
-        ))}
-        {legendItems.map(([name, color]) => (
-          <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
-            <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>{name}</span>
-          </div>
-        ))}
+        {designData && designData.layers.length > 0 && designData.layers.map(l => {
+          const hidden = hiddenDesignLayers.has(l.id)
+          return (
+            <LegendSwatch key={l.id} color={l.color} label={l.label} hidden={hidden}
+              onClick={() => setHiddenDesignLayers(prev => {
+                const next = new Set(prev)
+                next.has(l.id) ? next.delete(l.id) : next.add(l.id)
+                return next
+              })} />
+          )
+        })}
+        {legendItems.map(([name, color]) => {
+          const hiddenSet = colorBy === 'category' ? hiddenCategories : hiddenStatuses
+          const setHidden = colorBy === 'category' ? setHiddenCategories : setHiddenStatuses
+          const hidden = hiddenSet.has(name)
+          return (
+            <LegendSwatch key={name} color={color} label={name} hidden={hidden}
+              onClick={() => setHidden(prev => {
+                const next = new Set(prev)
+                next.has(name) ? next.delete(name) : next.add(name)
+                return next
+              })} />
+          )
+        })}
       </div>
 
       <style>{`
@@ -1024,6 +1098,31 @@ function sectionRegion(section: string): string {
   if (s.includes('kebbi')) return 'kebbi'
   if (s.includes('section 1') || s.includes('section 2') || s.includes('section 3')) return 'coastal'
   return 'national'
+}
+
+function LegendSwatch({ color, label, hidden, onClick }: { color: string; label: string; hidden: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={hidden ? `Show ${label}` : `Hide ${label}`} style={{
+      display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0,
+      cursor: 'pointer', opacity: hidden ? 0.4 : 1, transition: 'opacity 0.15s',
+    }}>
+      <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+      <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', textDecoration: hidden ? 'line-through' : 'none' }}>{label}</span>
+    </button>
+  )
+}
+
+function FilterPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      background: active ? `${D.amber}22` : 'transparent',
+      color: active ? D.amber : D.text,
+      border: `1px solid ${active ? D.amber : D.sub}`,
+      borderRadius: 5, padding: '3px 9px', fontSize: 10, cursor: 'pointer',
+      fontFamily: 'var(--font-mono)', letterSpacing: 0.3,
+    }}>{active ? '✕' : '▸'} {label}</button>
+  )
 }
 
 function InfoRow({ label, value, color }: { label: string; value: string | number | null; color?: string }) {

@@ -212,7 +212,7 @@ function GanttChart({ data }: { data: Array<{ entity: string; start: string; end
             <div style={{ width: 130, flexShrink: 0, fontSize: 11, color: hov === row.entity ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{row.entity}</div>
             <div style={{ flex: 1, height: 28, background: D.panel2, borderRadius: 5, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
               <div style={{ position: 'absolute', left: `${Math.min(100, Math.max(0, (Date.now() - minDate.getTime()) / (maxDate.getTime() - minDate.getTime()) * 100))}%`, top: 0, bottom: 0, width: 1.5, background: D.red, opacity: 0.8, zIndex: 2 }} />
-              <div style={{ position: 'absolute', left: toX(row.start), width: ready ? toW(row.start, row.end) : '0%', top: 4, bottom: 4, borderRadius: 3, background: hov === row.entity ? D.amberL : D.amber, transition: `width 1s ${EASE}`, display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+              <div style={{ position: 'absolute', left: toX(row.start), width: ready ? toW(row.start, row.end) : '0%', top: 4, bottom: 4, borderRadius: 3, background: hov === row.entity ? D.amber : D.amberD, transition: `width 1s ${EASE}`, display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                 <span style={{ fontSize: 9, color: '#fff', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: 600 }}>{fmtDate(row.start)} → {fmtDate(row.end)}</span>
               </div>
             </div>
@@ -654,7 +654,7 @@ function ProgressPageInner() {
           ].map(({ label, el }) => (
             <div key={label} style={{ display: 'flex', flexDirection: 'column' }}><span style={labelStyle}>{label}</span>{el}</div>
           ))}
-          <button onClick={applyFilters} style={{ background: D.amber, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', alignSelf: 'flex-end', fontWeight: 600 }}>Apply</button>
+          <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', alignSelf: 'flex-end', fontWeight: 600 }}>Apply</button>
           {hasFilters && <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
           {hasFilters && (
             <div style={{ alignSelf: 'center', display: 'flex', gap: 6, flexWrap: 'wrap' }}>

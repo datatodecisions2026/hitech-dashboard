@@ -18,24 +18,36 @@ const IconClipboard = mk(<><rect x="8" y="2" width="8" height="4" rx="1" /><path
 const IconLayers = mk(<><polygon points="12 2 22 8.5 12 15 2 8.5 12 2" /><polyline points="2 15.5 12 22 22 15.5" /><polyline points="2 12 12 18.5 22 12" /></>)
 const IconSatellite = mk(<><path d="m13 7 4 4-6.5 6.5a4.95 4.95 0 1 1-7-7L10 4l4 4" /><path d="m14.5 4.5 5 5" /><path d="m21 3-3.5 3.5" /><path d="m3 21 3.5-3.5" /></>)
 
-type NavItem = { label: string; href: string; icon: () => React.ReactElement }
+type NavItem = { label: string; href: string; icon: () => React.ReactElement; color: string }
 type NavGroup = { label: string; items: NavItem[] }
+
+// A distinct vivid colour per item — always visible (not just on hover/
+// active), so the rail reads as colourful at rest rather than a monochrome
+// gold-on-navy list. Confirmed with the user via a reference marketing
+// dashboard screenshot showing exactly this convention (each KPI/nav-style
+// icon its own bright hue) — 2026-09-19 "brighter colours / bland sidebar"
+// follow-up. Kept local to this file rather than the shared theme tokens,
+// since these are per-item identity colours, not a semantic/theme concept.
+const NAV_VIVID = {
+  purple: '#8b5cf6', cyan: '#06b6d4', rose: '#f43f5e', orange: '#f97316',
+  blue: '#3b82f6', teal: '#14b8a6',
+}
 
 const NAV: NavGroup[] = [
   { label: 'Overview', items: [
-    { label: 'Dashboard', href: '/dashboard', icon: IconDashboard },
+    { label: 'Dashboard', href: '/dashboard', icon: IconDashboard, color: NAV_VIVID.purple },
   ]},
   { label: 'Field Activity', items: [
-    { label: 'Machines', href: '/machines', icon: IconTruck },
-    { label: 'Personnel', href: '/personnel', icon: IconPeople },
+    { label: 'Machines', href: '/machines', icon: IconTruck, color: NAV_VIVID.orange },
+    { label: 'Personnel', href: '/personnel', icon: IconPeople, color: NAV_VIVID.rose },
   ]},
   { label: 'Planning', items: [
-    { label: 'Progress', href: '/progress', icon: IconTrending },
-    { label: 'Planning & Implementation', href: '/planning-implementation', icon: IconClipboard },
+    { label: 'Progress', href: '/progress', icon: IconTrending, color: NAV_VIVID.cyan },
+    { label: 'Planning & Implementation', href: '/planning-implementation', icon: IconClipboard, color: NAV_VIVID.blue },
   ]},
   { label: 'Coverage', items: [
-    { label: 'Asset Coverage', href: '/road-assets-coverage', icon: IconLayers },
-    { label: 'Road Corridors', href: '/road-corridors', icon: IconSatellite },
+    { label: 'Asset Coverage', href: '/road-assets-coverage', icon: IconLayers, color: NAV_VIVID.teal },
+    { label: 'Road Corridors', href: '/road-corridors', icon: IconSatellite, color: NAV_VIVID.purple },
   ]},
 ]
 
@@ -44,25 +56,32 @@ function NavButton({ item, active, collapsed, D, onNavigate }: {
 }) {
   const [hov, setHov] = useState(false)
   const Icon = item.icon
+  const c = item.color
   return (
     <a href={item.href} title={collapsed ? item.label : undefined} onClick={onNavigate}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         position: 'relative',
         display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-        padding: collapsed ? '8px 0' : '8px 10px', borderRadius: 8,
+        padding: collapsed ? '7px 0' : '7px 10px', borderRadius: 8,
         justifyContent: collapsed ? 'center' : 'flex-start',
         fontSize: 13, fontWeight: active ? 600 : 500, lineHeight: 1.2,
         letterSpacing: active ? '-0.01em' : 0,
-        color: active ? D.amber : hov ? D.text : D.muted,
-        background: active ? `${D.amber}1f` : hov ? D.panel2 : 'transparent',
-        boxShadow: active && !collapsed ? `inset 3px 0 0 ${D.amber}` : 'none',
+        color: active ? D.text : hov ? D.text : D.muted,
+        background: active ? `${c}1c` : hov ? D.panel2 : 'transparent',
+        boxShadow: active && !collapsed ? `inset 3px 0 0 ${c}` : 'none',
         textDecoration: 'none', whiteSpace: 'nowrap',
         transition: 'background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
       }}>
-      <span style={{ flexShrink: 0, display: 'flex', transition: 'transform 0.15s ease', transform: hov && !active ? 'translateX(1px)' : 'none' }}><Icon /></span>
+      <span style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 26, height: 26, borderRadius: 7, color: c,
+        background: `${c}20`, border: `1px solid ${c}38`,
+        transition: 'transform 0.15s ease, background 0.15s ease',
+        transform: hov && !active ? 'translateX(1px) scale(1.04)' : 'none',
+      }}><Icon /></span>
       {!collapsed && <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>}
-      {!collapsed && active && <span style={{ width: 5, height: 5, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />}
+      {!collapsed && active && <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, flexShrink: 0 }} />}
     </a>
   )
 }
@@ -76,7 +95,9 @@ export default function SideNav() {
 
   const isCollapsed = collapsed && !isMobile
   const width = isMobile ? '18rem' : isCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH
-  const railBg = theme === 'light' ? '#ffffff' : '#0c1218'
+  // Subtly navy-tinted rather than a flat neutral, so the rail reads as part
+  // of the navy/gold system rather than a plain grey shell (2026-09-19).
+  const railBg = theme === 'light' ? '#f6f8fb' : '#0a1424'
   const railShadow = theme === 'light'
     ? '1px 0 0 rgba(14,21,28,.05), 6px 0 28px -14px rgba(14,21,28,.14)'
     : '1px 0 0 rgba(0,0,0,.5), 8px 0 32px -16px rgba(0,0,0,.6)'
@@ -96,25 +117,32 @@ export default function SideNav() {
         ? { transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)' }
         : {}),
     } as React.CSSProperties}>
-      {/* brand */}
+      {/* brand — a two-line lockup (logo + wordmark + gold mono subtitle)
+         mirroring the login page's own brand treatment, replacing the plain
+         single-line label (2026-09-19 sidebar polish pass). */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 9, height: '3.5rem', flexShrink: 0,
-        padding: isCollapsed ? 0 : '0 .75rem', justifyContent: isCollapsed ? 'center' : 'flex-start',
+        display: 'flex', alignItems: 'center', gap: 10, minHeight: '3.5rem', flexShrink: 0,
+        padding: isCollapsed ? '10px 0' : '10px .85rem', justifyContent: isCollapsed ? 'center' : 'flex-start',
         borderBottom: `1px solid ${D.border}`,
       }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.jpg" alt="Hitech" style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0 }} />
+        <img src="/logo.jpg" alt="Hitech" style={{ width: isCollapsed ? 24 : 30, height: isCollapsed ? 24 : 30, borderRadius: 7, flexShrink: 0, boxShadow: `0 0 0 1px ${D.amber}33` }} />
         {!isCollapsed && (
-          <span style={{ fontWeight: 600, letterSpacing: '-0.01em', fontSize: 14, color: D.text, whiteSpace: 'nowrap' }}>
-            Hitech Analytics
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, letterSpacing: '-0.01em', fontSize: 14, color: D.text, whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+              Hitech Analytics
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber, marginTop: 1 }}>
+              Dashboard
+            </div>
+          </div>
         )}
       </div>
 
       {/* groups */}
-      <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 8px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {NAV.map(group => (
-          <div key={group.label}>
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {NAV.map((group, gi) => (
+          <div key={group.label} style={{ paddingTop: gi === 0 ? 0 : 10, marginTop: gi === 0 ? 0 : 6, borderTop: gi === 0 ? 'none' : `1px solid ${D.border}` }}>
             <div style={{
               fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.13em',
               textTransform: 'uppercase', color: D.sub, padding: isCollapsed ? '6px 0 5px' : '6px 8px 5px',

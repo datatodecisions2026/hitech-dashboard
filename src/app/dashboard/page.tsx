@@ -5,11 +5,19 @@ const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, type ColorTokens } from '@/lib/theme'
 import { useMapView } from '@/lib/map-view'
 
 /* ── motion ────────────────────────────────────────────────── */
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
+
+/* A vivid, multi-hue categorical palette for the data-viz charts —
+   confirmed with the user via a reference marketing-dashboard screenshot
+   ("brighter colours... sidebar looks bland") 2026-09-19. Kept separate
+   from the site's navy/gold accent tokens (nav, hero, buttons) — those
+   stay as the confirmed brand identity; vividness is applied specifically
+   where the reference showed it: chart series and KPI numbers. */
+const VIVID = ['#8b5cf6', '#06b6d4', '#f43f5e', '#f97316', '#eab308', '#3b82f6', '#14b8a6', '#ec4899']
 
 const WEATHER_ICON: Record<string, string> = {
   Sunny: '☀', Clear: '☀', 'Sunny/Cloudy': '🌤', Sunny_cloudy: '🌤',
@@ -48,6 +56,82 @@ interface DashData {
     filterCategory: string; filterProject: string; filterSection: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
     filterWeather: string; filterMachine: string; filterEmployee: string; filterEngineer: string; filterSupervisor: string
   }
+}
+
+/* ── hero banner (navy cover-page style, real site photos) ──
+   Reintroduced 2026-09-19 (removed in the 2026-09-07 shell rebuild) —
+   confirmed with the user via AskUserQuestion against a reference Power BI
+   real-estate dashboard's dark cover page. Real photos come from the same
+   data.mediaItems the Media Gallery already fetches — no new query. */
+function useCrossfade(count: number, intervalMs: number) {
+  const [idx, setIdx] = useState(0)
+  useEffect(() => {
+    if (count <= 1) return
+    const t = setInterval(() => setIdx(i => (i + 1) % count), intervalMs)
+    return () => clearInterval(t)
+  }, [count, intervalMs])
+  return idx
+}
+
+const HERO_NAV = [
+  { icon: '📋', label: 'Reports',    href: '/dashboard' },
+  { icon: '📈', label: 'Progress',   href: '/progress' },
+  { icon: '👷', label: 'Personnel',  href: '/personnel' },
+  { icon: '🛰', label: 'Coverage',   href: '/road-assets-coverage' },
+]
+
+function HeroBanner({ D, greeting, firstName, photos, stat, weather }: {
+  D: ColorTokens; greeting: string; firstName: string; photos: string[]; stat: string; weather?: string
+}) {
+  const idx = useCrossfade(photos.length, 7000)
+  return (
+    <div className="hero-banner" style={{
+      position: 'relative', borderRadius: 16, overflow: 'hidden', marginBottom: 20,
+      minHeight: 220, display: 'flex', background: D.blue, boxShadow: '0 14px 44px rgba(0,0,0,0.28)',
+    }}>
+      {photos.map((src, i) => (
+        <img key={src} src={src} alt="" style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+          opacity: i === idx ? 1 : 0, transition: 'opacity 1.4s ease',
+          filter: 'brightness(0.5) saturate(1.05)',
+        }} />
+      ))}
+      <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(100deg, ${D.blue}f0 0%, ${D.blue}c8 40%, ${D.blue}70 72%, transparent 100%)` }} />
+
+      <div style={{ position: 'relative', zIndex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', flex: 1, color: '#fff', minWidth: 0 }}>
+        <div>
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: 2, color: D.amberL, textTransform: 'uppercase' }}>Field Activity Overview</span>
+          <h2 style={{ margin: '6px 0 0', fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em' }}>{greeting}{firstName ? `, ${firstName}` : ''}</h2>
+          <p style={{ margin: '6px 0 0', fontSize: 13.5, color: 'rgba(255,255,255,0.78)', maxWidth: 420 }}>{stat}</p>
+        </div>
+        {weather && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 8, padding: '6px 12px', alignSelf: 'flex-start', backdropFilter: 'blur(4px)' }}>
+            <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>{WEATHER_ICON[weather] || '🌡'}</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{weather}</div>
+              <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.62)', fontFamily: 'var(--font-mono)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Latest logged</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="hero-nav" style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 13, padding: '28px 28px', borderLeft: '1px solid rgba(255,255,255,0.16)', minWidth: 150, flexShrink: 0 }}>
+        {HERO_NAV.map(b => (
+          <a key={b.label} href={b.href} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: '#fff' }}>
+            <span style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(224,182,74,0.18)', border: '1px solid rgba(224,182,74,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{b.icon}</span>
+            <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{b.label}</span>
+          </a>
+        ))}
+      </div>
+
+      <style>{`
+        @media (max-width: 760px) {
+          .hero-banner { flex-direction: column; min-height: 0; }
+          .hero-nav { flex-direction: row; flex-wrap: wrap; border-left: none; border-top: 1px solid rgba(255,255,255,0.16); padding: 16px 20px !important; gap: 16px !important; }
+        }
+      `}</style>
+    </div>
+  )
 }
 
 /* ── animated counter (motion only) ───────────────────────── */
@@ -137,7 +221,7 @@ function Pill({ kind, children }: { kind: 'ok' | 'accent' | 'crit' | 'mut'; chil
 }
 
 /* ── mini KPI grid ────────────────────────────────────────── */
-function Mini({ k, value, delay = 0, i = 0 }: { k: string; value: number; delay?: number; i?: number }) {
+function Mini({ k, value, delay = 0, i = 0, color }: { k: string; value: number; delay?: number; i?: number; color?: string }) {
   const { colors: D } = useTheme()
   const [vis, setVis] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay); return () => clearTimeout(t) }, [delay])
@@ -145,20 +229,20 @@ function Mini({ k, value, delay = 0, i = 0 }: { k: string; value: number; delay?
   return (
     <div className="mini-cell" style={{ paddingLeft: i === 0 ? 0 : 16, borderLeft: i === 0 ? 'none' : `1px solid ${D.border}` }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>{k}</div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>
+      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: color || D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>
         {shown.toLocaleString()}
       </div>
     </div>
   )
 }
 
-/* ── donut (single-hue ramp) ──────────────────────────────── */
+/* ── donut (vivid multi-hue palette) ──────────────────────── */
 function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onSliceClick?: (name: string) => void }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 180); return () => clearTimeout(t) }, [])
-  const RAMP = [D.amber, `${D.amber}c8`, `${D.amber}96`, `${D.amber}64`, D.muted, `${D.muted}b0`, `${D.muted}80`]
+  const RAMP = VIVID
   const total = data.reduce((s, d) => s + d.count, 0)
   if (!total) return <EmptyState label="No category data" />
   const r = 78, sw = 24, gap = 2, circ = 2 * Math.PI * r
@@ -259,7 +343,7 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
           const isHov = hov === i
           return (
             <g key={d.date} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
-              <rect x={x} y={ready ? y : padT + chartH} width={barW} height={ready ? barH : 0} fill={isHov ? D.amberL : D.amber} rx={1.5}
+              <rect x={x} y={ready ? y : padT + chartH} width={barW} height={ready ? barH : 0} fill={isHov ? VIVID[1] : `${VIVID[1]}cc`} rx={1.5}
                 style={{ transition: `y 0.5s ${EASE} ${i * 0.006}s, height 0.5s ${EASE} ${i * 0.006}s, fill 0.15s` }} />
               {isHov && d.count > 0 && (() => {
                 const tx = Math.min(Math.max(x - 22, padL), W - padR - 70)
@@ -294,17 +378,18 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
         const barPct = (d.count / max) * 100
         const isHov = hov === i
         const isTop = i < 3
+        const barColor = isTop ? VIVID[i] : `${D.muted}88`
         const isActive = d.name === activeName
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
             style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.4) : (hov !== null && !isHov ? 0.45 : 1), transition: 'opacity 0.2s' }}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${D.amber}14` : 'transparent', border: `1px solid ${isTop ? D.amber + '33' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? D.amber : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
+            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${VIVID[i]}1c` : 'transparent', border: `1px solid ${isTop ? VIVID[i] + '44' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? VIVID[i] : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
             <span style={{ width: 140, fontSize: 12.5, color: isHov || isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
             <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? D.amber : `${D.muted}88`, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: barColor, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
             </div>
-            <span style={{ width: 32, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? D.amber : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count}</span>
+            <span style={{ width: 32, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? (isTop ? VIVID[i] : D.amber) : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count}</span>
             <span style={{ width: 30, textAlign: 'right', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{pct}%</span>
           </div>
         )
@@ -327,6 +412,7 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
         const pct = Math.round((d.count / total) * 100)
         const isHov = hov === i
         const isActive = d.name === activeName
+        const barColor = VIVID[i % VIVID.length]
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
@@ -336,7 +422,7 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
               <span style={{ fontSize: 12.5, color: D.text, fontVariantNumeric: 'tabular-nums' }}>{d.count} <span style={{ color: D.sub }}>({pct}%)</span></span>
             </div>
             <div style={{ height: 4, background: D.panel2, borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: ready ? `${pct}%` : '0%', background: isActive || isHov ? D.amber : `${D.muted}99`, borderRadius: 3, transition: `width 0.7s ${EASE} ${i * 0.06}s, background 0.15s` }} />
+              <div style={{ height: '100%', width: ready ? `${pct}%` : '0%', background: barColor, borderRadius: 3, transition: `width 0.7s ${EASE} ${i * 0.06}s, background 0.15s` }} />
             </div>
           </div>
         )
@@ -578,7 +664,13 @@ function ActivityCalendar({ data }: { data: CalDay[] }) {
 }
 
 /* ── filter bar ───────────────────────────────────────────── */
-function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
+/* Vertical "REFINE THE VIEW" filter rail — replaced the horizontal FilterBar
+   2026-09-19, matching the reference Power BI dashboard's actual layout
+   (confirmed with the user via AskUserQuestion: this was the single biggest
+   structural difference from what this page had). Same filter state/logic
+   as the old FilterBar, just re-laid-out as a sticky left column instead of
+   a full-width bar — every field here is identical in behavior. */
+function FilterRail({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
   const { colors: D } = useTheme()
   const active = data.activeFilters
   const hasFilters = !!(active.filterCategory || active.filterProject || active.filterSection || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor)
@@ -600,39 +692,49 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
       onFilter('__ch_range__', `${from},${to}`)
   }
 
-  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none' }
-  const sel: React.CSSProperties = { ...field, minWidth: 160, cursor: 'pointer' }
-  const inp: React.CSSProperties = { ...field, minWidth: 120 }
-  const lbl: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
+  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 12.5, outline: 'none', width: '100%' }
+  const lbl: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6, display: 'block' }
+  const row = (l: string, el: React.ReactNode) => <div key={l}><span style={lbl}>{l}</span>{el}</div>
 
   return (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, marginBottom: 20 }}>
-      <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.muted }}>Filters</span>
-      <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 200px', minWidth: 170 }}>
-        <span style={lbl}>Search</span>
-        <input type="text" placeholder="Reporter, project, comment…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inp, width: '100%', minWidth: 0 }} />
+    <aside className="filter-rail" style={{
+      width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
+      background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+      padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+      maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
+    }}>
+      <div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+        <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart, table, and the map at once.</div>
       </div>
-      {[
-        { l: 'Category', el: <select value={active.filterCategory || ''} onChange={e => onFilter('category', e.target.value)} style={sel}><option value="">All Categories</option>{data.filterOptions.categories.map(c => <option key={c} value={c}>{c}</option>)}</select> },
-        { l: 'Project', el: <select value={active.filterProject || ''} onChange={e => onFilter('project', e.target.value)} style={sel}><option value="">All Projects</option>{data.filterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}</select> },
-        { l: 'Section', el: <select value={active.filterSection || ''} onChange={e => onFilter('section', e.target.value)} style={sel}><option value="">All Sections</option>{data.filterOptions.sections.map(s => <option key={s} value={s}>{s}</option>)}</select> },
-        { l: 'Date From', el: <input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={inp} /> },
-        { l: 'Date To', el: <input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={inp} /> },
-        { l: 'Chainage From', el: <input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={{ ...inp, minWidth: 110 }} /> },
-        { l: 'Chainage To', el: <input type="number" placeholder="30000" value={chTo} onChange={e => setChTo(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={{ ...inp, minWidth: 110 }} /> },
-      ].map(({ l, el }) => <div key={l} style={{ display: 'flex', flexDirection: 'column' }}><span style={lbl}>{l}</span>{el}</div>)}
+      <div style={{ height: 1, background: D.border }} />
+
+      {row('Search', <input type="text" placeholder="Reporter, project, comment…" value={search} onChange={e => setSearch(e.target.value)} style={field} />)}
+      {row('Category', <select value={active.filterCategory || ''} onChange={e => onFilter('category', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Categories</option>{data.filterOptions.categories.map(c => <option key={c} value={c}>{c}</option>)}</select>)}
+      {row('Project', <select value={active.filterProject || ''} onChange={e => onFilter('project', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Projects</option>{data.filterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}</select>)}
+      {row('Section', <select value={active.filterSection || ''} onChange={e => onFilter('section', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Sections</option>{data.filterOptions.sections.map(s => <option key={s} value={s}>{s}</option>)}</select>)}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Date From</span><input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={field} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Date To</span><input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={field} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Ch. From</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Ch. To</span><input type="number" placeholder="30000" value={chTo} onChange={e => setChTo(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} /></div>
+      </div>
 
       {hasFilters && (
-        <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__', '') }}
-          style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>✕ Clear</button>
+        <>
+          <div style={{ height: 1, background: D.border }} />
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: D.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />
+            <span style={{ color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{data.summary.totalReports.toLocaleString()}</span> matched
+          </div>
+          <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__', '') }}
+            style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+        </>
       )}
-      {hasFilters && (
-        <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 11, color: D.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />
-          <span style={{ color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{data.summary.totalReports.toLocaleString()}</span> matched
-        </span>
-      )}
-    </div>
+    </aside>
   )
 }
 
@@ -777,38 +879,32 @@ function DashboardPageInner() {
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
       <div className="dash-content" style={{ padding: '28px 36px', width: '100%' }}>
 
-        <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: '-0.025em', color: D.text }}>{greeting}{firstName ? `, ${firstName}` : ''}</h2>
-            <p style={{ margin: 0, marginTop: 4, fontSize: 13, color: D.muted }}>Field-activity overview across all sites.</p>
-          </div>
-          {latestWeather && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 8, padding: '7px 12px' }}>
-              <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>{WEATHER_ICON[latestWeather] || '🌡'}</span>
-              <div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: D.text }}>{latestWeather}</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: D.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Latest logged</div>
-              </div>
-            </div>
-          )}
-        </div>
+        <HeroBanner
+          D={D}
+          greeting={greeting}
+          firstName={firstName}
+          photos={(data?.mediaItems ?? []).filter(m => m.media_type !== 'video').slice(0, 6).map(m => m.file)}
+          stat={data ? `${data.summary.reportsThisMonth.toLocaleString()} reports this month · ${data.summary.totalReports.toLocaleString()} total across every site` : 'Field-activity overview across all sites.'}
+          weather={latestWeather}
+        />
 
         {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
-        {data && <FilterBar data={data} onFilter={handleFilter} />}
         {loading && !data && <DashSkeleton />}
 
         {data && (
-          <div style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          <FilterRail data={data} onFilter={handleFilter} />
+          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
 
             {/* overview mini-grid */}
             <Card title="Overview" sub="Current activity across every site" style={{ marginBottom: 16 }}>
               <div className="exec-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '18px 0' }}>
-                <Mini i={0} k="Total reports" value={data.summary.totalReports} />
-                <Mini i={1} k="This month" value={data.summary.reportsThisMonth} delay={60} />
-                <Mini i={2} k="Active projects" value={data.summary.activeProjects} delay={120} />
-                <Mini i={3} k="Site photos" value={data.summary.totalPhotos} delay={180} />
-                <Mini i={4} k="Unique reporters" value={data.summary.uniqueReporters} delay={240} />
+                <Mini i={0} k="Total reports" value={data.summary.totalReports} color={VIVID[0]} />
+                <Mini i={1} k="This month" value={data.summary.reportsThisMonth} delay={60} color={VIVID[1]} />
+                <Mini i={2} k="Active projects" value={data.summary.activeProjects} delay={120} color={VIVID[2]} />
+                <Mini i={3} k="Site photos" value={data.summary.totalPhotos} delay={180} color={VIVID[3]} />
+                <Mini i={4} k="Unique reporters" value={data.summary.uniqueReporters} delay={240} color={VIVID[5]} />
                 <div className="mini-cell" style={{ paddingLeft: 16, borderLeft: `1px solid ${D.border}` }}>
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>Completion</div>
                   <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>{data.summary.completionRate}%</div>
@@ -851,6 +947,7 @@ function DashboardPageInner() {
                       project={data.activeFilters.filterProject}
                       weather={data.activeFilters.filterWeather}
                       initialSection={data.activeFilters.filterSection}
+                      onFilterRequest={handleFilter}
                     />
                   </div>
                 </Card>
@@ -885,6 +982,7 @@ function DashboardPageInner() {
               </Reveal>
             )}
           </div>
+          </div>
         )}
       </div>
 
@@ -905,6 +1003,8 @@ function DashboardPageInner() {
           .grid-responsive { grid-template-columns: 1fr !important; }
           .exec-grid { grid-template-columns: repeat(3, 1fr) !important; row-gap: 20px !important; }
           .exec-grid .mini-cell:nth-child(3n+1) { border-left: none !important; padding-left: 0 !important; }
+          .dash-layout { flex-direction: column !important; }
+          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
         }
         @media (max-width: 640px) {
           .dash-content { padding: 16px !important; }

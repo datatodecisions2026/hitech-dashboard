@@ -751,7 +751,7 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
         <div><span style={labelStyle}>Date To</span><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} /></div>
         <div><span style={labelStyle}>Chainage From (m)</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
         <div><span style={labelStyle}>Chainage To (m)</span><input type="number" placeholder="35000" value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
-        <button onClick={applyFilters} style={{ background: D.amber, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600, alignSelf: 'flex-end' }}>Apply</button>
+        <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600, alignSelf: 'flex-end' }}>Apply</button>
         {hasActiveFilters && <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
       </div>
 
