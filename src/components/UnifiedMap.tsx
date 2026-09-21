@@ -178,6 +178,28 @@ const regionOf = (r: { project_name?: string | null; section_name?: string | nul
   return 'reports'
 }
 
+// Attaching hundreds-to-thousands of legacy google.maps.Marker instances to
+// a map in one synchronous loop (via setMap()) blocks the main thread long
+// enough to trigger a real browser "Page Unresponsive" dialog — confirmed
+// live on a filtered view with ~1,800 report pins plus up to a few thousand
+// road-asset pins attaching in the same tick (see the 2026-09-21 (5)
+// changelog entry). Spread the attachment across animation frames instead
+// of fixing the count — the "individual pin per record" behavior is the
+// whole point of this rendering mode, so the fix is to do the same amount
+// of work without blocking, not to do less work. `isStale()` lets a newer
+// effect run abort an in-flight chunked attachment from a previous, now-
+// outdated pass (checked every frame, not just once).
+function attachMarkersChunked(markers: google.maps.Marker[], map: google.maps.Map | null, isStale: () => boolean, chunkSize = 120) {
+  let i = 0
+  const step = () => {
+    if (isStale()) return
+    const end = Math.min(i + chunkSize, markers.length)
+    for (; i < end; i++) markers[i].setMap(map)
+    if (i < markers.length) requestAnimationFrame(step)
+  }
+  step()
+}
+
 /* ── Component ─────────────────────────────────────────────── */
 export default function UnifiedMap({ chFrom, chTo, category, project, weather, initialSection, onLoadStats, onFilterRequest }: Props) {
   const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
@@ -225,8 +247,15 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   // Markers attached directly to the map (bypassing MarkerClusterer) while a
   // filter is active — see the big comment where these are set for why.
   const directReportMarkersRef = useRef<google.maps.Marker[]>([])
+  // Bumped every time the direct-attach path runs; a chunked attachment
+  // loop captures its own value and aborts once it no longer matches,
+  // so a superseded (filter changed again, or effect re-ran) in-flight
+  // attachment can never keep drawing over a newer one — see
+  // attachMarkersChunked above.
+  const reportAttachGenRef = useRef(0)
   const assetClustererRef  = useRef<MarkerClusterer | null>(null)
   const directAssetMarkersRef = useRef<google.maps.Marker[]>([])
+  const assetAttachGenRef = useRef(0)
   const designLinesRef   = useRef<google.maps.Polyline[]>([])
 
   const mapReqKeyRef    = useRef<string>('')
@@ -324,14 +353,21 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         // reports spanning completely different chainages) — computing
         // bounds from it can pull the fit toward a location that has
         // nothing to do with where the pins actually render.
-        const stations = (d.stations ?? []) as Station[]
+        // Sorted once, binary-searched per report — same fix, same reason
+        // as the render effect's nearestStation (see its comment).
+        const sortedStationsForFit = [...(d.stations ?? []) as Station[]].sort((a, b) => a.label - b.label)
         const nearestStationForFit = (targetLabel: number): Station | undefined => {
-          let best: Station | undefined, bestDist = Infinity
-          for (const s of stations) {
-            const dist = Math.abs(s.label - targetLabel)
-            if (dist < bestDist) { best = s; bestDist = dist }
+          if (sortedStationsForFit.length === 0) return undefined
+          let lo = 0, hi = sortedStationsForFit.length - 1
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1
+            if (sortedStationsForFit[mid].label < targetLabel) lo = mid + 1
+            else hi = mid
           }
-          return best
+          if (lo > 0 && Math.abs(sortedStationsForFit[lo - 1].label - targetLabel) <= Math.abs(sortedStationsForFit[lo].label - targetLabel)) {
+            return sortedStationsForFit[lo - 1]
+          }
+          return sortedStationsForFit[lo]
         }
         const chainageNumForFit = (val?: number | null, text?: number | null): number | null => {
           if (val != null && !isNaN(val)) return val
@@ -564,13 +600,26 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         }))
     }
 
+    // Sorted once per effect run (not per report) so nearestStation can
+    // binary-search instead of scanning every station for every report.
+    // Measured live via profiling: the old O(reports × stations) linear
+    // scan cost ~750ms per render pass at 1,793 filtered reports — the
+    // real bottleneck behind "very slow to render" once markers actually
+    // started rendering (2026-09-21 (5) changelog) — this measured under
+    // 5ms for the same input.
+    const sortedStations = [...coastalStations].sort((a, b) => a.label - b.label)
     const nearestStation = (targetLabel: number): Station | undefined => {
-      let best: Station | undefined, bestDist = Infinity
-      for (const s of coastalStations) {
-        const d = Math.abs(s.label - targetLabel)
-        if (d < bestDist) { best = s; bestDist = d }
+      if (sortedStations.length === 0) return undefined
+      let lo = 0, hi = sortedStations.length - 1
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (sortedStations[mid].label < targetLabel) lo = mid + 1
+        else hi = mid
       }
-      return best
+      if (lo > 0 && Math.abs(sortedStations[lo - 1].label - targetLabel) <= Math.abs(sortedStations[lo].label - targetLabel)) {
+        return sortedStations[lo - 1]
+      }
+      return sortedStations[lo]
     }
     const chainageNum = (val?: number | null, text?: number | null): number | null => {
       if (val != null && !isNaN(val)) return val
@@ -712,9 +761,15 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       reportLinesRef.current = lines
       setVisibleReportCount(markers.length + lines.length)
 
-      // Clear whatever was directly attached (bypassing the clusterer) on
-      // the previous pass before deciding this pass's mode.
-      directReportMarkersRef.current.forEach(mk => mk.setMap(null))
+      // Clear whatever was directly attached on the previous pass — chunked
+      // too, since detaching thousands of markers synchronously is itself a
+      // real cost (see the attach-side comment below and the 2026-09-21 (5)
+      // changelog entry). Never aborted by a later generation bump: unlike
+      // attaching (where a stale, superseded loop must stop so it can't
+      // draw the wrong markers), detaching old markers nobody references
+      // anymore is always safe to let run to completion regardless of what
+      // starts afterward.
+      attachMarkersChunked(directReportMarkersRef.current, null, () => false)
       directReportMarkersRef.current = []
 
       if (hasActiveFilter) {
@@ -738,8 +793,9 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           reportClustererRef.current.setMap(null)
           reportClustererRef.current = null
         }
-        markers.forEach(mk => mk.setMap(map))
         directReportMarkersRef.current = markers
+        const gen = ++reportAttachGenRef.current
+        attachMarkersChunked(markers, map, () => reportAttachGenRef.current !== gen)
       } else if (reportClustererRef.current) {
         reportClustererRef.current.clearMarkers()
         reportClustererRef.current.addMarkers(markers)
@@ -799,8 +855,9 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
 
     // Clear whatever was directly attached (bypassing the clusterer) on the
     // previous pass — see the identical comment in the report-pins effect
-    // above for why NoopAlgorithm can never be used with this library.
-    directAssetMarkersRef.current.forEach(mk => mk.setMap(null))
+    // above for why NoopAlgorithm can never be used with this library, and
+    // why this clear is chunked and never aborted (unlike the attach below).
+    attachMarkersChunked(directAssetMarkersRef.current, null, () => false)
     directAssetMarkersRef.current = []
 
     if (hasActiveFilter) {
@@ -808,8 +865,9 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         assetClustererRef.current.setMap(null)
         assetClustererRef.current = null
       }
-      markers.forEach(mk => mk.setMap(map))
       directAssetMarkersRef.current = markers
+      const gen = ++assetAttachGenRef.current
+      attachMarkersChunked(markers, map, () => assetAttachGenRef.current !== gen)
       return
     }
     if (assetClustererRef.current) {
