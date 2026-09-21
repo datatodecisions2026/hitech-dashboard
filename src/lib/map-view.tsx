@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { MAP_VIEW_STORAGE_KEY } from './theme-constants'
+import { MAP_VIEW_STORAGE_KEY, MAP_VIEW_SCHEMA_VERSION } from './theme-constants'
 
 /**
  * Shared state for the one <UnifiedMap> used on every page that has a map
@@ -62,15 +62,26 @@ interface MapViewContextValue {
 
 const MapViewContext = createContext<MapViewContextValue | null>(null)
 
-interface Persisted { layers?: Partial<Record<MapLayerKey, boolean>>; colorBy?: MapColorBy; camera?: MapCamera }
+interface Persisted { v?: number; layers?: Partial<Record<MapLayerKey, boolean>>; colorBy?: MapColorBy; camera?: MapCamera }
 
 function loadPersisted(): Persisted {
   try {
     const raw = localStorage.getItem(MAP_VIEW_STORAGE_KEY)
-    if (!raw) return {}
+    if (!raw) return { v: MAP_VIEW_SCHEMA_VERSION }
     const p = JSON.parse(raw)
-    return p && typeof p === 'object' ? p : {}
-  } catch { return {} }
+    if (!p || typeof p !== 'object') return { v: MAP_VIEW_SCHEMA_VERSION }
+    // One-time migration: a camera saved under an older schema version may
+    // be a stale filter/focus-driven fit that was wrongly persisted as if
+    // it were a manual pan/zoom (see MAP_VIEW_SCHEMA_VERSION's comment).
+    // Discard just the camera, keep layers/colorBy, and rewrite so this
+    // only runs once per browser.
+    if (p.v !== MAP_VIEW_SCHEMA_VERSION) {
+      const migrated: Persisted = { v: MAP_VIEW_SCHEMA_VERSION, layers: p.layers, colorBy: p.colorBy }
+      try { localStorage.setItem(MAP_VIEW_STORAGE_KEY, JSON.stringify(migrated)) } catch {}
+      return migrated
+    }
+    return p
+  } catch { return { v: MAP_VIEW_SCHEMA_VERSION } }
 }
 
 /** Synchronous read for the map's init effect — a child effect runs before

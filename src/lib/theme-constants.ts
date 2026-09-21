@@ -5,10 +5,22 @@
 // stub instead of the real value, which breaks at runtime.
 export const THEME_STORAGE_KEY = 'hitech-theme'
 export const SIDEBAR_STORAGE_KEY = 'hitech-sidebar'
-// Shared map (UnifiedMap / MapViewProvider) — remembers which layers are on
-// and the colour-by mode across route changes and reloads. The camera and
-// any pending focus request are session-only, not persisted here.
+// Shared map (UnifiedMap / MapViewProvider) — remembers which layers are on,
+// the colour-by mode, and the last manually-panned/zoomed camera across
+// route changes and reloads (the app navigates with plain <a href>, not
+// SPA, so this is the only thing that survives a full page load). A pending
+// focus request is session-only, not persisted here.
 export const MAP_VIEW_STORAGE_KEY = 'hitech-map-view'
+// Bump this whenever the *meaning* of the persisted camera changes in a way
+// that makes old stored values untrustworthy — see map-view.tsx's migration
+// check. Currently at 2: before 2026-09-21, a filter/section/report-focus
+// fit was indistinguishable from a manual pan/zoom and got persisted the
+// same way, so a stale filtered close-up could silently resurface on a
+// later unfiltered page load. Fixed going forward (see UnifiedMap.tsx's
+// programmaticMoveRef), but existing users' already-saved cameras may still
+// carry that bad value — this bump discards any camera saved under an
+// older version once, keeping layers/colorBy untouched.
+export const MAP_VIEW_SCHEMA_VERSION = 2
 
 // Rail geometry — imported by both SideNav (the fixed rail itself) and
 // AppShell (the content column's matching left offset) so the two never

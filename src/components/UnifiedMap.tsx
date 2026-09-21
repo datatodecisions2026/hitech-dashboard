@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
-import { MarkerClusterer, NoopAlgorithm } from '@googlemaps/markerclusterer'
+import { MarkerClusterer } from '@googlemaps/markerclusterer'
 import { useMapView, readPersistedCamera, type MapLayerKey } from '@/lib/map-view'
 
 /* ──────────────────────────────────────────────────────────────
@@ -222,9 +222,11 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const tickMarkersRef   = useRef<google.maps.Marker[]>([])
   const reportLinesRef   = useRef<google.maps.Polyline[]>([])
   const reportClustererRef = useRef<MarkerClusterer | null>(null)
-  const reportClusterModeRef = useRef<boolean | null>(null)
+  // Markers attached directly to the map (bypassing MarkerClusterer) while a
+  // filter is active — see the big comment where these are set for why.
+  const directReportMarkersRef = useRef<google.maps.Marker[]>([])
   const assetClustererRef  = useRef<MarkerClusterer | null>(null)
-  const assetClusterModeRef = useRef<boolean | null>(null)
+  const directAssetMarkersRef = useRef<google.maps.Marker[]>([])
   const designLinesRef   = useRef<google.maps.Polyline[]>([])
 
   const mapReqKeyRef    = useRef<string>('')
@@ -234,6 +236,20 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const lastSectionFitRef = useRef<string | null>(null)
   const filterFitRef    = useRef<string | null>(null)
   const catFitRef       = useRef<string | null>(null)
+  // Set just before any *programmatic* camera move (a filter/section/report
+  // fit — panTo/fitBounds/setZoom/setCenter called from code, not the user
+  // dragging/scrolling). The map's own 'idle' listener always fires after
+  // one of these too, so without this flag every such fit would get written
+  // to the persisted camera in localStorage exactly like a manual pan would.
+  // That's what caused a real reported bug: applying (or ever having
+  // applied) a category/project/weather/chainage filter, or clicking a
+  // report row, permanently overwrote the persisted view with that tight
+  // filtered zoom — so a *later*, completely unfiltered page load (or the
+  // same session after clearing the filter) silently restored that stale
+  // close-up instead of the user's actual last manual view. The flag lets
+  // the map visually move (panTo/fitBounds are unaffected) while the 'idle'
+  // handler skips persisting just that one settle.
+  const programmaticMoveRef = useRef(false)
 
   const bbox = (v: ViewState | null) =>
     v && v.zoom >= 12
@@ -335,6 +351,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           if (!isNaN(lat) && !isNaN(lng)) { b.extend({ lat, lng }); points++ }
         }
         if (points === 0) return
+        programmaticMoveRef.current = true
         if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
           map.panTo(b.getCenter())
           map.setZoom(16)
@@ -465,6 +482,11 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         const c = localMap.getCenter()
         const z = localMap.getZoom() ?? start.zoom
         setViewState({ zoom: z, swLat: sw.lat(), swLng: sw.lng(), neLat: ne.lat(), neLng: ne.lng() })
+        // A programmatic fit (filter/section/report-focus) still needs
+        // viewState updated above (bbox-scoped fetches depend on it), but
+        // must NOT overwrite the persisted "last manual view" camera — see
+        // programmaticMoveRef's comment above.
+        if (programmaticMoveRef.current) { programmaticMoveRef.current = false; return }
         if (c) setCamera({ lat: c.lat(), lng: c.lng(), zoom: z })
       })
     }).catch((err: any) => {
@@ -498,7 +520,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     if (lastSectionFitRef.current === initialSection) return
     lastSectionFitRef.current = initialSection
     const cam = REGION_CAMERA[sectionRegion(initialSection)]
-    if (cam) { mapRef.current.setCenter({ lat: cam.lat, lng: cam.lng }); mapRef.current.setZoom(cam.zoom) }
+    if (cam) { programmaticMoveRef.current = true; mapRef.current.setCenter({ lat: cam.lat, lng: cam.lng }); mapRef.current.setZoom(cam.zoom) }
   }, [mapLoaded, initialSection])
 
   /* ── Render: Coastal line, ticks, highlight, report pins ───── */
@@ -604,8 +626,10 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     if (layers.reports) {
       // An active category, project, and/or a fully-set chainage range all
       // narrow which reports actually render — when any is on, the
-      // clusterer below is swapped to NoopAlgorithm so the (now much
-      // smaller) matching set shows as individual pins rather than a
+      // clusterer below is bypassed entirely (see the 2026-09-21 (4)
+      // changelog entry — @googlemaps/markerclusterer's NoopAlgorithm
+      // can never actually draw anything) so the (now much smaller)
+      // matching set shows as individual, clickable pins rather than a
       // bubbled count, matching the "zoom to the filtered point(s), no
       // clusters" behaviour asked for. `project` added 2026-09-17 (7) —
       // previously this only checked category/chainage, so selecting a
@@ -688,19 +712,40 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       reportLinesRef.current = lines
       setVisibleReportCount(markers.length + lines.length)
 
-      // Swap the clusterer's algorithm (only settable at construction) when
-      // filter state flips between "cluster nearby pins" and "show every
-      // matching pin individually" — recreate rather than mutate in place.
-      if (reportClustererRef.current && reportClusterModeRef.current !== hasActiveFilter) {
-        reportClustererRef.current.setMap(null)
-        reportClustererRef.current = null
-      }
-      if (reportClustererRef.current) {
+      // Clear whatever was directly attached (bypassing the clusterer) on
+      // the previous pass before deciding this pass's mode.
+      directReportMarkersRef.current.forEach(mk => mk.setMap(null))
+      directReportMarkersRef.current = []
+
+      if (hasActiveFilter) {
+        // @googlemaps/markerclusterer's NoopAlgorithm.calculate() always
+        // returns `changed: false` (confirmed by reading the installed
+        // library's source, node_modules/@googlemaps/markerclusterer/dist/
+        // index.dev.js) — and MarkerClusterer.render() only ever calls
+        // renderClusters() (the method that actually attaches any marker
+        // to the map) when `changed` is true or undefined. So a
+        // NoopAlgorithm-mode clusterer can NEVER draw anything, no matter
+        // how many times render()/addMarkers() is called — this silently
+        // made every filtered report pin invisible AND unclickable (no
+        // popups, nothing to click) ever since the "points-only while
+        // filtered" feature shipped (2026-09-15), a real regression that
+        // slipped through because that feature's verification pass only
+        // checked that Marker objects were *constructed* with the right
+        // data, never that they were actually attached to the map. Fixed
+        // by bypassing the clusterer entirely while a filter is active —
+        // attach every marker straight to the map, no library involved.
+        if (reportClustererRef.current) {
+          reportClustererRef.current.setMap(null)
+          reportClustererRef.current = null
+        }
+        markers.forEach(mk => mk.setMap(map))
+        directReportMarkersRef.current = markers
+      } else if (reportClustererRef.current) {
+        reportClustererRef.current.clearMarkers()
         reportClustererRef.current.addMarkers(markers)
       } else {
         reportClustererRef.current = new MarkerClusterer({
           map, markers,
-          algorithm: hasActiveFilter ? new NoopAlgorithm({}) : undefined,
           renderer: { render: ({ count, position }) => {
             const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
             return new google.maps.Marker({
@@ -711,7 +756,6 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
             })
           } },
         })
-        reportClusterModeRef.current = hasActiveFilter
       }
     } else {
       setVisibleReportCount(0)
@@ -753,9 +797,20 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       return m
     })
 
-    if (assetClustererRef.current && assetClusterModeRef.current !== hasActiveFilter) {
-      assetClustererRef.current.setMap(null)
-      assetClustererRef.current = null
+    // Clear whatever was directly attached (bypassing the clusterer) on the
+    // previous pass — see the identical comment in the report-pins effect
+    // above for why NoopAlgorithm can never be used with this library.
+    directAssetMarkersRef.current.forEach(mk => mk.setMap(null))
+    directAssetMarkersRef.current = []
+
+    if (hasActiveFilter) {
+      if (assetClustererRef.current) {
+        assetClustererRef.current.setMap(null)
+        assetClustererRef.current = null
+      }
+      markers.forEach(mk => mk.setMap(map))
+      directAssetMarkersRef.current = markers
+      return
     }
     if (assetClustererRef.current) {
       assetClustererRef.current.clearMarkers()
@@ -763,7 +818,6 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     } else {
       assetClustererRef.current = new MarkerClusterer({
         map, markers,
-        algorithm: hasActiveFilter ? new NoopAlgorithm({}) : undefined,
         renderer: { render: ({ count, position }) => {
           const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
           return new google.maps.Marker({
@@ -774,7 +828,6 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           })
         } },
       })
-      assetClusterModeRef.current = hasActiveFilter
     }
   }, [mapLoaded, assetClusters, category, project, weather, chFrom, chTo, initialSection])
 
@@ -822,6 +875,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
 
     if (focusRequest.enableLayer) setLayer(focusRequest.enableLayer, true)
     if (!isNaN(focusRequest.lat) && !isNaN(focusRequest.lng)) {
+      programmaticMoveRef.current = true
       mapRef.current.panTo({ lat: focusRequest.lat, lng: focusRequest.lng })
       mapRef.current.setZoom(focusRequest.zoom ?? 16)
     }
@@ -880,6 +934,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     // A single matched point (or a degenerate zero-area bounds) can't be
     // "fit" meaningfully — go straight to a close, deterministic zoom on
     // it instead of leaving fitBounds to guess.
+    programmaticMoveRef.current = true
     if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
       map.panTo(b.getCenter())
       map.setZoom(16)
