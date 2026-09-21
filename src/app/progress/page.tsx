@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
+import { VIVID } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
@@ -206,18 +207,21 @@ function GanttChart({ data }: { data: Array<{ entity: string; start: string; end
         {months.map((m, i) => <div key={i} style={{ position: 'absolute', left: `${m.pct}%`, fontSize: 9, color: D.sub, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', transform: 'translateX(-50%)' }}>{m.label}</div>)}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {data.map(row => (
+        {data.map((row, ri) => {
+          const barColor = VIVID[ri % VIVID.length]
+          return (
           <div key={row.entity} style={{ display: 'flex', alignItems: 'center', gap: 10 }}
             onMouseEnter={() => setHov(row.entity)} onMouseLeave={() => setHov(null)}>
             <div style={{ width: 130, flexShrink: 0, fontSize: 11, color: hov === row.entity ? D.text : D.muted, fontFamily: 'var(--font-mono)', textAlign: 'right', paddingRight: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.2s' }}>{row.entity}</div>
             <div style={{ flex: 1, height: 28, background: D.panel2, borderRadius: 5, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
               <div style={{ position: 'absolute', left: `${Math.min(100, Math.max(0, (Date.now() - minDate.getTime()) / (maxDate.getTime() - minDate.getTime()) * 100))}%`, top: 0, bottom: 0, width: 1.5, background: D.red, opacity: 0.8, zIndex: 2 }} />
-              <div style={{ position: 'absolute', left: toX(row.start), width: ready ? toW(row.start, row.end) : '0%', top: 4, bottom: 4, borderRadius: 3, background: hov === row.entity ? D.amber : D.amberD, transition: `width 1s ${EASE}`, display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+              <div style={{ position: 'absolute', left: toX(row.start), width: ready ? toW(row.start, row.end) : '0%', top: 4, bottom: 4, borderRadius: 3, background: barColor, opacity: hov === row.entity ? 1 : 0.85, transition: `width 1s ${EASE}, opacity 0.15s`, display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                 <span style={{ fontSize: 9, color: '#fff', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: 600 }}>{fmtDate(row.start)} → {fmtDate(row.end)}</span>
               </div>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
         <div style={{ width: 2, height: 14, background: D.red, borderRadius: 1 }} />
@@ -610,10 +614,10 @@ function ProgressPageInner() {
   }
   const hasFilters = !!(applied.entity || applied.side || applied.month || applied.chFrom)
 
-  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none' }
-  const selectStyle: React.CSSProperties = { ...field, minWidth: 150, cursor: 'pointer' }
-  const inputStyle: React.CSSProperties = { ...field, minWidth: 110 }
-  const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
+  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 12.5, outline: 'none', width: '100%' }
+  const selectStyle: React.CSSProperties = { ...field, cursor: 'pointer' }
+  const inputStyle: React.CSSProperties = { ...field }
+  const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6, display: 'block' }
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
@@ -642,37 +646,50 @@ function ProgressPageInner() {
       <div className="dash-content" style={{ padding: '28px 36px', width: '100%' }}>
         {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
-        {/* filter bar */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, marginBottom: 20 }}>
-          <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.muted }}>Filters</span>
-          {[
-            { label: 'Entity', el: <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select> },
-            { label: 'Side', el: <select value={filterSide} onChange={e => setFilterSide(e.target.value)} style={{ ...selectStyle, minWidth: 110 }}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select> },
-            { label: 'Planned Month', el: <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={{ ...selectStyle, minWidth: 140 }}><option value=''>All Months</option>{(data?.filterOptions.months ?? []).map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}</select> },
-            { label: 'Chainage From', el: <input type='number' placeholder='20000' value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /> },
-            { label: 'Chainage To', el: <input type='number' placeholder='35000' value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /> },
-          ].map(({ label, el }) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column' }}><span style={labelStyle}>{label}</span>{el}</div>
-          ))}
-          <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', alignSelf: 'flex-end', fontWeight: 600 }}>Apply</button>
-          {hasFilters && <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
-          {hasFilters && (
-            <div style={{ alignSelf: 'center', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {applied.entity && <Pill kind="mut">{applied.entity}</Pill>}
-              {applied.side && <Pill kind="mut">{applied.side}</Pill>}
-              {applied.month && <Pill kind="mut">{fmtMonth(applied.month)}</Pill>}
-              {applied.chFrom && applied.chTo && <Pill kind="mut">CH {Number(applied.chFrom).toLocaleString()} → {Number(applied.chTo).toLocaleString()}</Pill>}
-            </div>
-          )}
-        </div>
-
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>{[0, 1, 2, 3, 4].map(i => <Skeleton key={i} h={100} />)}</div>
             <Skeleton h={320} /><Skeleton h={420} />
           </div>
         ) : data && (
-          <div style={{ opacity: filtering ? 0.6 : 1, pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          {/* filter rail — converted from a horizontal bar 2026-09-21 to
+             match /dashboard's layout; same Apply-button-driven state as
+             before, only the layout changed. */}
+          <aside className="filter-rail" style={{
+            width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 'calc(3.5rem + 14px)',
+            background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+            padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+            maxHeight: 'calc(100vh - 4rem - 28px)', overflowY: 'auto',
+          }}>
+            <div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+              <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Pick filters, then Apply.</div>
+            </div>
+            <div style={{ height: 1, background: D.border }} />
+            <div><span style={labelStyle}>Entity</span><select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select></div>
+            <div><span style={labelStyle}>Side</span><select value={filterSide} onChange={e => setFilterSide(e.target.value)} style={selectStyle}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select></div>
+            <div><span style={labelStyle}>Planned Month</span><select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={selectStyle}><option value=''>All Months</option>{(data?.filterOptions.months ?? []).map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}</select></div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. From</span><input type='number' placeholder='20000' value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. To</span><input type='number' placeholder='35000' value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
+            </div>
+            <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600 }}>Apply</button>
+            {hasFilters && (
+              <>
+                <div style={{ height: 1, background: D.border }} />
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {applied.entity && <Pill kind="mut">{applied.entity}</Pill>}
+                  {applied.side && <Pill kind="mut">{applied.side}</Pill>}
+                  {applied.month && <Pill kind="mut">{fmtMonth(applied.month)}</Pill>}
+                  {applied.chFrom && applied.chTo && <Pill kind="mut">CH {Number(applied.chFrom).toLocaleString()} → {Number(applied.chTo).toLocaleString()}</Pill>}
+                </div>
+                <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+              </>
+            )}
+          </aside>
+
+          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: filtering ? 0.6 : 1, pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
 
             {activeTab === 'overview' && (
               <>
@@ -713,6 +730,7 @@ function ProgressPageInner() {
               </Reveal>
             )}
           </div>
+          </div>
         )}
       </div>
 
@@ -728,6 +746,8 @@ function ProgressPageInner() {
         @media (max-width: 1024px) {
           .kpi-grid { grid-template-columns: repeat(3,1fr) !important; }
           .grid-responsive { grid-template-columns: 1fr !important; }
+          .dash-layout { flex-direction: column !important; }
+          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
         }
         @media (max-width: 640px) {
           .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }

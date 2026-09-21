@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useTheme } from '@/lib/theme'
+import { VIVID } from '@/lib/theme-constants'
 
 const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false })
 
@@ -159,12 +160,12 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
             style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.4) : (hov !== null && !isHov ? 0.45 : 1), transition: 'opacity 0.2s' }}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${D.amber}14` : 'transparent', border: `1px solid ${isTop ? D.amber + '33' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? D.amber : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
+            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${VIVID[i]}1c` : 'transparent', border: `1px solid ${isTop ? VIVID[i] + '44' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? VIVID[i] : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
             <span style={{ width: 150, fontSize: 12.5, color: isHov || isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
             <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? D.amber : `${D.muted}88`, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? VIVID[i] : `${D.muted}88`, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
             </div>
-            <span style={{ width: 70, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? D.amber : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count.toLocaleString()}</span>
+            <span style={{ width: 70, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? (isTop ? VIVID[i] : D.amber) : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count.toLocaleString()}</span>
             <span style={{ width: 30, textAlign: 'right', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{pct}%</span>
           </div>
         )
@@ -417,19 +418,33 @@ function PlanningImplementationPageInner() {
 
         {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
+        {loading && !data && <PageSkeleton />}
+
         {data && (
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, marginBottom: 20 }}>
-            <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.muted }}>Filters</span>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          {/* filter rail — converted from a horizontal bar 2026-09-21 to
+             match /dashboard's layout; same instant-onChange behaviour. */}
+          <aside className="filter-rail" style={{
+            width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
+            background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+            padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+            maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
+          }}>
+            <div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+              <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Cross-filters every panel and the map.</div>
+            </div>
+            <div style={{ height: 1, background: D.border }} />
+            <div>
               <span style={lblStyle}>Project</span>
-              <select value={activeProjectKey} onChange={e => handleProjectFilter(e.target.value)} style={{ ...selStyle, minWidth: 220 }}>
+              <select value={activeProjectKey} onChange={e => handleProjectFilter(e.target.value)} style={{ ...selStyle, width: '100%' }}>
                 <option value=''>All Projects (nationwide)</option>
                 {PROJECTS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div>
               <span style={lblStyle}>Section</span>
-              <select value={activeSection} onChange={e => handleSectionFilter(e.target.value)} style={{ ...selStyle, minWidth: 240 }}>
+              <select value={activeSection} onChange={e => handleSectionFilter(e.target.value)} style={{ ...selStyle, width: '100%' }}>
                 <option value=''>All Sections</option>
                 {planningSections.length > 0 && (
                   <optgroup label="Planning Sections">
@@ -443,15 +458,16 @@ function PlanningImplementationPageInner() {
                 )}
               </select>
             </div>
-            {(activeProjectKey || activeSection) && <button onClick={clearFilters}
-              style={{ ...selStyle, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
-          </div>
-        )}
+            {(activeProjectKey || activeSection) && (
+              <>
+                <div style={{ height: 1, background: D.border }} />
+                <button onClick={clearFilters}
+                  style={{ ...selStyle, width: '100%', color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+              </>
+            )}
+          </aside>
 
-        {loading && !data && <PageSkeleton />}
-
-        {data && (
-          <div style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
 
             {geoGapNationwide > 0 && (
               <div style={{ background: `${D.amber}12`, border: `1px solid ${D.amber}3a`, borderRadius: 10, padding: '10px 16px', color: D.amber, fontFamily: 'var(--font-mono)', fontSize: 12, marginBottom: 14 }}>
@@ -556,6 +572,7 @@ function PlanningImplementationPageInner() {
               </Card>
             </Reveal>
           </div>
+          </div>
         )}
       </div>
 
@@ -567,6 +584,10 @@ function PlanningImplementationPageInner() {
         .tbl-row:nth-child(even) { background: ${D.panel2}66; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(2,1fr) !important; } }
+        @media (max-width: 1024px) {
+          .dash-layout { flex-direction: column !important; }
+          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
+        }
         @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(1,1fr) !important; } .pi-grid { grid-template-columns: 1fr !important; } }
       `}</style>
     </div>

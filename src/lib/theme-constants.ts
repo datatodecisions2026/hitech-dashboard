@@ -21,3 +21,17 @@ export const SIDEBAR_WIDTH_COLLAPSED = '3.25rem'
 // (one of these three); the resolved theme is always 'light' | 'dark'.
 export type ThemeMode = 'light' | 'dark' | 'system'
 export const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system']
+
+// A vivid, multi-hue categorical palette for data-viz charts (donut/pie
+// segments, ranked bars, per-series KPI numbers) — confirmed with the user
+// via a reference marketing-dashboard screenshot ("brighter colours...
+// sidebar looks bland"). First built locally in dashboard/page.tsx
+// 2026-09-19; promoted here 2026-09-21 so every other page's charts share
+// the same identity instead of each redefining its own ramp. Deliberately
+// separate from the navy/gold ColorTokens (theme.tsx) — those are the
+// site's brand/wayfinding accent (nav, hero, buttons), this is a chart-
+// series palette, a different concept that happens to also need to look
+// vivid. Keep `amber`/`green`/`red` semantic meanings (accent/ok/crit) out
+// of this array's usage — VIVID is for categorical series with no inherent
+// order or meaning, not for anything status-like.
+export const VIVID = ['#8b5cf6', '#06b6d4', '#f43f5e', '#f97316', '#eab308', '#3b82f6', '#14b8a6', '#ec4899']

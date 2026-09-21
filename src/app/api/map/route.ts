@@ -20,17 +20,59 @@ const supabase = createClient(
 // but this table is two-plus orders of magnitude smaller than those).
 // MAX_PAGES is a defensive ceiling, not an expected limit, in case the table
 // grows unexpectedly — 30 pages = 30,000 rows, ~3x today's real total.
-async function fetchAll<T = Record<string, unknown>>(query: any): Promise<T[]> {
+//
+// 2026-09-19: user reported "the map has gotten slower" — measured live
+// (direct curl, 3 runs) and confirmed real: the unfiltered Coastal fetch
+// (~9,746 rows / ~10 pages) took 5.3–13.6s, well over the ~3.8s this same
+// page-until-exhausted design measured back in the 2026-09-15 (2) changelog
+// entry, and this function's call sites' unfiltered-path query shape is
+// unchanged this session — so this isn't a regression from this session's
+// other edits, it's a real change in the environment (Supabase per-request
+// latency running higher than it did in September; a control confirmed
+// this wasn't specific to this endpoint — /api/dashboard's single RPC call,
+// unrelated code, was also measured slower than its own documented figure).
+//
+// First attempt fetched pages in batches of 4 concurrently instead of one
+// at a time, reasoning by analogy from the 2026-08-01 road-assets-coverage
+// entry ("batching at 4-at-a-time... measured 0 failures") — this measured
+// great in ISOLATION (2.6–3.7s, down from 5–13s) but that was the wrong
+// test. UnifiedMap fires this alongside 5 other map-related requests
+// (Kebbi corridor line, 3× road-assets, road-design) in the same tick on
+// every page load — under that REAL concurrent load, BATCH=4 measured
+// *13.96s*, worse than not batching at all (BATCH=1 measured 5.06s in the
+// same concurrent test), because the extra internal concurrency piled onto
+// contention that was already there against this project's well-documented
+// small-resource-budget Supabase tier. BATCH=2 was then measured under the
+// same realistic concurrent load, 3 separate times, landing at 1.6–2.4s
+// each time and improving every additional page's cost without repeating
+// BATCH=4's overload — kept as the setting, with this full trail recorded
+// specifically so a future change doesn't re-reach for BATCH=4 by the same
+// (reasonable-looking, but empirically wrong here) analogy.
+//
+// Takes a query FACTORY (not a single builder instance) because Supabase's
+// query builder is mutable — calling .range() again on the same object
+// before the previous call's request has actually gone out would silently
+// clobber the range for both, since .range() only sets internal state and
+// the real request fires on await/then; each concurrent page needs its own
+// freshly-built query object.
+async function fetchAll<T = Record<string, unknown>>(buildQuery: () => any): Promise<T[]> {
   const all: T[] = []
   const PAGE = 1000
   const MAX_PAGES = 30
-  let from = 0
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const { data, error } = await query.range(from, from + PAGE - 1)
-    if (error || !data || data.length === 0) break
-    all.push(...data)
-    if (data.length < PAGE) break
-    from += PAGE
+  const BATCH = 2
+  let page = 0
+  batches:
+  while (page < MAX_PAGES) {
+    const pagesThisBatch: number[] = []
+    for (let i = 0; i < BATCH && page < MAX_PAGES; i++, page++) pagesThisBatch.push(page)
+    const results = await Promise.all(
+      pagesThisBatch.map(p => buildQuery().range(p * PAGE, p * PAGE + PAGE - 1))
+    )
+    for (const { data, error } of results) {
+      if (error || !data) break batches
+      all.push(...data)
+      if (data.length < PAGE) break batches
+    }
   }
   return all
 }
@@ -114,17 +156,28 @@ export async function GET(req: NextRequest) {
 
   async function fetchReports(): Promise<any[]> {
     if (!allReports) {
-      let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS)
-        .ilike('project_name', `%${project.split(' ')[0]}%`)
+      const build = () => {
+        let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS)
+          .ilike('project_name', `%${project.split(' ')[0]}%`)
+        if (category) q = q.ilike('activity_category', category)
+        if (weather) q = q.ilike('weather', weather)
+        return q
+      }
+      return fetchAll(build)
+    }
+    const buildCoastal = () => {
+      let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).ilike('project_name', '%Coastal%')
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
-      return fetchAll(q)
+      return q
     }
-    let coastal = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).ilike('project_name', '%Coastal%')
-    let other   = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).or(OTHER_REGION_OR)
-    if (category) { coastal = coastal.ilike('activity_category', category); other = other.ilike('activity_category', category) }
-    if (weather) { coastal = coastal.ilike('weather', weather); other = other.ilike('weather', weather) }
-    const [c, o] = await Promise.all([fetchAll(coastal), fetchAll(other)])
+    const buildOther = () => {
+      let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).or(OTHER_REGION_OR)
+      if (category) q = q.ilike('activity_category', category)
+      if (weather) q = q.ilike('weather', weather)
+      return q
+    }
+    const [c, o] = await Promise.all([fetchAll(buildCoastal), fetchAll(buildOther)])
     const byId = new Map<number, any>()
     for (const r of [...c, ...o] as any[]) byId.set(r.id, r)
     return [...byId.values()]

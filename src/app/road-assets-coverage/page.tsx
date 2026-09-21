@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
+import { VIVID } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
@@ -729,14 +730,26 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
   }
   const hasActiveFilters = !!(applied.dateFrom || applied.dateTo || applied.chFrom || applied.chTo)
 
-  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none' }
-  const selectStyle: React.CSSProperties = { ...field, minWidth: 140, cursor: 'pointer' }
-  const inputStyle: React.CSSProperties = { ...field, minWidth: 120 }
-  const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
+  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 12.5, outline: 'none', width: '100%' }
+  const selectStyle: React.CSSProperties = { ...field, cursor: 'pointer' }
+  const inputStyle: React.CSSProperties = { ...field }
+  const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6, display: 'block' }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10 }}>
+    <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      {/* filter rail — converted from a horizontal bar 2026-09-21 to match
+         /dashboard's layout; same Apply-button-driven state as before. */}
+      <aside className="filter-rail" style={{
+        width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
+        background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+        padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+        maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
+      }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+          <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Pick an entity/side, then Apply.</div>
+        </div>
+        <div style={{ height: 1, background: D.border }} />
         <div><span style={labelStyle}>Entity</span>
           <select value={entityType} onChange={e => handleEntityChange(e.target.value)} style={selectStyle}>
             {entities.map(e => <option key={e.entityType} value={e.entityType}>{e.label}</option>)}
@@ -747,44 +760,55 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
             {availableSides.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div><span style={labelStyle}>Date From</span><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={inputStyle} /></div>
-        <div><span style={labelStyle}>Date To</span><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} /></div>
-        <div><span style={labelStyle}>Chainage From (m)</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
-        <div><span style={labelStyle}>Chainage To (m)</span><input type="number" placeholder="35000" value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
-        <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600, alignSelf: 'flex-end' }}>Apply</button>
-        {hasActiveFilters && <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
-      </div>
-
-      {error && <div style={{ padding: 16, borderRadius: 10, background: `${D.red}12`, border: `1px solid ${D.red}3a`, color: D.red, fontFamily: 'var(--font-mono)', fontSize: 12 }}>{error}</div>}
-
-      {!error && !applied.entityType && (
-        <div style={{ color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '40px 0', textAlign: 'center' }}>No entities available for this section</div>
-      )}
-
-      {analysis && (
-        <div style={{ opacity: loading ? 0.6 : 1, transition: `opacity 0.25s ${EASE}` }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
-            <StatCard label="Completed Today" value={fmtLength(analysis.summary.completedTodayM)} color={D.green} icon={<IconClock />} delay={0} />
-            <StatCard label="Completed This Month" value={fmtLength(analysis.summary.completedThisMonthM)} color={D.text} icon={<IconLayers />} delay={60} />
-            <StatCard label="Completed So Far" value={fmtLength(analysis.summary.completedSoFarM)} color={D.amber} icon={<IconPct />} delay={120} />
-            {analysis.summary.completedInRangeM != null && (
-              <StatCard label="In Selected Range" value={fmtLength(analysis.summary.completedInRangeM)} color={D.text} icon={<IconTarget />} delay={180} />
-            )}
-          </div>
-
-          <Reveal>
-            <Panel title={`Chainage Coverage — ${entities.find(e => e.entityType === entityType)?.label ?? entityType} · ${side}`}>
-              <ChainageCoverageBar bins={analysis.bins} />
-            </Panel>
-          </Reveal>
-
-          <Reveal delay={80} style={{ marginTop: 16 }}>
-            <Panel title="Completion Log">
-              <ChainageLogTable entries={analysis.log} totalCount={analysis.logTotalCount} page={page} onPage={setPage} />
-            </Panel>
-          </Reveal>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Date From</span><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={inputStyle} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Date To</span><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} /></div>
         </div>
-      )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. From (m)</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. To (m)</span><input type="number" placeholder="35000" value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
+        </div>
+        <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600 }}>Apply</button>
+        {hasActiveFilters && (
+          <>
+            <div style={{ height: 1, background: D.border }} />
+            <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+          </>
+        )}
+      </aside>
+
+      <div className="dash-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {error && <div style={{ padding: 16, borderRadius: 10, background: `${D.red}12`, border: `1px solid ${D.red}3a`, color: D.red, fontFamily: 'var(--font-mono)', fontSize: 12 }}>{error}</div>}
+
+        {!error && !applied.entityType && (
+          <div style={{ color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '40px 0', textAlign: 'center' }}>No entities available for this section</div>
+        )}
+
+        {analysis && (
+          <div style={{ opacity: loading ? 0.6 : 1, transition: `opacity 0.25s ${EASE}` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
+              <StatCard label="Completed Today" value={fmtLength(analysis.summary.completedTodayM)} color={D.green} icon={<IconClock />} delay={0} />
+              <StatCard label="Completed This Month" value={fmtLength(analysis.summary.completedThisMonthM)} color={D.text} icon={<IconLayers />} delay={60} />
+              <StatCard label="Completed So Far" value={fmtLength(analysis.summary.completedSoFarM)} color={D.amber} icon={<IconPct />} delay={120} />
+              {analysis.summary.completedInRangeM != null && (
+                <StatCard label="In Selected Range" value={fmtLength(analysis.summary.completedInRangeM)} color={D.text} icon={<IconTarget />} delay={180} />
+              )}
+            </div>
+
+            <Reveal>
+              <Panel title={`Chainage Coverage — ${entities.find(e => e.entityType === entityType)?.label ?? entityType} · ${side}`}>
+                <ChainageCoverageBar bins={analysis.bins} />
+              </Panel>
+            </Reveal>
+
+            <Reveal delay={80} style={{ marginTop: 16 }}>
+              <Panel title="Completion Log">
+                <ChainageLogTable entries={analysis.log} totalCount={analysis.logTotalCount} page={page} onPage={setPage} />
+              </Panel>
+            </Reveal>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -942,6 +966,10 @@ export default function RoadAssetsPage() {
         .tbl-row:nth-child(even) { background: ${D.panel2}66; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 900px) { .ra-2col { grid-template-columns: 1fr !important; } }
+        @media (max-width: 1024px) {
+          .dash-layout { flex-direction: column !important; }
+          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
+        }
       `}</style>
     </div>
   )

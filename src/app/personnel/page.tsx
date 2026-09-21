@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
+import { VIVID } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
@@ -88,7 +89,7 @@ function KPICard({ label, value, icon, delay = 0, color }: { label: string; valu
   const displayed = useCountUp(vis ? value : 0, 1200, 0)
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
-      <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}>{icon}</div>
+      <div style={{ width: 26, height: 26, borderRadius: 7, background: color ? `${color}1c` : D.panel2, border: `1px solid ${color ? color + '38' : D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: color ?? D.muted, marginBottom: 10 }}>{icon}</div>
       <div style={{ fontFamily: 'var(--font-loader)', fontSize: 26, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}</div>
       <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
     </div>
@@ -116,12 +117,12 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
             style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.4) : (hov !== null && !isHov ? 0.45 : 1), transition: 'opacity 0.2s' }}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${D.amber}14` : 'transparent', border: `1px solid ${isTop ? D.amber + '33' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? D.amber : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
+            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${VIVID[i]}1c` : 'transparent', border: `1px solid ${isTop ? VIVID[i] + '44' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? VIVID[i] : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
             <span style={{ width: 140, fontSize: 12.5, color: isHov || isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
             <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? D.amber : `${D.muted}88`, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: isTop ? VIVID[i] : `${D.muted}88`, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
             </div>
-            <span style={{ width: 32, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? D.amber : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count}</span>
+            <span style={{ width: 32, textAlign: 'right', fontSize: 12.5, color: isHov || isActive ? (isTop ? VIVID[i] : D.amber) : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count}</span>
             <span style={{ width: 30, textAlign: 'right', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{pct}%</span>
           </div>
         )
@@ -136,7 +137,7 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 180); return () => clearTimeout(t) }, [])
-  const RAMP = [D.amber, `${D.amber}c8`, `${D.amber}96`, `${D.amber}64`, D.muted, `${D.muted}b0`, `${D.muted}80`]
+  const RAMP = VIVID
   const total = data.reduce((s, d) => s + d.count, 0)
   if (!total) return null
   const r = 66, sw = 20, gap = 2, circ = 2 * Math.PI * r
@@ -207,8 +208,11 @@ const IconHat = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none
 const IconShield = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z" /></svg>
 const IconUsers = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
 
-/* ── filter bar ───────────────────────────────────────────── */
-function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
+/* ── filter rail (vertical "Refine the View" panel) ──────────
+   Converted from a horizontal bar 2026-09-21 to match /dashboard's layout
+   (see that page's own FilterRail) — same field logic verbatim, only the
+   layout changed. */
+function FilterRail({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
   const { colors: D } = useTheme()
   const active = data.activeFilters
   const hasFilters = !!(active.filterCategory || active.filterProject || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor || active.filterOwnership || active.filterDriver || active.filterEmployeeRole || active.filterEngineerParty || active.filterSupervisorParty)
@@ -230,36 +234,47 @@ function FilterBar({ data, onFilter }: { data: DashData; onFilter: (key: string,
       onFilter('__ch_range__', `${from},${to}`)
   }
 
-  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, outline: 'none' }
-  const sel: React.CSSProperties = { ...field, minWidth: 160, cursor: 'pointer' }
-  const inp: React.CSSProperties = { ...field, minWidth: 120 }
-  const lbl: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
+  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 12.5, outline: 'none', width: '100%' }
+  const lbl: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6, display: 'block' }
+  const row = (l: string, el: React.ReactNode) => <div key={l}><span style={lbl}>{l}</span>{el}</div>
 
   return (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '12px 14px', background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, marginBottom: 20 }}>
-      <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.muted }}>Filters</span>
-      <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 200px', minWidth: 170 }}>
-        <span style={lbl}>Search</span>
-        <input type="text" placeholder="Reporter, project, comment…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inp, width: '100%', minWidth: 0 }} />
+    <aside className="filter-rail" style={{
+      width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
+      background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+      padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+      maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
+    }}>
+      <div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+        <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart on this page at once.</div>
       </div>
-      {[
-        { l: 'Category', el: <select value={active.filterCategory || ''} onChange={e => onFilter('category', e.target.value)} style={sel}><option value="">All Categories</option>{data.filterOptions.categories.map(c => <option key={c} value={c}>{c}</option>)}</select> },
-        { l: 'Project', el: <select value={active.filterProject || ''} onChange={e => onFilter('project', e.target.value)} style={sel}><option value="">All Projects</option>{data.filterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}</select> },
-        { l: 'Date From', el: <input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={inp} /> },
-        { l: 'Date To', el: <input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={inp} /> },
-        { l: 'Chainage From', el: <input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={{ ...inp, minWidth: 110 }} /> },
-        { l: 'Chainage To', el: <input type="number" placeholder="30000" value={chTo} onChange={e => setChTo(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={{ ...inp, minWidth: 110 }} /> },
-      ].map(({ l, el }) => <div key={l} style={{ display: 'flex', flexDirection: 'column' }}><span style={lbl}>{l}</span>{el}</div>)}
+      <div style={{ height: 1, background: D.border }} />
 
-      {hasFilters && <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__', '') }}
-        style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', alignSelf: 'flex-end' }}>✕ Clear</button>}
+      {row('Search', <input type="text" placeholder="Reporter, project, comment…" value={search} onChange={e => setSearch(e.target.value)} style={field} />)}
+      {row('Category', <select value={active.filterCategory || ''} onChange={e => onFilter('category', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Categories</option>{data.filterOptions.categories.map(c => <option key={c} value={c}>{c}</option>)}</select>)}
+      {row('Project', <select value={active.filterProject || ''} onChange={e => onFilter('project', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Projects</option>{data.filterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}</select>)}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Date From</span><input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={field} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Date To</span><input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={field} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Ch. From</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Ch. To</span><input type="number" placeholder="30000" value={chTo} onChange={e => setChTo(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} /></div>
+      </div>
+
       {hasFilters && (
-        <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: 11, color: D.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />
-          <span style={{ color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{data.summary.totalReports.toLocaleString()}</span> matched
-        </span>
+        <>
+          <div style={{ height: 1, background: D.border }} />
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: D.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />
+            <span style={{ color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{data.summary.totalReports.toLocaleString()}</span> matched
+          </div>
+          <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__', '') }}
+            style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+        </>
       )}
-    </div>
+    </aside>
   )
 }
 
@@ -499,16 +514,17 @@ function PersonnelPageInner() {
 
         {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
-        {data && <FilterBar data={data} onFilter={handleFilter} />}
         {loading && !data && <PageSkeleton />}
 
         {data && (
-          <div style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          <FilterRail data={data} onFilter={handleFilter} />
+          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
             <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
-              <KPICard label="Total Employee" value={data.employeeSummary?.distinctEmployees ?? 0} icon={<IconPeople />} delay={0} color={D.green} />
-              <KPICard label="Total Engineer" value={data.engineerSummary?.distinctEngineers ?? 0} icon={<IconHat />} delay={60} />
-              <KPICard label="Total Supervisor" value={data.supervisorSummary?.distinctSupervisors ?? 0} icon={<IconShield />} delay={120} />
-              <KPICard label="Total Mentions" value={totalMentions} icon={<IconUsers />} delay={180} color={D.amber} />
+              <KPICard label="Total Employee" value={data.employeeSummary?.distinctEmployees ?? 0} icon={<IconPeople />} delay={0} color={VIVID[0]} />
+              <KPICard label="Total Engineer" value={data.engineerSummary?.distinctEngineers ?? 0} icon={<IconHat />} delay={60} color={VIVID[1]} />
+              <KPICard label="Total Supervisor" value={data.supervisorSummary?.distinctSupervisors ?? 0} icon={<IconShield />} delay={120} color={VIVID[2]} />
+              <KPICard label="Total Mentions" value={totalMentions} icon={<IconUsers />} delay={180} color={VIVID[3]} />
             </div>
 
             <Reveal style={{ marginBottom: 14 }}>
@@ -548,6 +564,7 @@ function PersonnelPageInner() {
               <PersonnelHistory />
             </Reveal>
           </div>
+          </div>
         )}
       </div>
 
@@ -557,7 +574,11 @@ function PersonnelPageInner() {
         select option { background:${D.panel}; color:${D.text}; }
         input[type='date']::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
-        @media (max-width: 1024px) { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } }
+        @media (max-width: 1024px) {
+          .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
+          .dash-layout { flex-direction: column !important; }
+          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
+        }
         @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(1,1fr) !important; } }
         .phist-roster::-webkit-scrollbar, .phist-timeline div::-webkit-scrollbar { width: 6px; }
         .phist-roster::-webkit-scrollbar-thumb, .phist-timeline div::-webkit-scrollbar-thumb { background:${D.border}; border-radius:3px; }

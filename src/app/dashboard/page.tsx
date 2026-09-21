@@ -7,17 +7,10 @@ import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme, type ColorTokens } from '@/lib/theme'
 import { useMapView } from '@/lib/map-view'
+import { VIVID } from '@/lib/theme-constants'
 
 /* ── motion ────────────────────────────────────────────────── */
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
-
-/* A vivid, multi-hue categorical palette for the data-viz charts —
-   confirmed with the user via a reference marketing-dashboard screenshot
-   ("brighter colours... sidebar looks bland") 2026-09-19. Kept separate
-   from the site's navy/gold accent tokens (nav, hero, buttons) — those
-   stay as the confirmed brand identity; vividness is applied specifically
-   where the reference showed it: chart series and KPI numbers. */
-const VIVID = ['#8b5cf6', '#06b6d4', '#f43f5e', '#f97316', '#eab308', '#3b82f6', '#14b8a6', '#ec4899']
 
 const WEATHER_ICON: Record<string, string> = {
   Sunny: '☀', Clear: '☀', 'Sunny/Cloudy': '🌤', Sunny_cloudy: '🌤',
