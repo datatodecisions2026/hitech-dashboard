@@ -61,6 +61,21 @@ const HL_FILTER      = '#6366f1'
 const COASTAL_PROJECT = 'Coastal Road'
 const KEBBI_PROJECT   = 'SBS Sokoto Badagry highway'
 
+// A broad filter (e.g. one category) can still match thousands of reports
+// spread nationwide — attaching that many individual markers, even chunked
+// across frames (see attachOverlaysChunked below), is a real, visible cost
+// and a noisy "wall of dots" nobody can actually read. Below this many
+// matches, skip clustering entirely so every point is its own clickable
+// pin with full detail on click (small enough that showing them all is
+// cheap and genuinely useful). At or above it, use the real clusterer —
+// a fast, well-optimized overview with hover-tooltip cluster bubbles that
+// naturally break apart into individual pins as the user zooms in or
+// clicks a cluster, or narrows the filter further. See the 2026-09-22
+// changelog entry for the full reasoning (a direct user ask to fix map
+// slowness by making broad filters show a clustered overview instead of
+// exploding into every matching point at once).
+const INDIVIDUAL_PIN_THRESHOLD = 40
+
 /* road_assets project/section pairs — fixed, confirmed live. See
    src/app/api/road-assets/route.ts + the 2026-08-05 CLAUDE.md entry. */
 const ASSET_SECTIONS: Record<'calabar' | 'ogun' | 'kebbi', { project: string; section: string }> = {
@@ -82,6 +97,12 @@ const REGION_CAMERA: Record<string, { lat: number; lng: number; zoom: number }> 
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface Station { label: number; chainage: string; latitude: number; longitude: number; project_id: number }
+
+// A tiny bit of metadata stashed directly on a marker instance so a cluster
+// renderer (which only ever receives the raw google.maps.Marker objects
+// grouped into that cluster) can build a real summary tooltip without a
+// second lookup structure — see INDIVIDUAL_PIN_THRESHOLD's comment above.
+type MarkerWithMeta = google.maps.Marker & { __cat?: string }
 
 interface ActivityReport {
   id:                   number
@@ -178,24 +199,32 @@ const regionOf = (r: { project_name?: string | null; section_name?: string | nul
   return 'reports'
 }
 
-// Attaching hundreds-to-thousands of legacy google.maps.Marker instances to
-// a map in one synchronous loop (via setMap()) blocks the main thread long
-// enough to trigger a real browser "Page Unresponsive" dialog — confirmed
-// live on a filtered view with ~1,800 report pins plus up to a few thousand
-// road-asset pins attaching in the same tick (see the 2026-09-21 (5)
-// changelog entry). Spread the attachment across animation frames instead
-// of fixing the count — the "individual pin per record" behavior is the
-// whole point of this rendering mode, so the fix is to do the same amount
-// of work without blocking, not to do less work. `isStale()` lets a newer
-// effect run abort an in-flight chunked attachment from a previous, now-
-// outdated pass (checked every frame, not just once).
-function attachMarkersChunked(markers: google.maps.Marker[], map: google.maps.Map | null, isStale: () => boolean, chunkSize = 120) {
+// Attaching (or detaching) hundreds-to-thousands of legacy Marker/Polyline
+// instances to a map in one synchronous loop (via setMap()) blocks the main
+// thread long enough to trigger a real browser "Page Unresponsive" dialog —
+// confirmed live twice: once on a filtered view with ~1,800 report pins
+// plus up to a few thousand road-asset pins attaching in the same tick (see
+// the 2026-09-21 (5) changelog entry, markers only), and again on the plain
+// *unfiltered* default view, which draws one Polyline per report with no
+// chunking at all — measured a genuine 2.77s blocked main-thread task
+// attaching ~3,860 lines synchronously (2026-09-22 (2) changelog entry).
+// Generic over anything with a `setMap()` (both Marker and Polyline satisfy
+// this) so one helper covers both overlay kinds. Spread the work across
+// animation frames instead of doing less of it — for markers specifically,
+// "individual pin per record" is the whole point of that rendering mode
+// once it's chosen; the fix is to do the same amount of work without
+// blocking. `isStale()` lets a newer effect run abort an in-flight chunked
+// attachment from a previous, now-outdated pass (checked every frame, not
+// just once).
+function attachOverlaysChunked<T extends { setMap(map: google.maps.Map | null): void }>(
+  overlays: T[], map: google.maps.Map | null, isStale: () => boolean, chunkSize = 120,
+) {
   let i = 0
   const step = () => {
     if (isStale()) return
-    const end = Math.min(i + chunkSize, markers.length)
-    for (; i < end; i++) markers[i].setMap(map)
-    if (i < markers.length) requestAnimationFrame(step)
+    const end = Math.min(i + chunkSize, overlays.length)
+    for (; i < end; i++) overlays[i].setMap(map)
+    if (i < overlays.length) requestAnimationFrame(step)
   }
   step()
 }
@@ -251,16 +280,22 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   // loop captures its own value and aborts once it no longer matches,
   // so a superseded (filter changed again, or effect re-ran) in-flight
   // attachment can never keep drawing over a newer one — see
-  // attachMarkersChunked above.
+  // attachOverlaysChunked above.
   const reportAttachGenRef = useRef(0)
   const assetClustererRef  = useRef<MarkerClusterer | null>(null)
   const directAssetMarkersRef = useRef<google.maps.Marker[]>([])
   const assetAttachGenRef = useRef(0)
+  // Same chunked-attach treatment for the unfiltered view's report-extent
+  // Polylines (see the 2026-09-22 (2) changelog entry — up to ~3,860 lines
+  // measured a genuine 2.77s blocked task attached synchronously before
+  // this existed).
+  const reportLineAttachGenRef = useRef(0)
   const designLinesRef   = useRef<google.maps.Polyline[]>([])
 
   const mapReqKeyRef    = useRef<string>('')
   const kebbiFetchedRef = useRef(false)
   const designReqKeyRef = useRef<string>('')
+  const designLineAttachGenRef = useRef(0)
   const lastFocusRef    = useRef<number | string | null>(null)
   const lastSectionFitRef = useRef<string | null>(null)
   const filterFitRef    = useRef<string | null>(null)
@@ -568,7 +603,13 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     secondaryLineRef.current?.setMap(null)
     highlightLinesRef.current.forEach(l => l.setMap(null)); highlightLinesRef.current = []
     tickMarkersRef.current.forEach(m => m.setMap(null)); tickMarkersRef.current = []
-    reportLinesRef.current.forEach(l => l.setMap(null)); reportLinesRef.current = []
+    // Chunked, not a plain forEach — the unfiltered view can hold thousands
+    // of these (see attachOverlaysChunked's comment). Never aborted, same
+    // reasoning as every other detach call in this file: removing overlays
+    // nobody references anymore is always safe regardless of what starts
+    // afterward.
+    attachOverlaysChunked(reportLinesRef.current, null, () => false)
+    reportLinesRef.current = []
     reportClustererRef.current?.clearMarkers()
 
     /* Kebbi corridor line — background context */
@@ -674,20 +715,52 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     /* Report pins */
     if (layers.reports) {
       // An active category, project, and/or a fully-set chainage range all
-      // narrow which reports actually render — when any is on, the
-      // clusterer below is bypassed entirely (see the 2026-09-21 (4)
-      // changelog entry — @googlemaps/markerclusterer's NoopAlgorithm
-      // can never actually draw anything) so the (now much smaller)
-      // matching set shows as individual, clickable pins rather than a
-      // bubbled count, matching the "zoom to the filtered point(s), no
-      // clusters" behaviour asked for. `project` added 2026-09-17 (7) —
-      // previously this only checked category/chainage, so selecting a
-      // project (which does genuinely narrow `reports`, see the fetch
-      // effect above) still left the map clustered.
+      // narrow which reports actually render — but "narrow" can still mean
+      // thousands of reports spread nationwide (a broad category), which
+      // is exactly what made the map slow (2026-09-22 changelog): dumping
+      // every one of those onto the map as its own marker, even chunked
+      // (2026-09-21 (5) entry), is still a real cost and an unreadable
+      // wall of dots. `hasActiveFilter` here only decides the point-vs-line
+      // rendering shape below and feeds the individual-vs-clustered
+      // decision further down (which additionally checks the real matched
+      // count against INDIVIDUAL_PIN_THRESHOLD).
       const chF = chFrom ? Number(chFrom) : NaN
       const chT = chTo ? Number(chTo) : NaN
       const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
       const hasActiveFilter = !!category || !!project || !!weather || chActive
+
+      // Measured live via a real CPU profile (2026-09-22 (2) changelog
+      // entry): chunking each setMap() call keeps *my own* JS fast, but
+      // Google Maps' own internal engine still does real, expensive
+      // per-overlay bookkeeping in response — ~4-5s of self-time showed up
+      // inside Google's own main.js bundle for the plain unfiltered view
+      // (~9,700 reports), and switching those from Polylines to Markers
+      // (chunked-attached, then handed to MarkerClusterer) barely moved
+      // the number. Root cause: MarkerClusterer.renderClusters() itself
+      // calls setMap(null) on every non-representative marker in a
+      // cluster in one uninterruptible synchronous loop — so the cost
+      // scales with the *raw* marker count fed into the clusterer, not
+      // the small number of bubbles it ends up showing. Chunking can't
+      // reach inside the library's own loop, and neither construction nor
+      // individual setMap() calls were ever the actual bottleneck (both
+      // measured under 0.2ms each) — the only real fix is to never
+      // construct that many Marker objects in the first place.
+      //
+      // Past this many total reports, pre-aggregate into a small number
+      // of grid-cell buckets *before* constructing any markers at all
+      // (see the bucketing block below) — MarkerClusterer (or the
+      // individual-pin path) then only ever has to handle a few dozen to
+      // a few hundred real Marker objects regardless of how many
+      // thousands of underlying reports there are.
+      const useGridBuckets = reports.length > 300
+
+      interface Bucket { latSum: number; lngSum: number; count: number; cats: Map<string, number> }
+      const buckets = useGridBuckets ? new Map<string, Bucket>() : null
+      const GRID_SIZE_DEG = 0.4 // ~44km — coarse on purpose; this tier only
+        // applies when zoomed out wide enough to have this many reports in
+        // view at once, and the fit/zoom effects narrow the working set
+        // (dropping out of this tier) well before a finer grid would
+        // matter visually.
 
       const markers: google.maps.Marker[] = []
       const lines: google.maps.Polyline[] = []
@@ -720,13 +793,27 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           if (colorBy === 'category' && hiddenCategories.has(r.activity_category)) return
           if (colorBy === 'status'   && hiddenStatuses.has(r.activity_status))     return
 
+          // Bucket, don't build a Marker at all — see useGridBuckets'
+          // comment above for why this has to happen before any Marker
+          // object exists, not just before it's shown.
+          if (useGridBuckets) {
+            const key = `${Math.round(startLat / GRID_SIZE_DEG)},${Math.round(startLng / GRID_SIZE_DEG)}`
+            let b = buckets!.get(key)
+            if (!b) { b = { latSum: 0, lngSum: 0, count: 0, cats: new Map() }; buckets!.set(key, b) }
+            b.latSum += startLat; b.lngSum += startLng; b.count++
+            const cat = r.activity_category || 'Other'
+            b.cats.set(cat, (b.cats.get(cat) ?? 0) + 1)
+            return
+          }
+
           const endTooFar = endLat != null && endLng != null && !isNaN(endLat) && !isNaN(endLng)
             && Math.hypot(endLng - startLng, endLat - startLat) > 0.05
           // While a filter narrows the view, always render a single point
           // per report (ArcGIS/Power BI convention — one dot per record)
           // rather than a line spanning its start→end chainage. The
-          // unfiltered default view keeps the extent-line, which is useful
-          // context for browsing all activity along the road at once.
+          // unfiltered default view keeps the extent-line at a moderate
+          // report count (useful context for browsing all activity along
+          // the road at once).
           const samePoint = hasActiveFilter || endLat == null || endLng == null
             || (startLat === endLat && startLng === endLng) || endTooFar
           const color = colorFor(r)
@@ -743,23 +830,65 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
               zIndex: 5,
             })
             m.addListener('click', () => { setSelReport(r); setSelCell(null); setSelDesign(null) })
+            // Stashed for the cluster renderer's tooltip below — cheaper
+            // than re-deriving category breakdowns from report ids per
+            // cluster render pass.
+            ;(m as MarkerWithMeta).__cat = r.activity_category || 'Other'
             markers.push(m)
           } else {
             // google.maps.Polyline has no native `title`/hover-tooltip
             // support (Marker-only) — lines only ever appear in the
             // unfiltered default view now (see samePoint above), so this is
             // click-only; a custom cursor-following overlay wasn't worth
-            // the complexity for the secondary case.
+            // the complexity for the secondary case. Not attached here
+            // (`map` deliberately omitted) — the unfiltered view can hold
+            // thousands of these, so attachment is chunked below instead
+            // of happening synchronously per-line during construction.
             const line = new google.maps.Polyline({
               path: [{ lat: startLat, lng: startLng }, { lat: endLat!, lng: endLng! }],
-              strokeColor: color, strokeOpacity: 0.85, strokeWeight: 6, clickable: true, zIndex: 4, map,
+              strokeColor: color, strokeOpacity: 0.85, strokeWeight: 6, clickable: true, zIndex: 4,
             })
             line.addListener('click', () => { setSelReport(r); setSelCell(null); setSelDesign(null) })
             lines.push(line)
           }
         })
+
+      // Turn each occupied grid cell into exactly one real Marker — the
+      // only Marker objects ever constructed for a large unfiltered set,
+      // which is the actual fix (see useGridBuckets' comment above).
+      if (buckets) {
+        for (const b of buckets.values()) {
+          const top = [...b.cats.entries()].sort((a, c) => c[1] - a[1]).slice(0, 3)
+          const topLine = top.map(([k, v]) => `${k} (${v})`).join(', ') + (b.cats.size > 3 ? ', …' : '')
+          const pos = { lat: b.latSum / b.count, lng: b.lngSum / b.count }
+          const m = new google.maps.Marker({
+            title: `${b.count.toLocaleString()} report${b.count === 1 ? '' : 's'}\n${topLine}\nClick to zoom in`,
+            position: pos,
+            icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: D.amber, fillOpacity: 0.85, strokeColor: 'rgba(0,0,0,0.5)', strokeWeight: 2, scale: b.count >= 500 ? 22 : b.count >= 100 ? 17 : b.count >= 25 ? 13 : 9 },
+            label: { text: String(b.count), color: '#000', fontSize: '10px', fontFamily: 'var(--font-mono)' },
+            zIndex: 500 + b.count,
+          })
+          // A grid bucket isn't one report — clicking it zooms in (like a
+          // real cluster bubble) rather than opening a detail popup that
+          // wouldn't make sense for hundreds of reports at once.
+          m.addListener('click', () => {
+            map.panTo(pos)
+            map.setZoom(Math.min((map.getZoom() ?? 6) + 3, 14))
+          })
+          ;(m as MarkerWithMeta).__cat = top[0]?.[0] ?? 'Other'
+          markers.push(m)
+        }
+      }
+
       reportLinesRef.current = lines
-      setVisibleReportCount(markers.length + lines.length)
+      // In grid-bucket mode `markers.length` is the (small) bucket count,
+      // not the real number of matched reports — sum the buckets' own
+      // counts instead so the "N reports" readout stays honest.
+      setVisibleReportCount(buckets ? [...buckets.values()].reduce((sum, b) => sum + b.count, 0) : markers.length + lines.length)
+      {
+        const gen = ++reportLineAttachGenRef.current
+        attachOverlaysChunked(lines, map, () => reportLineAttachGenRef.current !== gen)
+      }
 
       // Clear whatever was directly attached on the previous pass — chunked
       // too, since detaching thousands of markers synchronously is itself a
@@ -769,43 +898,52 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       // draw the wrong markers), detaching old markers nobody references
       // anymore is always safe to let run to completion regardless of what
       // starts afterward.
-      attachMarkersChunked(directReportMarkersRef.current, null, () => false)
+      attachOverlaysChunked(directReportMarkersRef.current, null, () => false)
       directReportMarkersRef.current = []
 
-      if (hasActiveFilter) {
-        // @googlemaps/markerclusterer's NoopAlgorithm.calculate() always
-        // returns `changed: false` (confirmed by reading the installed
-        // library's source, node_modules/@googlemaps/markerclusterer/dist/
-        // index.dev.js) — and MarkerClusterer.render() only ever calls
-        // renderClusters() (the method that actually attaches any marker
-        // to the map) when `changed` is true or undefined. So a
-        // NoopAlgorithm-mode clusterer can NEVER draw anything, no matter
-        // how many times render()/addMarkers() is called — this silently
-        // made every filtered report pin invisible AND unclickable (no
-        // popups, nothing to click) ever since the "points-only while
-        // filtered" feature shipped (2026-09-15), a real regression that
-        // slipped through because that feature's verification pass only
-        // checked that Marker objects were *constructed* with the right
-        // data, never that they were actually attached to the map. Fixed
-        // by bypassing the clusterer entirely while a filter is active —
-        // attach every marker straight to the map, no library involved.
+      // Individual pins only for a genuinely small matched set — see
+      // INDIVIDUAL_PIN_THRESHOLD's comment. `@googlemaps/markerclusterer`'s
+      // NoopAlgorithm (the old way this was forced for every filter,
+      // regardless of count — see the 2026-09-21 (4)/(5) changelog
+      // entries) can never actually draw anything at all (its calculate()
+      // always reports changed:false, and the library's render() only
+      // attaches markers when changed is true/undefined) — not relevant
+      // here since NoopAlgorithm is no longer used anywhere in this file,
+      // but worth remembering if a future change is tempted to reach for
+      // it again for some other "no clustering" case.
+      const useIndividual = markers.length > 0 && markers.length <= INDIVIDUAL_PIN_THRESHOLD
+      if (useIndividual) {
         if (reportClustererRef.current) {
           reportClustererRef.current.setMap(null)
           reportClustererRef.current = null
         }
         directReportMarkersRef.current = markers
         const gen = ++reportAttachGenRef.current
-        attachMarkersChunked(markers, map, () => reportAttachGenRef.current !== gen)
+        attachOverlaysChunked(markers, map, () => reportAttachGenRef.current !== gen)
       } else if (reportClustererRef.current) {
         reportClustererRef.current.clearMarkers()
         reportClustererRef.current.addMarkers(markers)
       } else {
         reportClustererRef.current = new MarkerClusterer({
           map, markers,
-          renderer: { render: ({ count, position }) => {
+          renderer: { render: (cluster) => {
+            const { count, position, markers: clusterMarkers } = cluster
             const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
+            // A real "overview with tooltips" — the top few categories in
+            // this bubble, not just a bare count — so a broad filter still
+            // gives a useful glance before drilling in (click to zoom, or
+            // narrow the filter further until it drops under the
+            // individual-pin threshold above).
+            const counts = new Map<string, number>()
+            for (const mk of clusterMarkers as MarkerWithMeta[]) {
+              const c = mk.__cat || 'Other'
+              counts.set(c, (counts.get(c) ?? 0) + 1)
+            }
+            const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+            const topLine = top.map(([k, v]) => `${k} (${v})`).join(', ') + (counts.size > 3 ? ', …' : '')
             return new google.maps.Marker({
               position,
+              title: `${count.toLocaleString()} reports\n${topLine}\nClick to zoom in`,
               icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: D.amber, fillOpacity: 0.85, strokeColor: 'rgba(0,0,0,0.5)', strokeWeight: 2, scale: radius },
               label: { text: String(count), color: '#000', fontSize: '11px', fontFamily: 'var(--font-mono)' },
               zIndex: 1000 + count,
@@ -813,6 +951,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           } },
         })
       }
+      ;(window as any).__debugReportClusterer = reportClustererRef.current
     } else {
       setVisibleReportCount(0)
     }
@@ -823,24 +962,15 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     if (!mapLoaded || !mapRef.current) return
     const map = mapRef.current
 
-    // Same "no clusters once something is filtered" behaviour the report
-    // pins already have (see the "Report pins" block below) — extended here
-    // on direct user ask, since this clusterer previously never checked any
-    // filter state at all and stayed bubbled regardless. category/project/
-    // chFrom/chTo don't actually narrow road_assets' own data (it has no
-    // activity_category or project_name column matching the reports side),
-    // and initialSection does narrow which Calabar/Ogun/Kebbi section is
-    // fetched — but the user confirmed they want ALL of these treated as
-    // "a filter is active" for this layer, for one consistent whole-map
-    // behaviour rather than a data-semantics distinction a viewer wouldn't
-    // necessarily notice either way. `project` added 2026-09-17 (7) for the
-    // same reason (a project selection is just as much "a filter is
-    // active" as category ever was, even though it doesn't narrow assets).
-    const chF = chFrom ? Number(chFrom) : NaN
-    const chT = chTo ? Number(chTo) : NaN
-    const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
-    const hasActiveFilter = !!category || !!project || !!weather || chActive || !!initialSection
-
+    // Individual pins only for a genuinely small matched set — same
+    // count-based rule as the report pins above, not "any filter is
+    // active" (which category/project/weather/chFrom/chTo mostly aren't
+    // for this layer anyway — road_assets has no activity_category or
+    // project_name column matching the reports side; only initialSection
+    // actually narrows which Calabar/Ogun/Kebbi section is fetched). See
+    // INDIVIDUAL_PIN_THRESHOLD's comment and the 2026-09-22 changelog
+    // entry — a whole-map-consistency tradeoff from 2026-09-17 (6) is
+    // superseded here by the same real-count rule the report layer uses.
     const markers = assetClusters.map(c => {
       const single = c.count === 1 && c.id != null
       const m = new google.maps.Marker({
@@ -850,24 +980,25 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         zIndex: single ? 400 : 90,
       })
       m.addListener('click', () => { setSelCell(c); setSelReport(null); setSelDesign(null) })
+      ;(m as MarkerWithMeta).__cat = c.entityType || c.layer || 'Asset'
       return m
     })
 
     // Clear whatever was directly attached (bypassing the clusterer) on the
-    // previous pass — see the identical comment in the report-pins effect
-    // above for why NoopAlgorithm can never be used with this library, and
-    // why this clear is chunked and never aborted (unlike the attach below).
-    attachMarkersChunked(directAssetMarkersRef.current, null, () => false)
+    // previous pass — chunked and never aborted, same as the report-pins
+    // effect's identical detach call above.
+    attachOverlaysChunked(directAssetMarkersRef.current, null, () => false)
     directAssetMarkersRef.current = []
 
-    if (hasActiveFilter) {
+    const useIndividual = markers.length > 0 && markers.length <= INDIVIDUAL_PIN_THRESHOLD
+    if (useIndividual) {
       if (assetClustererRef.current) {
         assetClustererRef.current.setMap(null)
         assetClustererRef.current = null
       }
       directAssetMarkersRef.current = markers
       const gen = ++assetAttachGenRef.current
-      attachMarkersChunked(markers, map, () => assetAttachGenRef.current !== gen)
+      attachOverlaysChunked(markers, map, () => assetAttachGenRef.current !== gen)
       return
     }
     if (assetClustererRef.current) {
@@ -876,10 +1007,19 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     } else {
       assetClustererRef.current = new MarkerClusterer({
         map, markers,
-        renderer: { render: ({ count, position }) => {
+        renderer: { render: (cluster) => {
+          const { count, position, markers: clusterMarkers } = cluster
           const radius = count >= 500 ? 30 : count >= 100 ? 24 : count >= 25 ? 18 : 14
+          const counts = new Map<string, number>()
+          for (const mk of clusterMarkers as MarkerWithMeta[]) {
+            const c = mk.__cat || 'Asset'
+            counts.set(c, (counts.get(c) ?? 0) + 1)
+          }
+          const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+          const topLine = top.map(([k, v]) => `${k} (${v})`).join(', ') + (counts.size > 3 ? ', …' : '')
           return new google.maps.Marker({
             position,
+            title: `${count.toLocaleString()} assets\n${topLine}\nClick to zoom in`,
             icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: D.blue, fillOpacity: 0.8, strokeColor: 'rgba(0,0,0,0.5)', strokeWeight: 2, scale: radius },
             label: { text: String(count), color: '#000', fontSize: '11px', fontFamily: 'var(--font-mono)' },
             zIndex: 900 + count,
@@ -887,13 +1027,18 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         } },
       })
     }
-  }, [mapLoaded, assetClusters, category, project, weather, chFrom, chTo, initialSection])
+    ;(window as any).__debugAssetClusterer = assetClustererRef.current
+  }, [mapLoaded, assetClusters])
 
   /* ── Render: ArcGIS road-design overlay ───────────────────── */
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return
     const map = mapRef.current
-    designLinesRef.current.forEach(l => l.setMap(null))
+    // Chunked, not a plain forEach — this layer alone can hold 1,000+
+    // Polylines for a real project (Coastal Road's Section 1c design CAD
+    // overlay), loaded by default on every /dashboard view. See the
+    // 2026-09-22 (2) changelog entry.
+    attachOverlaysChunked(designLinesRef.current, null, () => false)
     designLinesRef.current = []
     if (!layers.design || !designData) return
 
@@ -914,7 +1059,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           if (path.length < 2) return
           const line = new google.maps.Polyline({
             path, strokeColor: layer.color, strokeOpacity: icons ? 0 : 0.95, strokeWeight: layer.weight,
-            icons, clickable: true, zIndex: layer.zIndex, map,
+            icons, clickable: true, zIndex: layer.zIndex,
           })
           line.addListener('click', () => { setSelDesign({ feature, layer }); setSelReport(null); setSelCell(null) })
           lines.push(line)
@@ -922,6 +1067,8 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       })
     })
     designLinesRef.current = lines
+    const gen = ++designLineAttachGenRef.current
+    attachOverlaysChunked(lines, map, () => designLineAttachGenRef.current !== gen)
   }, [mapLoaded, designData, layers.design, hiddenDesignLayers])
 
   /* ── Consume a focus request (report row clicked elsewhere) ── */
