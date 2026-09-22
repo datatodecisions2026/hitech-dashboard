@@ -187,6 +187,15 @@ interface Props {
      every chart's click-to-filter elsewhere on the page. Omit to leave
      popups info-only (no filter action offered). */
   onFilterRequest?: (key: 'category' | 'project' | 'section', value: string) => void
+  /** Show the Calabar/Ogun/Kebbi road_assets layer (fetch, render, layer
+     chips, legend swatch) at all. Defaults to true — /planning-implementation
+     needs it, that page's whole purpose is combining road_assets with the
+     planning breakdown. /dashboard passes false: a real point-resolution
+     bug in that layer's own server-side clustering (2026-09-22 (3)
+     changelog) made it confusing there, and the direct ask was to keep
+     that page showing only activity reports for clarity — see the
+     2026-09-22 (4) entry. */
+  showRoadAssets?: boolean
 }
 
 setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '', v: 'weekly' })
@@ -230,7 +239,7 @@ function attachOverlaysChunked<T extends { setMap(map: google.maps.Map | null): 
 }
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function UnifiedMap({ chFrom, chTo, category, project, weather, initialSection, onLoadStats, onFilterRequest }: Props) {
+export default function UnifiedMap({ chFrom, chTo, category, project, weather, initialSection, onLoadStats, onFilterRequest, showRoadAssets = true }: Props) {
   const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
 
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -448,6 +457,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
 
   /* ── Fetch: road-asset clusters, one request per enabled section ────── */
   useEffect(() => {
+    if (!showRoadAssets) { setAssetClusters([]); return }
     const enabled = (['calabar', 'ogun', 'kebbi'] as const).filter(k => layers[k])
     if (enabled.length === 0) { setAssetClusters([]); return }
     const b = bbox(viewState)
@@ -477,7 +487,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       onLoadStats?.({ queryMs, clientMs: Math.round(performance.now() - t0), count: merged.length, mode })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers.calabar, layers.ogun, layers.kebbi, viewState])
+  }, [showRoadAssets, layers.calabar, layers.ogun, layers.kebbi, viewState])
 
   /* ── Fetch: ArcGIS road-design overlay ─────────────────────── */
   useEffect(() => {
@@ -1153,12 +1163,21 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const legendItems = colorBy === 'category' ? Object.entries(CAT_COLORS) : Object.entries(STATUS_COLORS)
   const busy = reportsLoading || assetsRefreshing
 
+  // Calabar/Ogun/Kebbi (road_assets survey points) chips only shown when
+  // showRoadAssets is on — /dashboard passes false (see that prop's
+  // comment: a real point-resolution bug in that layer's own server-side
+  // clustering, 2026-09-22 (3) entry, made it a source of confusion there
+  // rather than useful context, and the direct ask was to keep that page
+  // showing only activity reports for clarity). /planning-implementation
+  // still needs these — that page's whole purpose is road_assets data.
   const LAYER_CHIPS: { k: MapLayerKey; label: string }[] = [
     { k: 'coastalLine', label: 'Road line' },
     { k: 'reports',     label: 'Reports' },
-    { k: 'calabar',     label: 'Calabar' },
-    { k: 'ogun',        label: 'Ogun' },
-    { k: 'kebbi',       label: 'Kebbi' },
+    ...(showRoadAssets ? [
+      { k: 'calabar' as const, label: 'Calabar' },
+      { k: 'ogun'    as const, label: 'Ogun' },
+      { k: 'kebbi'   as const, label: 'Kebbi' },
+    ] : []),
     { k: 'design',      label: 'Design' },
   ]
 
@@ -1202,7 +1221,8 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         )}
 
         <span style={{ marginLeft: 'auto', fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {visibleReportCount.toLocaleString()} reports · {assetClusters.length.toLocaleString()} asset points
+          {visibleReportCount.toLocaleString()} reports
+          {showRoadAssets && ` · ${assetClusters.length.toLocaleString()} asset points`}
           {busy && <span style={{ color: D.amber }}>· refining…</span>}
         </span>
       </div>
@@ -1307,15 +1327,14 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         )}
       </div>
 
-      {/* Legend — clickable, PowerBI/ArcGIS-style series toggling. The
-         "Road assets" swatch stays non-interactive (that whole layer is
-         already toggled by the Calabar/Ogun/Kebbi LAYER_CHIPS above, so a
-         second toggle here would be redundant, not complementary). */}
+      {/* Legend — clickable, PowerBI/ArcGIS-style series toggling. */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: D.blue }} />
-          <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>Road assets (Calabar/Ogun/Kebbi)</span>
-        </div>
+        {showRoadAssets && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: D.blue }} />
+            <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>Road assets (Calabar/Ogun/Kebbi)</span>
+          </div>
+        )}
         {designData && designData.layers.length > 0 && designData.layers.map(l => {
           const hidden = hiddenDesignLayers.has(l.id)
           return (

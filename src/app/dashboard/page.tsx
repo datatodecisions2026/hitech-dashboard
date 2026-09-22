@@ -931,7 +931,7 @@ function DashboardPageInner() {
 
             <Reveal style={{ marginBottom: 16 }}>
               <div ref={mapPanelRef}>
-                <Card title="Activity Map" sub="All sections — road line, activity reports, and surveyed assets" bodyPad={false}>
+                <Card title="Activity Map" sub="Road line and activity reports" bodyPad={false}>
                   <div style={{ padding: 12 }}>
                     <UnifiedMap
                       chFrom={data.activeFilters.filterChFrom}
@@ -941,6 +941,7 @@ function DashboardPageInner() {
                       weather={data.activeFilters.filterWeather}
                       initialSection={data.activeFilters.filterSection}
                       onFilterRequest={handleFilter}
+                      showRoadAssets={false}
                     />
                   </div>
                 </Card>

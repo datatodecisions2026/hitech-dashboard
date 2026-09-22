@@ -20,7 +20,19 @@ function gridDegForZoom(zoom: number | null): number {
   if (zoom <= 13) return 0.006
   if (zoom <= 15) return 0.0015
   if (zoom <= 17) return 0.0004
-  return 0.0001
+  // 0.0001 (~11m) was previously the finest tier at any zoom past 17 — a
+  // hard ceiling no amount of further zooming could get past. Confirmed
+  // live (2026-09-22 (3) changelog) this genuinely mattered: road_assets
+  // records many distinct entity_type layers (crcp/kerb/subbase/stonebase/
+  // pipe_900mm/jersey_barrier/…) at closely-spaced real stations, so a
+  // real dense location can still hold 15-20+ distinct rows within an 11m
+  // cell — a user zoomed in as far as the UI allowed would see a cluster
+  // forever, with no way to reach individual detail. Extended down to
+  // ~1-3m at the highest zoom tiers so genuinely distinct real points can
+  // actually separate once zoomed in enough.
+  if (zoom <= 19) return 0.0001
+  if (zoom <= 20) return 0.00003
+  return 0.00001
 }
 
 export async function GET(req: NextRequest) {
