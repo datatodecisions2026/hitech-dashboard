@@ -1131,9 +1131,30 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     lastFocusRef.current = sig
 
     if (focusRequest.enableLayer) setLayer(focusRequest.enableLayer, true)
-    if (!isNaN(focusRequest.lat) && !isNaN(focusRequest.lng)) {
+
+    // Prefer a chainage-snapped position over the request's raw lat/lng —
+    // see MapFocusRequest.startChainage's comment. Mirrors the report-pin
+    // render effect's own nearestStation resolution (binary search over
+    // stations sorted by label) so "zoom to this report" always lands on
+    // the exact same spot the report's own marker is actually drawn at,
+    // not wherever its raw (often stuck/reused) GPS field points.
+    let focusLat = focusRequest.lat, focusLng = focusRequest.lng
+    if (focusRequest.startChainage != null && !isNaN(focusRequest.startChainage) && coastalStations.length > 0) {
+      const sorted = [...coastalStations].sort((a, b) => a.label - b.label)
+      let lo = 0, hi = sorted.length - 1
+      const target = focusRequest.startChainage
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (sorted[mid].label < target) lo = mid + 1
+        else hi = mid
+      }
+      const nearest = lo > 0 && Math.abs(sorted[lo - 1].label - target) <= Math.abs(sorted[lo].label - target)
+        ? sorted[lo - 1] : sorted[lo]
+      if (nearest) { focusLat = nearest.latitude; focusLng = nearest.longitude }
+    }
+    if (!isNaN(focusLat) && !isNaN(focusLng)) {
       programmaticMoveRef.current = true
-      mapRef.current.panTo({ lat: focusRequest.lat, lng: focusRequest.lng })
+      mapRef.current.panTo({ lat: focusLat, lng: focusLng })
       mapRef.current.setZoom(focusRequest.zoom ?? 16)
     }
     if (focusRequest.popup && focusRequest.reportId != null) {
@@ -1152,7 +1173,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       setSelCell(null); setSelDesign(null)
     }
     clearFocusRequest()
-  }, [focusRequest, mapLoaded, setLayer, clearFocusRequest])
+  }, [focusRequest, mapLoaded, setLayer, clearFocusRequest, coastalStations])
 
   /* ── Fit to an active chainage-only filter (dashboard) ──────────────────
      The category case is fitted where its data actually arrives (the

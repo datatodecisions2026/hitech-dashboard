@@ -23,6 +23,14 @@ export interface MapFocusRequest {
   lng: number
   zoom?: number
   reportId?: number
+  /** Coastal chainage (metres) for this report, when known. Coastal reports'
+     raw lat/lng (start_chainage_lat/long) is known-unreliable — thousands
+     share a handful of stuck/reused GPS values (2026-07-22 changelog) — so
+     the map prefers snapping to the nearest chainage station over this
+     value's raw lat/lng whenever it's present, the same resolution the
+     report-pin render effect already uses. lat/lng stay the fallback for
+     reports with no chainage (Calabar/Ogun/Kebbi). */
+  startChainage?: number | null
   /** Turn this layer on so the focused point has visible context around it. */
   enableLayer?: MapLayerKey
   /** Minimal report fields so the popup can render without the report being in

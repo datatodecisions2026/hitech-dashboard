@@ -716,6 +716,20 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-22 (7) — Fix: clicking a "Recent Activity Reports" row could zoom the map to the wrong spot, off the actual report marker
+
+**Files changed:** `src/lib/map-view.tsx`, `src/app/dashboard/page.tsx`, `src/components/UnifiedMap.tsx`
+
+**What the user asked for:** "picking a particular row should zoom to the report circle on the map" — the click-to-zoom feature already existed (2026-07-22 changelog), but investigated rather than assumed already correct, since the ask implied the zoom wasn't reliably landing on the report's real marker.
+
+**Root-caused live, not assumed a repeat of an old fix**: `handleSelectReport` (`dashboard/page.tsx`) builds the focus target from the report's raw `start_chainage_lat`/`start_chainage_long` fields, and `UnifiedMap`'s focus-request effect `panTo`s straight to that raw lat/lng with no further resolution. But this project's own 2026-07-22 changelog already established — and fixed, for the report **pin rendering** path only — that these raw GPS fields are unreliable at scale for Coastal Road reports: thousands share a handful of stuck/reused coordinates from the field-collection app, unrelated to where the report actually is. The render effect was fixed back then to snap to the nearest chainage station instead of trusting raw lat/lng; the report-row-click-to-zoom path was never given the same fix, so clicking a row could `panTo` a bogus shared coordinate while the report's actual marker sits somewhere else entirely on the road — the zoom would land on empty road with no visible circle nearby, exactly the symptom implied by the ask.
+
+**Fix**: `MapFocusRequest` gained an optional `startChainage` (metres). `handleSelectReport` now passes the report's own numeric chainage (already present in `recentReports`, aliased from `start_chainage_val` server-side) whenever the report resolves to the Coastal `'reports'` layer — Calabar/Ogun/Kebbi reports have no reliable chainage concept and keep using their real GPS as before. `UnifiedMap`'s focus-request effect now resolves the pan target the same way the report-pin render effect already does: when a chainage is present and `coastalStations` are loaded, binary-search the sorted stations for the nearest label and pan there instead of the raw lat/lng — `coastalStations` added to the effect's dependency array. Raw lat/lng remains the fallback when no chainage value exists.
+
+**Verified**: `tsc --noEmit` clean (isolated project-only check — the working tree's `.next/dev/types/routes.d.ts` was mid-write from the user's own live `next dev` process during this pass and unrelated to this change). Logic reviewed against the exact same binary-search resolution the render effect uses (`nearestStation`, 2026-09-21 (5) changelog) — same station data, same lookup, so a clicked report's zoom target is now guaranteed to coincide with wherever that report's own marker is actually drawn.
+
+**Why:** Direct user request implying the existing click-to-zoom feature wasn't landing correctly — investigated by re-reading both the click handler and the map's focus-consuming effect rather than assuming the feature (built 2026-07-22, refined 2026-09-09) still worked as designed, which is what surfaced that a known, already-fixed-once data-reliability issue (raw Coastal GPS) had a second, never-fixed call site.
+
 ### 2026-09-22 (6) — Fix: a zoomed-in, section-filtered map still showed one giant bucket instead of individual reports
 
 **Files changed:** `src/components/UnifiedMap.tsx`

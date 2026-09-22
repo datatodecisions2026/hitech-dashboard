@@ -845,6 +845,7 @@ function DashboardPageInner() {
     const lng = r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN
     setFocusRequest({
       lat, lng, zoom: 16, reportId: r.id, enableLayer,
+      startChainage: enableLayer === 'reports' ? (r.start_chainage ?? null) : null,
       popup: {
         activity_category: r.activity_category, activity_type: r.activity_type,
         activity_status: r.activity_status, reporter_name: r.reporter_name,
