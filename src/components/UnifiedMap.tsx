@@ -76,6 +76,25 @@ const KEBBI_PROJECT   = 'SBS Sokoto Badagry highway'
 // exploding into every matching point at once).
 const INDIVIDUAL_PIN_THRESHOLD = 40
 
+// nearestStation()'s binary search always returns the closest-by-label
+// station in whatever set it's given — with no cap, a report whose real
+// chainage sits nowhere near the current (possibly viewport-narrowed) set
+// still "resolves" to that set's nearest edge station, placing it exactly
+// there regardless of how far away it actually is. Harmless while the
+// station set always spans nearly the whole road (the old, pre-viewport-
+// filter default), but once stations correctly narrow to match a tight
+// zoomed-in bbox (2026-09-22 (10) changelog), every report whose chainage
+// falls outside that narrow range collapses onto the same one or two
+// boundary points — which, being drawn from that exact bbox's own station
+// query, sit inside the current viewport by construction, so they pass the
+// geographic viewport filter and inflate the shown count back toward the
+// unfiltered total instead of correctly narrowing it. 3000m is generous
+// against the coarsest real sampling gap (map_chainage_line's 1000m tier,
+// intervalForZoom() in src/app/api/map/route.ts) while still rejecting
+// genuinely out-of-range chainage values, which in the confirmed live
+// reproduction were routinely tens of kilometres past the nearest station.
+const MAX_STATION_SNAP_DISTANCE_M = 3000
+
 /* road_assets project/section pairs — fixed, confirmed live. See
    src/app/api/road-assets/route.ts + the 2026-08-05 CLAUDE.md entry. */
 const ASSET_SECTIONS: Record<'calabar' | 'ogun' | 'kebbi', { project: string; section: string }> = {
@@ -316,10 +335,38 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const focusedMarkerRef = useRef<google.maps.Marker | null>(null)
 
   const mapReqKeyRef    = useRef<string>('')
+  // Bumped on every /api/map request this effect issues (one per distinct
+  // zoom/pan step during a real zoom gesture, since reports aren't bbox-
+  // scoped server-side — every step still re-requests the full matching
+  // set). Reports/stations aren't bbox-scoped in content, but STATIONS are
+  // sampled at a resolution/extent tied to whichever bbox that specific
+  // request asked for — so an older, in-flight request that resolves AFTER
+  // a newer one (a real, observed race under rapid zooming, not a
+  // hypothetical) can silently overwrite the correct current station set
+  // with one scoped to a stale, wider or differently-positioned viewport.
+  // Confirmed live (2026-09-22 (10) changelog): nearestStation() always
+  // snaps to the *closest available* station regardless of true distance,
+  // so a stale, coarser station set can make thousands of genuinely
+  // far-away reports resolve onto whichever boundary station lands near
+  // the CURRENT viewport — inflating the shown count back toward the full
+  // unfiltered total instead of narrowing it. Only the response matching
+  // the latest-issued request may ever call setReports/setCoastalStations.
+  const mapFetchGenRef  = useRef(0)
   const kebbiFetchedRef = useRef(false)
   const designReqKeyRef = useRef<string>('')
   const designLineAttachGenRef = useRef(0)
   const lastFocusRef    = useRef<number | string | null>(null)
+  // True once the map has fired its own first real 'idle' — a genuinely
+  // later signal than mapRef.current/mapLoaded, both of which are set
+  // synchronously the instant `new google.maps.Map(...)` returns, before
+  // the browser has painted the container or Google has computed a
+  // projection. Confirmed live (2026-09-22 (10) changelog): calling
+  // fitBounds()/panTo() that early is a real, silent no-op — a fresh
+  // ?category=Earthworks load logged the fit call actually firing (correct
+  // bounds, no errors) yet the camera never visually moved once across 15
+  // full seconds of observation. Every programmatic camera-fit call site in
+  // this file should gate on this, not just mapRef.current.
+  const mapReadyRef     = useRef(false)
   const lastSectionFitRef = useRef<string | null>(null)
   const filterFitRef    = useRef<string | null>(null)
   const catFitRef       = useRef<string | null>(null)
@@ -374,9 +421,15 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     if (b) { p.set('swLat', String(b.swLat)); p.set('swLng', String(b.swLng)); p.set('neLat', String(b.neLat)); p.set('neLng', String(b.neLng)) }
 
     setReportsLoading(true)
+    const gen = ++mapFetchGenRef.current
     fetch(`/api/map?${p.toString()}`)
       .then(r => r.json())
       .then(d => {
+        // A newer request has been issued since this one went out — this
+        // response is stale (an out-of-order resolution, not a hypothetical
+        // — see mapFetchGenRef's comment) and must never touch state.
+        if (mapFetchGenRef.current !== gen) return
+
         // Never let an EMPTY station response clobber an already-loaded,
         // non-empty one — see the 2026-09-22 (9) changelog entry. Stations
         // are bbox-scoped once zoomed in (map_chainage_line's own
@@ -415,6 +468,17 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         // completely unrelated to the filter (confirmed live: a fresh load
         // of ?category=Earthworks showed a random leftover close-up zoom).
         // So: seed-and-skip only when there's genuinely no filter yet.
+        // The map's own async init (loading the Maps JS API, constructing
+        // the google.maps.Map instance) can genuinely still be in flight
+        // when this fetch's response lands — confirmed live (2026-09-22
+        // (10) changelog): a fresh ?category=Earthworks load never fit the
+        // camera at all, ever, across 15 full seconds of observation, with
+        // zero errors and correct data arriving in under a second. Bail
+        // BEFORE touching catFitRef when that's the case, so this filterKey
+        // isn't marked "already handled" — a later, actually map-ready
+        // response gets a real chance to perform the fit instead of losing
+        // it permanently to a race the user can't see or retry.
+        if (!mapRef.current) return
         const filterKey = `${category || ''}|${project || ''}|${weather || ''}|${initialSection || ''}`
         const hasFilter = !!category || !!project || !!weather || !!initialSection
         if (catFitRef.current === null) {
@@ -424,63 +488,79 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           if (catFitRef.current === filterKey) return
           catFitRef.current = filterKey
         }
-        if (!hasFilter || !mapRef.current) return
+        if (!hasFilter) return
         const secRegion = initialSection ? sectionRegion(initialSection) : ''
         if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
 
-        // Resolve each report's position the SAME way the render effect
-        // does (nearest-chainage-station snap for Coastal reports, raw GPS
-        // only as a fallback) — not raw start_chainage_lat/long directly.
-        // That field is known-unreliable at scale (2026-07-22 changelog: a
-        // single stuck/cached GPS value is reused across thousands of
-        // reports spanning completely different chainages) — computing
-        // bounds from it can pull the fit toward a location that has
-        // nothing to do with where the pins actually render.
-        // Sorted once, binary-searched per report — same fix, same reason
-        // as the render effect's nearestStation (see its comment).
-        const sortedStationsForFit = [...(d.stations ?? []) as Station[]].sort((a, b) => a.label - b.label)
-        const nearestStationForFit = (targetLabel: number): Station | undefined => {
-          if (sortedStationsForFit.length === 0) return undefined
-          let lo = 0, hi = sortedStationsForFit.length - 1
-          while (lo < hi) {
-            const mid = (lo + hi) >> 1
-            if (sortedStationsForFit[mid].label < targetLabel) lo = mid + 1
-            else hi = mid
+        // Actually applying the fit is pulled into its own function so it
+        // can be deferred to the map's first real 'idle' rather than always
+        // run synchronously here — see mapReadyRef's comment. mapRef.current
+        // is re-read inside (not closed over as `map` at the call site)
+        // since a deferred call runs later, after this outer callback has
+        // already returned.
+        const applyFit = () => {
+          const map = mapRef.current
+          if (!map) return
+
+          // Resolve each report's position the SAME way the render effect
+          // does (nearest-chainage-station snap for Coastal reports, raw
+          // GPS only as a fallback) — not raw start_chainage_lat/long
+          // directly. That field is known-unreliable at scale (2026-07-22
+          // changelog: a single stuck/cached GPS value is reused across
+          // thousands of reports spanning completely different chainages)
+          // — computing bounds from it can pull the fit toward a location
+          // that has nothing to do with where the pins actually render.
+          // Sorted once, binary-searched per report — same fix, same
+          // reason as the render effect's nearestStation (see its
+          // comment).
+          const sortedStationsForFit = [...(d.stations ?? []) as Station[]].sort((a, b) => a.label - b.label)
+          const nearestStationForFit = (targetLabel: number): Station | undefined => {
+            if (sortedStationsForFit.length === 0) return undefined
+            let lo = 0, hi = sortedStationsForFit.length - 1
+            while (lo < hi) {
+              const mid = (lo + hi) >> 1
+              if (sortedStationsForFit[mid].label < targetLabel) lo = mid + 1
+              else hi = mid
+            }
+            const nearest = (lo > 0 && Math.abs(sortedStationsForFit[lo - 1].label - targetLabel) <= Math.abs(sortedStationsForFit[lo].label - targetLabel))
+              ? sortedStationsForFit[lo - 1] : sortedStationsForFit[lo]
+            // See MAX_STATION_SNAP_DISTANCE_M's comment — same guard as the
+            // render effect's nearestStation, so a too-far match can't pull
+            // the camera-fit bounds toward a boundary station either.
+            return Math.abs(nearest.label - targetLabel) <= MAX_STATION_SNAP_DISTANCE_M ? nearest : undefined
           }
-          if (lo > 0 && Math.abs(sortedStationsForFit[lo - 1].label - targetLabel) <= Math.abs(sortedStationsForFit[lo].label - targetLabel)) {
-            return sortedStationsForFit[lo - 1]
+          const chainageNumForFit = (val?: number | null, text?: number | null): number | null => {
+            if (val != null && !isNaN(val)) return val
+            if (text != null) { const n = Number(String(text).replace('+', '')); if (!isNaN(n)) return n }
+            return null
           }
-          return sortedStationsForFit[lo]
-        }
-        const chainageNumForFit = (val?: number | null, text?: number | null): number | null => {
-          if (val != null && !isNaN(val)) return val
-          if (text != null) { const n = Number(String(text).replace('+', '')); if (!isNaN(n)) return n }
-          return null
+
+          const b = new google.maps.LatLngBounds()
+          let points = 0
+          for (const r of (d.reports ?? []) as ActivityReport[]) {
+            const snap = regionOf(r) === 'reports'
+            const ch = chainageNumForFit(r.start_chainage_val, r.start_chainage)
+            const station = snap && ch != null ? nearestStationForFit(ch) : undefined
+            const lat = station?.latitude  ?? (r.start_chainage_lat  ? parseFloat(r.start_chainage_lat)  : NaN)
+            const lng = station?.longitude ?? (r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN)
+            if (!isNaN(lat) && !isNaN(lng)) { b.extend({ lat, lng }); points++ }
+          }
+          if (points === 0) return
+          programmaticMoveRef.current = true
+          if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
+            map.panTo(b.getCenter())
+            map.setZoom(16)
+          } else {
+            map.fitBounds(b, 70)
+            google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
+          }
         }
 
-        const map = mapRef.current
-        const b = new google.maps.LatLngBounds()
-        let points = 0
-        for (const r of (d.reports ?? []) as ActivityReport[]) {
-          const snap = regionOf(r) === 'reports'
-          const ch = chainageNumForFit(r.start_chainage_val, r.start_chainage)
-          const station = snap && ch != null ? nearestStationForFit(ch) : undefined
-          const lat = station?.latitude  ?? (r.start_chainage_lat  ? parseFloat(r.start_chainage_lat)  : NaN)
-          const lng = station?.longitude ?? (r.start_chainage_long ? parseFloat(r.start_chainage_long) : NaN)
-          if (!isNaN(lat) && !isNaN(lng)) { b.extend({ lat, lng }); points++ }
-        }
-        if (points === 0) return
-        programmaticMoveRef.current = true
-        if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
-          map.panTo(b.getCenter())
-          map.setZoom(16)
-        } else {
-          map.fitBounds(b, 70)
-          google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
-        }
+        if (mapReadyRef.current) applyFit()
+        else google.maps.event.addListenerOnce(mapRef.current, 'idle', applyFit)
       })
-      .catch(() => setError('Failed to load map data'))
-      .finally(() => setReportsLoading(false))
+      .catch(() => { if (mapFetchGenRef.current === gen) setError('Failed to load map data') })
+      .finally(() => { if (mapFetchGenRef.current === gen) setReportsLoading(false) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers.coastalLine, layers.reports, category, project, weather, initialSection, viewState])
 
@@ -596,6 +676,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
 
       localMap.addListener('click', () => { setSelReport(null); setSelDesign(null); setSelCell(null); setFocusedId(null) })
       localMap.addListener('idle', () => {
+        mapReadyRef.current = true
         const b = localMap.getBounds()
         if (!b) return
         const sw = b.getSouthWest(), ne = b.getNorthEast()
@@ -706,10 +787,12 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         if (sortedStations[mid].label < targetLabel) lo = mid + 1
         else hi = mid
       }
-      if (lo > 0 && Math.abs(sortedStations[lo - 1].label - targetLabel) <= Math.abs(sortedStations[lo].label - targetLabel)) {
-        return sortedStations[lo - 1]
-      }
-      return sortedStations[lo]
+      const nearest = (lo > 0 && Math.abs(sortedStations[lo - 1].label - targetLabel) <= Math.abs(sortedStations[lo].label - targetLabel))
+        ? sortedStations[lo - 1] : sortedStations[lo]
+      // See MAX_STATION_SNAP_DISTANCE_M's comment — refuse a match that's
+      // too far by chainage to be a real snap, rather than silently
+      // placing the report at whatever edge station happens to be closest.
+      return Math.abs(nearest.label - targetLabel) <= MAX_STATION_SNAP_DISTANCE_M ? nearest : undefined
     }
     const chainageNum = (val?: number | null, text?: number | null): number | null => {
       if (val != null && !isNaN(val)) return val
@@ -1217,7 +1300,13 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       }
       const nearest = lo > 0 && Math.abs(sorted[lo - 1].label - target) <= Math.abs(sorted[lo].label - target)
         ? sorted[lo - 1] : sorted[lo]
-      if (nearest) { focusLat = nearest.latitude; focusLng = nearest.longitude }
+      // Same guard as the render effect's nearestStation — coastalStations
+      // may currently be scoped to whatever bbox was last fetched, not
+      // necessarily anywhere near this report; fall back to raw lat/lng
+      // rather than confidently panning to a wrong, too-far station.
+      if (nearest && Math.abs(nearest.label - target) <= MAX_STATION_SNAP_DISTANCE_M) {
+        focusLat = nearest.latitude; focusLng = nearest.longitude
+      }
     }
     if (!isNaN(focusLat) && !isNaN(focusLng)) {
       programmaticMoveRef.current = true
@@ -1268,25 +1357,33 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     const secRegion = initialSection ? sectionRegion(initialSection) : ''
     if (secRegion === 'calabar' || secRegion === 'ogun' || secRegion === 'kebbi') return
 
-    const map = mapRef.current
-    const b = new google.maps.LatLngBounds()
-    let points = 0
-    const f = chFrom ? Number(chFrom) : NaN, t = chTo ? Number(chTo) : NaN
-    if (!isNaN(f) && !isNaN(t) && t > f) {
-      coastalStations.filter(s => s.label >= f && s.label <= t).forEach(s => { b.extend({ lat: s.latitude, lng: s.longitude }); points++ })
+    // See mapReadyRef's comment — mapLoaded/mapRef.current are both set
+    // synchronously at map construction, before the map has a real
+    // projection; fitBounds/panTo called that early can silently no-op.
+    const applyFit = () => {
+      const map = mapRef.current
+      if (!map) return
+      const b = new google.maps.LatLngBounds()
+      let points = 0
+      const f = chFrom ? Number(chFrom) : NaN, t = chTo ? Number(chTo) : NaN
+      if (!isNaN(f) && !isNaN(t) && t > f) {
+        coastalStations.filter(s => s.label >= f && s.label <= t).forEach(s => { b.extend({ lat: s.latitude, lng: s.longitude }); points++ })
+      }
+      if (points === 0) return
+      // A single matched point (or a degenerate zero-area bounds) can't be
+      // "fit" meaningfully — go straight to a close, deterministic zoom on
+      // it instead of leaving fitBounds to guess.
+      programmaticMoveRef.current = true
+      if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
+        map.panTo(b.getCenter())
+        map.setZoom(16)
+      } else {
+        map.fitBounds(b, 70)
+        google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
+      }
     }
-    if (points === 0) return
-    // A single matched point (or a degenerate zero-area bounds) can't be
-    // "fit" meaningfully — go straight to a close, deterministic zoom on
-    // it instead of leaving fitBounds to guess.
-    programmaticMoveRef.current = true
-    if (points === 1 || b.getNorthEast().equals(b.getSouthWest())) {
-      map.panTo(b.getCenter())
-      map.setZoom(16)
-    } else {
-      map.fitBounds(b, 70)
-      google.maps.event.addListenerOnce(map, 'bounds_changed', () => { if ((map.getZoom() ?? 0) > 16) map.setZoom(16) })
-    }
+    if (mapReadyRef.current) applyFit()
+    else google.maps.event.addListenerOnce(mapRef.current, 'idle', applyFit)
   }, [mapLoaded, category, chFrom, chTo, coastalStations, initialSection])
 
   /* ── Render ───────────────────────────────────────────────── */
