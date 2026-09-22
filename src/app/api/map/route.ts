@@ -118,6 +118,12 @@ export async function GET(req: NextRequest) {
   // previously weather never reached this route at all, see the
   // "map still shows clusters after clicking a filter" changelog entry.
   const weather   = searchParams.get('weather') || ''
+  // Same convention as category/weather — never actually wired in before
+  // (2026-09-22 (5) changelog): filtering /dashboard's Section dropdown
+  // never narrowed the map's reports at all, so e.g. "Section 1-A" still
+  // fetched every Coastal report and rendered a single, misleadingly huge
+  // grid-bucket marker instead of that section's real, much smaller set.
+  const section   = searchParams.get('section') || ''
   // all=1 → return reports across every project/section, not just `project`
   // (the UnifiedMap needs Calabar/Kebbi/Ogun report pins alongside Coastal's).
   // Paged in full via fetchAll() below — the whole table is ~9.7k rows, well
@@ -161,6 +167,7 @@ export async function GET(req: NextRequest) {
           .ilike('project_name', `%${project.split(' ')[0]}%`)
         if (category) q = q.ilike('activity_category', category)
         if (weather) q = q.ilike('weather', weather)
+        if (section) q = q.ilike('section_name', section)
         return q
       }
       return fetchAll(build)
@@ -169,12 +176,14 @@ export async function GET(req: NextRequest) {
       let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).ilike('project_name', '%Coastal%')
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
+      if (section) q = q.ilike('section_name', section)
       return q
     }
     const buildOther = () => {
       let q = supabase.from('hitech_report_hitechreport').select(REPORT_COLS).or(OTHER_REGION_OR)
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
+      if (section) q = q.ilike('section_name', section)
       return q
     }
     const [c, o] = await Promise.all([fetchAll(buildCoastal), fetchAll(buildOther)])
@@ -202,5 +211,6 @@ export async function GET(req: NextRequest) {
     project,
     category,
     weather,
+    section,
   })
 }

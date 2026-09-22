@@ -343,7 +343,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   useEffect(() => {
     if (!layers.coastalLine && !layers.reports) { setReports([]); setCoastalStations([]); setReportsLoading(false); return }
     const b = bbox(viewState)
-    const key = `${layers.reports}|${category || ''}|${project || ''}|${weather || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
+    const key = `${layers.reports}|${category || ''}|${project || ''}|${weather || ''}|${initialSection || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
     if (mapReqKeyRef.current === key) return
     mapReqKeyRef.current = key
 
@@ -351,6 +351,11 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     if (!project) p.set('all', '1')
     if (category) p.set('category', category)
     if (weather) p.set('weather', weather)
+    // Never actually wired in before (2026-09-22 (5) changelog): the
+    // dashboard's Section dropdown never narrowed the map's own reports at
+    // all, so e.g. "Section 1-A" still fetched (and grid-bucketed) every
+    // Coastal report instead of that section's real, much smaller set.
+    if (initialSection) p.set('section', initialSection)
     if (viewState) p.set('zoom', String(viewState.zoom))
     if (b) { p.set('swLat', String(b.swLat)); p.set('swLng', String(b.swLng)); p.set('neLat', String(b.neLat)); p.set('neLng', String(b.neLng)) }
 
@@ -376,8 +381,8 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         // completely unrelated to the filter (confirmed live: a fresh load
         // of ?category=Earthworks showed a random leftover close-up zoom).
         // So: seed-and-skip only when there's genuinely no filter yet.
-        const filterKey = `${category || ''}|${project || ''}|${weather || ''}`
-        const hasFilter = !!category || !!project || !!weather
+        const filterKey = `${category || ''}|${project || ''}|${weather || ''}|${initialSection || ''}`
+        const hasFilter = !!category || !!project || !!weather || !!initialSection
         if (catFitRef.current === null) {
           catFitRef.current = filterKey
           if (!hasFilter) return
@@ -443,7 +448,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       .catch(() => setError('Failed to load map data'))
       .finally(() => setReportsLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers.coastalLine, layers.reports, category, project, weather, viewState])
+  }, [layers.coastalLine, layers.reports, category, project, weather, initialSection, viewState])
 
   /* ── Fetch: Kebbi corridor line (static context, fixed coarse zoom) ── */
   useEffect(() => {
