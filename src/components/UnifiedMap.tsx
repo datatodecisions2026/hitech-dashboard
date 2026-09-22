@@ -377,7 +377,27 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     fetch(`/api/map?${p.toString()}`)
       .then(r => r.json())
       .then(d => {
-        setCoastalStations(d.stations ?? [])
+        // Never let an EMPTY station response clobber an already-loaded,
+        // non-empty one — see the 2026-09-22 (9) changelog entry. Stations
+        // are bbox-scoped once zoomed in (map_chainage_line's own
+        // viewport gate), and report positions are resolved by SNAPPING
+        // to this same station set (nearestStation, both in the render
+        // effect and the viewport-filter above it) — not just for drawing
+        // the visible road line. If a fit-to-filter camera lands its
+        // center even slightly off the true road alignment, a tight
+        // enough zoom's bbox can miss every sampled station entirely
+        // (confirmed live: a Section 1-B zoom sequence's station count
+        // went 125 → 63 → 0 across three narrowing bboxes, not a gradual
+        // decline to a genuinely sparse-but-real result) — and since
+        // nearestStation() over an EMPTY set resolves nothing, EVERY
+        // report that depends on chainage-snapping (effectively all of
+        // them) loses its position and gets dropped, which is what made
+        // "the report markers ... display for a few seconds then vanish."
+        // Stations are static survey data, so keeping the last known-good
+        // set as a fallback is always safe — it's never stale in a way
+        // that matters, only occasionally missing a station or two right
+        // at the tightest zoom's edge.
+        setCoastalStations(prev => (d.stations && d.stations.length > 0) ? d.stations : prev)
         setReports(d.reports ?? [])
 
         // Fit the camera to a *category or project* filter right here, off
