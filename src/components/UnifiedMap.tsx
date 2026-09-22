@@ -266,6 +266,16 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const [selDesign, setSelDesign] = useState<{ feature: DesignFeature; layer: DesignLayer } | null>(null)
   const [selCell,   setSelCell]   = useState<AssetCluster | null>(null)
 
+  // The report a table row's click most recently focused — see the focus-
+  // request effect below. Unlike focusRequest itself (consumed/cleared the
+  // instant the camera moves), this persists so the render effect can keep
+  // giving that one report a dedicated, unmistakable marker no matter how
+  // many other reports happen to be nearby (2026-09-22 (8) changelog — a
+  // focused report could otherwise render as one line among several other
+  // unrelated reports' lines, or get folded into a grid-bucket bubble
+  // representing thousands of other, unrelated reports).
+  const [focusedId, setFocusedId] = useState<number | null>(null)
+
   // Clickable legend (PowerBI/ArcGIS-style series toggling) — clicking a
   // legend swatch hides/shows just that category, status, or design layer
   // without touching the coarser LAYER_CHIPS on/off toggles above the map.
@@ -300,6 +310,10 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   // this existed).
   const reportLineAttachGenRef = useRef(0)
   const designLinesRef   = useRef<google.maps.Polyline[]>([])
+  // The one dedicated marker for whichever report is currently `focusedId`
+  // (a table-row click) — always attached directly, never bucketed/clustered
+  // or drawn as a line, regardless of how many other reports are nearby.
+  const focusedMarkerRef = useRef<google.maps.Marker | null>(null)
 
   const mapReqKeyRef    = useRef<string>('')
   const kebbiFetchedRef = useRef(false)
@@ -560,7 +574,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       ;(window as any).__debugMap = localMap
       setMapLoaded(true)
 
-      localMap.addListener('click', () => { setSelReport(null); setSelDesign(null); setSelCell(null) })
+      localMap.addListener('click', () => { setSelReport(null); setSelDesign(null); setSelCell(null); setFocusedId(null) })
       localMap.addListener('idle', () => {
         const b = localMap.getBounds()
         if (!b) return
@@ -798,6 +812,10 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
 
       interface Candidate { r: ActivityReport; region: ReturnType<typeof regionOf>; startLat: number; startLng: number; endLat?: number; endLng?: number }
       const candidates: Candidate[] = []
+      // Pulled out of the normal candidate flow entirely (never bucketed,
+      // never drawn as a line, never viewport-filtered out) — see
+      // focusedMarkerRef's comment and the dedicated-marker block below.
+      let focusedCandidate: { r: ActivityReport; startLat: number; startLng: number } | null = null
       reports
         .filter(r => r.start_chainage != null || r.start_chainage_val != null || r.start_chainage_lat != null)
         .forEach(r => {
@@ -826,6 +844,11 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           // clicked that swatch to hide it.
           if (colorBy === 'category' && hiddenCategories.has(r.activity_category)) return
           if (colorBy === 'status'   && hiddenStatuses.has(r.activity_status))     return
+
+          if (focusedId != null && r.id === focusedId) {
+            focusedCandidate = { r, startLat, startLng }
+            return
+          }
 
           if (vb && (startLat < vb.swLat || startLat > vb.neLat || startLng < vb.swLng || startLng > vb.neLng)) return
 
@@ -936,7 +959,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       // In grid-bucket mode `markers.length` is the (small) bucket count,
       // not the real number of matched reports — sum the buckets' own
       // counts instead so the "N reports" readout stays honest.
-      setVisibleReportCount(buckets ? [...buckets.values()].reduce((sum, b) => sum + b.count, 0) : markers.length + lines.length)
+      setVisibleReportCount((buckets ? [...buckets.values()].reduce((sum, b) => sum + b.count, 0) : markers.length + lines.length) + (focusedCandidate ? 1 : 0))
       {
         const gen = ++reportLineAttachGenRef.current
         attachOverlaysChunked(lines, map, () => reportLineAttachGenRef.current !== gen)
@@ -1004,10 +1027,33 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         })
       }
       ;(window as any).__debugReportClusterer = reportClustererRef.current
+
+      // The dedicated "you clicked this one" marker — built last so it's
+      // never a candidate for bucketing/clustering above, and always drawn
+      // regardless of the layer's normal density rules. Old marker cleared
+      // unconditionally first (covers focus cleared, report scrolled out of
+      // the fetched set, or a different report now focused).
+      focusedMarkerRef.current?.setMap(null)
+      focusedMarkerRef.current = null
+      if (focusedCandidate) {
+        const { r: fr, startLat: fLat, startLng: fLng } = focusedCandidate as { r: ActivityReport; startLat: number; startLng: number }
+        const fm = new google.maps.Marker({
+          position: { lat: fLat, lng: fLng },
+          title: `${fr.activity_category} · ${fr.activity_type}\n${fr.activity_status} · ${fr.section_name || fr.project_name}\n(selected)`,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE, fillColor: colorFor(fr), fillOpacity: 1,
+            strokeColor: '#ffffff', strokeWeight: 3, scale: 11,
+          },
+          zIndex: 10000,
+          map,
+        })
+        fm.addListener('click', () => { setSelReport(fr); setSelCell(null); setSelDesign(null) })
+        focusedMarkerRef.current = fm
+      }
     } else {
       setVisibleReportCount(0)
     }
-  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses, viewState])
+  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses, viewState, focusedId])
 
   /* ── Render: road-asset clusters ──────────────────────────── */
   useEffect(() => {
@@ -1130,6 +1176,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     if (lastFocusRef.current === sig) return
     lastFocusRef.current = sig
 
+    if (focusRequest.reportId != null) setFocusedId(focusRequest.reportId)
     if (focusRequest.enableLayer) setLayer(focusRequest.enableLayer, true)
 
     // Prefer a chainage-snapped position over the request's raw lat/lng —
