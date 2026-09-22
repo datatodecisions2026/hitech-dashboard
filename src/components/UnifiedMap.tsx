@@ -761,24 +761,43 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       // measured under 0.2ms each) — the only real fix is to never
       // construct that many Marker objects in the first place.
       //
-      // Past this many total reports, pre-aggregate into a small number
-      // of grid-cell buckets *before* constructing any markers at all
-      // (see the bucketing block below) — MarkerClusterer (or the
+      // Past this many CANDIDATES, pre-aggregate into a small number of
+      // grid-cell buckets *before* constructing any markers at all (see
+      // the bucketing block below) — MarkerClusterer (or the
       // individual-pin path) then only ever has to handle a few dozen to
       // a few hundred real Marker objects regardless of how many
       // thousands of underlying reports there are.
-      const useGridBuckets = reports.length > 300
+      //
+      // "Candidates" is deliberately NOT reports.length (2026-09-22 (6)
+      // changelog entry — a real bug, not a tuning tweak): a Section
+      // filter like "Section 1-B" can still match thousands of reports
+      // total, and this effect never had `viewState` in its own dependency
+      // array, so panning/zooming never re-ran it at all — the same one
+      // big bucket sat there however far the user zoomed in. Fixed in two
+      // parts: (1) `viewState` is now a dependency of this effect (see the
+      // bottom of the file), so a pan/zoom genuinely re-buckets; (2) once
+      // zoomed in past the same zoom>=12 threshold this file already uses
+      // for viewport-scoped queries elsewhere, candidates are first
+      // filtered to a padded version of the current viewport — so the
+      // bucket-vs-individual decision reflects what's actually on screen,
+      // not the whole filtered dataset. A user who zooms in on one small
+      // stretch of a busy section now sees that stretch's real (small)
+      // count, which — once under the threshold below — renders as real
+      // individual pins, exactly as the overview→detail design intends.
+      const vzoom = viewState?.zoom ?? null
+      const useViewportFilter = vzoom !== null && vzoom >= 12 && !!viewState
+      let vb: { swLat: number; swLng: number; neLat: number; neLng: number } | null = null
+      if (useViewportFilter && viewState) {
+        const latPad = (viewState.neLat - viewState.swLat) * 0.25
+        const lngPad = (viewState.neLng - viewState.swLng) * 0.25
+        vb = {
+          swLat: viewState.swLat - latPad, neLat: viewState.neLat + latPad,
+          swLng: viewState.swLng - lngPad, neLng: viewState.neLng + lngPad,
+        }
+      }
 
-      interface Bucket { latSum: number; lngSum: number; count: number; cats: Map<string, number> }
-      const buckets = useGridBuckets ? new Map<string, Bucket>() : null
-      const GRID_SIZE_DEG = 0.4 // ~44km — coarse on purpose; this tier only
-        // applies when zoomed out wide enough to have this many reports in
-        // view at once, and the fit/zoom effects narrow the working set
-        // (dropping out of this tier) well before a finer grid would
-        // matter visually.
-
-      const markers: google.maps.Marker[] = []
-      const lines: google.maps.Polyline[] = []
+      interface Candidate { r: ActivityReport; region: ReturnType<typeof regionOf>; startLat: number; startLng: number; endLat?: number; endLng?: number }
+      const candidates: Candidate[] = []
       reports
         .filter(r => r.start_chainage != null || r.start_chainage_val != null || r.start_chainage_lat != null)
         .forEach(r => {
@@ -808,6 +827,24 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           if (colorBy === 'category' && hiddenCategories.has(r.activity_category)) return
           if (colorBy === 'status'   && hiddenStatuses.has(r.activity_status))     return
 
+          if (vb && (startLat < vb.swLat || startLat > vb.neLat || startLng < vb.swLng || startLng > vb.neLng)) return
+
+          candidates.push({ r, region, startLat, startLng, endLat, endLng })
+        })
+
+      const useGridBuckets = candidates.length > 300
+
+      interface Bucket { latSum: number; lngSum: number; count: number; cats: Map<string, number> }
+      const buckets = useGridBuckets ? new Map<string, Bucket>() : null
+      const GRID_SIZE_DEG = 0.4 // ~44km — coarse on purpose; this tier only
+        // applies when there are still this many candidates in view at
+        // once, and the viewport filter above (plus the fit/zoom effects)
+        // narrows the working set — dropping out of this tier — well
+        // before a finer grid would matter visually.
+
+      const markers: google.maps.Marker[] = []
+      const lines: google.maps.Polyline[] = []
+      candidates.forEach(({ r, startLat, startLng, endLat, endLng }) => {
           // Bucket, don't build a Marker at all — see useGridBuckets'
           // comment above for why this has to happen before any Marker
           // object exists, not just before it's shown.
@@ -970,7 +1007,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     } else {
       setVisibleReportCount(0)
     }
-  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses])
+  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses, viewState])
 
   /* ── Render: road-asset clusters ──────────────────────────── */
   useEffect(() => {
