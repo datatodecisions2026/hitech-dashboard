@@ -165,7 +165,14 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
   const RAMP = VIVID
   const total = data.reduce((s, d) => s + d.count, 0)
   if (!total) return null
-  const r = 66, sw = 20, gap = 2, circ = 2 * Math.PI * r
+  // Sized up from the original 66/20 (160px svg) — a donut with only 2-3
+  // categories (e.g. Party/Ownership breakdowns) otherwise sits far shorter
+  // than the ranked-bar card it's paired with in the same grid row, which
+  // reads as an unbalanced, "wobbly" row even with each card sized to its
+  // own real content (no forced stretch). A bigger, more prominent donut is
+  // also a real visual improvement on its own, not just a height-matching
+  // trick. See the 2026-09-24 (9) changelog entry.
+  const r = 82, sw = 24, gap = 2, circ = 2 * Math.PI * r
   let cumLen = 0
   const segments = data.map((d, i) => {
     const len = (d.count / total) * (circ - data.length * gap)
@@ -177,8 +184,8 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
   const hasActive = !!activeName
   const handleClick = (name: string) => onSliceClick?.(name === activeName ? '' : name)
   return (
-    <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap' }}>
-      <svg width={160} height={160} viewBox="-80 -80 160 160" style={{ flexShrink: 0 }} onMouseLeave={() => setHov(null)}>
+    <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+      <svg width={196} height={196} viewBox="-98 -98 196 196" style={{ flexShrink: 0 }} onMouseLeave={() => setHov(null)}>
         <circle r={r} fill="none" stroke={D.panel2} strokeWidth={sw} />
         {segments.map((seg, i) => {
           const isHov = hov === i
@@ -190,11 +197,11 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
             onMouseEnter={() => setHov(i)} onClick={() => handleClick(seg.name)} />
         })}
         {hovSeg ? (<>
-          <text x="0" y="-6" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="20" fontWeight="600">{hovSeg.count}</text>
-          <text x="0" y="11" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="7">{hovSeg.name.length > 13 ? hovSeg.name.slice(0, 12) + '…' : hovSeg.name}</text>
+          <text x="0" y="-7" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="24" fontWeight="600">{hovSeg.count}</text>
+          <text x="0" y="13" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8">{hovSeg.name.length > 13 ? hovSeg.name.slice(0, 12) + '…' : hovSeg.name}</text>
         </>) : (<>
-          <text x="0" y="-3" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="24" fontWeight="600">{total}</text>
-          <text x="0" y="14" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="7" letterSpacing="1.5">TOTAL</text>
+          <text x="0" y="-4" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="29" fontWeight="600">{total}</text>
+          <text x="0" y="17" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1.5">TOTAL</text>
         </>)}
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 130 }}>
