@@ -643,17 +643,53 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
          project filter, defeating the point; Kebbi's real reports are also
          filed under a different project name than road_assets uses for it,
          see the 2026-08-05 changelog. regionOf()'s substring match on the
-         actual section/project text avoids both traps.) */
+         actual section/project text avoids both traps.
+
+     A real gap found right after shipping the above, not assumed away:
+     clicking a report row/marker in Calabar (e.g. from the report feed, or
+     the map's own popup) pans the camera straight there via focusRequest —
+     with no Section/Project filter ever set, since the click itself carries
+     the position directly. The filter-only check above left that case
+     showing no corridor at all, even though the user was now looking
+     straight at Calabar. Fixed by also treating "genuinely zoomed in" as
+     relevant on its own — a plain manual pan/zoom into any of the three
+     regions now shows that region's corridor with no filter needed,
+     matching how a normal map layer behaves.
+
+     First attempt reused the shared bbox() helper (zoom>=12, tuned for the
+     other layers here) for this — wrong, caught by re-testing rather than
+     trusting it: at zoom 9–11 (a whole-region view — literally the zoom
+     level /road-corridors' own dedicated page's REGION_CAMERA uses for
+     Calabar/Ogun/Kebbi), that check was false, so the "zoomed in" trigger
+     never fired and the bug reproduced again one zoom step earlier than
+     tested. Worse, had it fired at that zoom without a bbox attached (no
+     coordinates sent below the shared helper's zoom>=12 gate), the request
+     would've come back as that region's *entire* ungated overview —
+     reintroducing the original nationwide-flood problem at every
+     intermediate zoom level instead of just the exact-12+ case. Fixed with
+     a corridor-specific bbox()-alike gated at zoom>=9 instead — matching
+     /api/road-corridors' own real bbox-support threshold (see that route
+     and RoadCorridorMap) rather than reusing a threshold tuned for a
+     different layer's own needs — so relevance-by-zoom and bbox-scoping
+     now always move together: whenever "zoomed in" makes a region
+     provisionally relevant, a real bbox is *always* attached too, so an
+     irrelevant region's query is always cheap (confirmed live: 0.3–0.97s,
+     ~260 bytes, for a bbox nowhere near that region's actual lines) rather
+     than ever coming back unbounded. */
+  const corridorBbox = (v: ViewState | null) =>
+    v && v.zoom >= 9 ? { swLat: v.swLat, swLng: v.swLng, neLat: v.neLat, neLng: v.neLng } : null
+
   const regionRelevant = (region: 'calabar' | 'ogun' | 'kebbi'): boolean => {
     if (!layers[region]) return false
     if (showRoadAssets) return true // a real chip the user explicitly controls — trust it alone
-    return regionOf({ section_name: initialSection, project_name: project }) === region
+    if (regionOf({ section_name: initialSection, project_name: project }) === region) return true
+    return !!corridorBbox(viewState) // genuinely zoomed in — cheap to just ask, even if this region turns out empty
   }
 
   useEffect(() => {
     const relevant = (['calabar', 'ogun', 'kebbi'] as const).filter(regionRelevant)
     if (!layers.design || relevant.length === 0) { setCorridorSegments([]); return }
-    const b = bbox(viewState)
+    const b = corridorBbox(viewState)
     const key = `${relevant.join(',')}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
     if (corridorReqKeyRef.current === key) return
     corridorReqKeyRef.current = key
