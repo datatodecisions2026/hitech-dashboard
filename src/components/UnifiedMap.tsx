@@ -611,20 +611,55 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
      1c only, fetched live from an external ArcGIS FeatureServer) with the
      real ingested road_corridors shapefile data this project already owns
      (see /road-corridors) — confirmed with the user, see the 2026-09-24
-     changelog. Deliberately independent of `showRoadAssets`/the individual
-     calabar/ogun/kebbi chips (which gate road_assets survey *points*, a
-     separate concern) so this renders on /dashboard too, not just
-     /planning-implementation — always fetches all three regions whenever
-     the 'design' chip (now labelled "Corridors") is on. */
+     changelog.
+
+     Originally fetched all three regions unconditionally whenever the
+     'design' chip (now labelled "Corridors") was on — flagged as genuinely
+     slow-feeling by the user, and confirmed live to be real, unnecessary
+     work: on /dashboard's default unfiltered load, all three regions'
+     corridor lines rendered across the whole map even though the page's
+     own default view/purpose is Coastal Road, and every pan/zoom step
+     re-issued all three fetches regardless of whether any of them were
+     actually relevant to what's on screen or being filtered. Fixed by only
+     fetching/rendering a region once it's actually relevant:
+       - /planning-implementation (showRoadAssets=true) already has real,
+         user-facing Calabar/Ogun/Kebbi chips that gate that region's
+         road_assets *points* — a region's corridor line now follows the
+         same chip, so turning off "Calabar" hides both together, as a user
+         would expect from one visual toggle.
+       - /dashboard (showRoadAssets=false) has no such chips — there, a
+         region only counts as relevant once the active Section or Project
+         filter actually names it, via the same regionOf() substring match
+         (section_name/project_name containing "calabar"/"ogun"/"kebbi"/
+         "sokoto") every report on this map is already tagged with. Picking
+         "Section 3 - Calabar" is what makes Calabar's corridor appear —
+         exactly the "only show it once a filter concerns it" behavior
+         asked for — instead of showing all three, always, regardless of
+         what's actually being looked at. (Deliberately NOT matched by
+         plain project-name equality against ASSET_SECTIONS: Calabar and
+         Ogun share the same real project value, "Coastal road" — the
+         project this dashboard mostly shows by default — so an equality
+         check there would make both "relevant" for the single most common
+         project filter, defeating the point; Kebbi's real reports are also
+         filed under a different project name than road_assets uses for it,
+         see the 2026-08-05 changelog. regionOf()'s substring match on the
+         actual section/project text avoids both traps.) */
+  const regionRelevant = (region: 'calabar' | 'ogun' | 'kebbi'): boolean => {
+    if (!layers[region]) return false
+    if (showRoadAssets) return true // a real chip the user explicitly controls — trust it alone
+    return regionOf({ section_name: initialSection, project_name: project }) === region
+  }
+
   useEffect(() => {
-    if (!layers.design) { setCorridorSegments([]); return }
+    const relevant = (['calabar', 'ogun', 'kebbi'] as const).filter(regionRelevant)
+    if (!layers.design || relevant.length === 0) { setCorridorSegments([]); return }
     const b = bbox(viewState)
-    const key = `${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
+    const key = `${relevant.join(',')}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
     if (corridorReqKeyRef.current === key) return
     corridorReqKeyRef.current = key
 
     setCorridorLoading(true)
-    Promise.all((['calabar', 'ogun', 'kebbi'] as const).map(region => {
+    Promise.all(relevant.map(region => {
       const p = new URLSearchParams({ region })
       if (viewState) p.set('zoom', String(viewState.zoom))
       if (b) { p.set('swLat', String(b.swLat)); p.set('swLng', String(b.swLng)); p.set('neLat', String(b.neLat)); p.set('neLng', String(b.neLng)) }
@@ -638,7 +673,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       setCorridorLoading(false)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers.design, viewState])
+  }, [layers.design, layers.calabar, layers.ogun, layers.kebbi, showRoadAssets, initialSection, project, viewState])
 
   /* ── Initialise the map once ──────────────────────────────── */
   useEffect(() => {
