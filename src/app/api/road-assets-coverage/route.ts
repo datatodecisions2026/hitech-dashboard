@@ -9,9 +9,9 @@ const supabase = createClient(
 )
 
 // road_assets/chainages use `section` strings that don't match the friendly
-// names this page shows — mirrors PROJECT_ID_MAP (src/app/api/map/route.ts)
-// / ROAD_DESIGN_LAYERS (src/app/api/road-design/route.ts)'s convention of a
-// config map for onboarding new sections rather than a code change.
+// names this page shows — mirrors PROJECT_ID_MAP (src/app/api/map/route.ts)'s
+// convention of a config map for onboarding new sections rather than a code
+// change.
 const SECTION_MAP: Record<string, string> = {
   Calabar: 'Section 3 - Calabar',
   Ogun:    'Section 3 - Ogun',

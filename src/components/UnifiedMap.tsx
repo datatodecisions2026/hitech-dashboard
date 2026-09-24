@@ -9,7 +9,9 @@ import { useMapView, readPersistedCamera, type MapLayerKey } from '@/lib/map-vie
    One map for the whole app. Merges what used to be two separate
    components:
      • HitechMap        — Coastal Road chainage line + ~9.7k activity-report
-                           pins + the ArcGIS road-design CAD overlay
+                           pins (the ArcGIS road-design CAD overlay this used
+                           to also carry was replaced 2026-09-24 by the real
+                           ingested road_corridors survey lines below)
      • RoadAssetsMap     — the 7.27M-row road_assets table, server-clustered,
                            for Calabar / Ogun / Kebbi
    Layer visibility, colour-by and the last camera live in useMapView() so
@@ -57,6 +59,16 @@ const statusColor = (s: string) => STATUS_COLORS[s] || '#848080'
 const ROAD_PRIMARY   = '#ffffff'
 const ROAD_SECONDARY = '#7d8590'
 const HL_FILTER      = '#6366f1'
+
+// Same scheme /road-corridors' own RoadCorridorMap uses, matched to the
+// original Earth Engine app this data was ingested to replace (confirmed
+// live 2026-09-17) — kept identical here for visual continuity between the
+// two places this data now renders.
+const CORRIDOR_COLOR: Record<'calabar' | 'ogun' | 'kebbi', string> = {
+  ogun: '#d4ff00',
+  calabar: '#22e5ff',
+  kebbi: '#ff2ec8',
+}
 
 const COASTAL_PROJECT = 'Coastal Road'
 const KEBBI_PROJECT   = 'SBS Sokoto Badagry highway'
@@ -155,26 +167,13 @@ interface AssetCluster {
   station?: string
 }
 
-interface DesignFeature {
-  objectId: number | null
-  entityName: string | null
-  roadSection: string | null
-  shapeLength: number | null
-  side: string | null
-  status: string | null
-  chainage: string | null
-  paths: { lat: number; lng: number }[][]
-}
-interface DesignLayer {
+interface CorridorSegment {
+  region: 'calabar' | 'ogun' | 'kebbi'
   id: number
-  label: string
-  color: string
-  dash: 'solid' | 'dash' | 'dot' | 'dashdot'
-  weight: number
-  zIndex: number
-  features: DesignFeature[]
+  lengthM: number
+  npoints: number
+  path: { lat: number; lng: number }[]
 }
-interface RoadDesignData { project: string; source: string; layers: DesignLayer[] }
 
 interface ViewState { zoom: number; swLat: number; swLng: number; neLat: number; neLng: number }
 
@@ -278,11 +277,11 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   // "N reports" readout should match what's on the map, not the fetched set.
   const [visibleReportCount, setVisibleReportCount] = useState(0)
 
-  const [designData, setDesignData] = useState<RoadDesignData | null>(null)
-  const [designLoading, setDesignLoading] = useState(false)
+  const [corridorSegments, setCorridorSegments] = useState<CorridorSegment[]>([])
+  const [corridorLoading, setCorridorLoading] = useState(false)
 
   const [selReport, setSelReport] = useState<ActivityReport | null>(null)
-  const [selDesign, setSelDesign] = useState<{ feature: DesignFeature; layer: DesignLayer } | null>(null)
+  const [selCorridor, setSelCorridor] = useState<CorridorSegment | null>(null)
   const [selCell,   setSelCell]   = useState<AssetCluster | null>(null)
 
   // The report a table row's click most recently focused — see the focus-
@@ -296,13 +295,12 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   const [focusedId, setFocusedId] = useState<number | null>(null)
 
   // Clickable legend (PowerBI/ArcGIS-style series toggling) — clicking a
-  // legend swatch hides/shows just that category, status, or design layer
-  // without touching the coarser LAYER_CHIPS on/off toggles above the map.
-  // Kept as two separate sets (not one, reset on colorBy change) so
-  // switching Color By doesn't lose whichever set isn't currently in view.
+  // legend swatch hides/shows just that category or status without touching
+  // the coarser LAYER_CHIPS on/off toggles above the map. Kept as two
+  // separate sets (not one, reset on colorBy change) so switching Color By
+  // doesn't lose whichever set isn't currently in view.
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set())
   const [hiddenStatuses,   setHiddenStatuses]   = useState<Set<string>>(new Set())
-  const [hiddenDesignLayers, setHiddenDesignLayers] = useState<Set<number>>(new Set())
 
   // Overlay refs (no Mapbox-style setData — clear + rebuild each time)
   const primaryLineRef   = useRef<google.maps.Polyline | null>(null)
@@ -328,7 +326,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   // measured a genuine 2.77s blocked task attached synchronously before
   // this existed).
   const reportLineAttachGenRef = useRef(0)
-  const designLinesRef   = useRef<google.maps.Polyline[]>([])
+  const corridorLinesRef = useRef<google.maps.Polyline[]>([])
   // The one dedicated marker for whichever report is currently `focusedId`
   // (a table-row click) — always attached directly, never bucketed/clustered
   // or drawn as a line, regardless of how many other reports are nearby.
@@ -353,8 +351,8 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
   // the latest-issued request may ever call setReports/setCoastalStations.
   const mapFetchGenRef  = useRef(0)
   const kebbiFetchedRef = useRef(false)
-  const designReqKeyRef = useRef<string>('')
-  const designLineAttachGenRef = useRef(0)
+  const corridorReqKeyRef = useRef<string>('')
+  const corridorLineAttachGenRef = useRef(0)
   const lastFocusRef    = useRef<number | string | null>(null)
   // True once the map has fired its own first real 'idle' — a genuinely
   // later signal than mapRef.current/mapLoaded, both of which are set
@@ -608,29 +606,38 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showRoadAssets, layers.calabar, layers.ogun, layers.kebbi, viewState])
 
-  /* ── Fetch: ArcGIS road-design overlay ─────────────────────── */
+  /* ── Fetch: road-corridor survey lines (Calabar/Ogun/Kebbi) ─────────────
+     Replaces the old ArcGIS road-design CAD overlay (Coastal Road Section
+     1c only, fetched live from an external ArcGIS FeatureServer) with the
+     real ingested road_corridors shapefile data this project already owns
+     (see /road-corridors) — confirmed with the user, see the 2026-09-24
+     changelog. Deliberately independent of `showRoadAssets`/the individual
+     calabar/ogun/kebbi chips (which gate road_assets survey *points*, a
+     separate concern) so this renders on /dashboard too, not just
+     /planning-implementation — always fetches all three regions whenever
+     the 'design' chip (now labelled "Corridors") is on. */
   useEffect(() => {
-    if (!layers.design) { setDesignData(null); return }
-    const zoom = viewState?.zoom ?? null
-    const useViewport = zoom !== null && zoom >= 12 && !!viewState
-    const key = useViewport
-      ? `${zoom}|${viewState!.swLat.toFixed(3)}|${viewState!.swLng.toFixed(3)}|${viewState!.neLat.toFixed(3)}|${viewState!.neLng.toFixed(3)}`
-      : 'default'
-    if (designReqKeyRef.current === key) return
-    designReqKeyRef.current = key
+    if (!layers.design) { setCorridorSegments([]); return }
+    const b = bbox(viewState)
+    const key = `${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
+    if (corridorReqKeyRef.current === key) return
+    corridorReqKeyRef.current = key
 
-    const p = new URLSearchParams({ project: COASTAL_PROJECT })
-    if (useViewport) {
-      p.set('zoom', String(viewState!.zoom))
-      p.set('swLat', String(viewState!.swLat)); p.set('swLng', String(viewState!.swLng))
-      p.set('neLat', String(viewState!.neLat)); p.set('neLng', String(viewState!.neLng))
-    }
-    setDesignLoading(true)
-    fetch(`/api/road-design?${p.toString()}`)
-      .then(r => r.json())
-      .then(d => setDesignData(d))
-      .catch(() => {})
-      .finally(() => setDesignLoading(false))
+    setCorridorLoading(true)
+    Promise.all((['calabar', 'ogun', 'kebbi'] as const).map(region => {
+      const p = new URLSearchParams({ region })
+      if (viewState) p.set('zoom', String(viewState.zoom))
+      if (b) { p.set('swLat', String(b.swLat)); p.set('swLng', String(b.swLng)); p.set('neLat', String(b.neLat)); p.set('neLng', String(b.neLng)) }
+      return fetch(`/api/road-corridors?${p.toString()}`)
+        .then(r => r.json())
+        .then(d => ((d.segments ?? []) as { id: number; lengthM: number; npoints: number; path: { lat: number; lng: number }[] }[])
+          .map(s => ({ region, id: s.id, lengthM: s.lengthM, npoints: s.npoints, path: s.path })))
+        .catch(() => [])
+    })).then(results => {
+      setCorridorSegments(results.flat())
+      setCorridorLoading(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers.design, viewState])
 
   /* ── Initialise the map once ──────────────────────────────── */
@@ -674,7 +681,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       ;(window as any).__debugMap = localMap
       setMapLoaded(true)
 
-      localMap.addListener('click', () => { setSelReport(null); setSelDesign(null); setSelCell(null); setFocusedId(null) })
+      localMap.addListener('click', () => { setSelReport(null); setSelCorridor(null); setSelCell(null); setFocusedId(null) })
       localMap.addListener('idle', () => {
         mapReadyRef.current = true
         const b = localMap.getBounds()
@@ -701,7 +708,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       highlightLinesRef.current.forEach(l => l.setMap(null))
       tickMarkersRef.current.forEach(m => m.setMap(null))
       reportLinesRef.current.forEach(l => l.setMap(null))
-      designLinesRef.current.forEach(l => l.setMap(null))
+      corridorLinesRef.current.forEach(l => l.setMap(null))
       reportClustererRef.current?.clearMarkers()
       assetClustererRef.current?.clearMarkers()
       mapRef.current = null
@@ -1007,7 +1014,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
               icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 0.9, strokeColor: 'rgba(0,0,0,0.6)', strokeWeight: 2, scale: 7 },
               zIndex: 5,
             })
-            m.addListener('click', () => { setSelReport(r); setSelCell(null); setSelDesign(null) })
+            m.addListener('click', () => { setSelReport(r); setSelCell(null); setSelCorridor(null) })
             // Stashed for the cluster renderer's tooltip below — cheaper
             // than re-deriving category breakdowns from report ids per
             // cluster render pass.
@@ -1026,7 +1033,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
               path: [{ lat: startLat, lng: startLng }, { lat: endLat!, lng: endLng! }],
               strokeColor: color, strokeOpacity: 0.85, strokeWeight: 6, clickable: true, zIndex: 4,
             })
-            line.addListener('click', () => { setSelReport(r); setSelCell(null); setSelDesign(null) })
+            line.addListener('click', () => { setSelReport(r); setSelCell(null); setSelCorridor(null) })
             lines.push(line)
           }
         })
@@ -1150,7 +1157,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           zIndex: 10000,
           map,
         })
-        fm.addListener('click', () => { setSelReport(fr); setSelCell(null); setSelDesign(null) })
+        fm.addListener('click', () => { setSelReport(fr); setSelCell(null); setSelCorridor(null) })
         focusedMarkerRef.current = fm
       }
     } else {
@@ -1180,7 +1187,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: single ? D.green : D.blue, fillOpacity: 0.85, strokeColor: 'rgba(0,0,0,0.55)', strokeWeight: 2, scale: single ? 6 : 8 },
         zIndex: single ? 400 : 90,
       })
-      m.addListener('click', () => { setSelCell(c); setSelReport(null); setSelDesign(null) })
+      m.addListener('click', () => { setSelCell(c); setSelReport(null); setSelCorridor(null) })
       ;(m as MarkerWithMeta).__cat = c.entityType || c.layer || 'Asset'
       return m
     })
@@ -1231,46 +1238,31 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
     ;(window as any).__debugAssetClusterer = assetClustererRef.current
   }, [mapLoaded, assetClusters])
 
-  /* ── Render: ArcGIS road-design overlay ───────────────────── */
+  /* ── Render: road-corridor survey lines ──────────────────────
+     Chunked, not a plain forEach — a national-zoom view can still hold
+     hundreds of segments across all 3 regions at once. Same attach-gen
+     staleness guard as every other chunked overlay layer here. */
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return
     const map = mapRef.current
-    // Chunked, not a plain forEach — this layer alone can hold 1,000+
-    // Polylines for a real project (Coastal Road's Section 1c design CAD
-    // overlay), loaded by default on every /dashboard view. See the
-    // 2026-09-22 (2) changelog entry.
-    attachOverlaysChunked(designLinesRef.current, null, () => false)
-    designLinesRef.current = []
-    if (!layers.design || !designData) return
+    attachOverlaysChunked(corridorLinesRef.current, null, () => false)
+    corridorLinesRef.current = []
+    if (!layers.design || corridorSegments.length === 0) return
 
-    const dashIcons = (dash: DesignLayer['dash']): google.maps.IconSequence[] | undefined => {
-      if (dash === 'solid') return undefined
-      const dashSym = { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 }
-      const dotSym  = { path: google.maps.SymbolPath.CIRCLE, strokeOpacity: 1, scale: 2, fillOpacity: 1 }
-      if (dash === 'dash') return [{ icon: dashSym, offset: '0', repeat: '14px' }]
-      if (dash === 'dot')  return [{ icon: dotSym,  offset: '0', repeat: '10px' }]
-      return [{ icon: dashSym, offset: '0', repeat: '20px' }, { icon: dotSym, offset: '10px', repeat: '20px' }]
-    }
     const lines: google.maps.Polyline[] = []
-    designData.layers.forEach(layer => {
-      if (hiddenDesignLayers.has(layer.id)) return // clickable-legend hide
-      const icons = dashIcons(layer.dash)
-      layer.features.forEach(feature => {
-        feature.paths.forEach(path => {
-          if (path.length < 2) return
-          const line = new google.maps.Polyline({
-            path, strokeColor: layer.color, strokeOpacity: icons ? 0 : 0.95, strokeWeight: layer.weight,
-            icons, clickable: true, zIndex: layer.zIndex,
-          })
-          line.addListener('click', () => { setSelDesign({ feature, layer }); setSelReport(null); setSelCell(null) })
-          lines.push(line)
-        })
+    for (const seg of corridorSegments) {
+      if (seg.path.length < 2) continue
+      const line = new google.maps.Polyline({
+        path: seg.path, strokeColor: CORRIDOR_COLOR[seg.region], strokeOpacity: 0.9, strokeWeight: 3,
+        clickable: true, zIndex: 5,
       })
-    })
-    designLinesRef.current = lines
-    const gen = ++designLineAttachGenRef.current
-    attachOverlaysChunked(lines, map, () => designLineAttachGenRef.current !== gen)
-  }, [mapLoaded, designData, layers.design, hiddenDesignLayers])
+      line.addListener('click', () => { setSelCorridor(seg); setSelReport(null); setSelCell(null) })
+      lines.push(line)
+    }
+    corridorLinesRef.current = lines
+    const gen = ++corridorLineAttachGenRef.current
+    attachOverlaysChunked(lines, map, () => corridorLineAttachGenRef.current !== gen)
+  }, [mapLoaded, corridorSegments, layers.design])
 
   /* ── Consume a focus request (report row clicked elsewhere) ── */
   useEffect(() => {
@@ -1326,7 +1318,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
         start_chainage: focusRequest.popup.start_chainage as any,
         end_chainage: focusRequest.popup.end_chainage as any,
       })
-      setSelCell(null); setSelDesign(null)
+      setSelCell(null); setSelCorridor(null)
     }
     clearFocusRequest()
   }, [focusRequest, mapLoaded, setLayer, clearFocusRequest, coastalStations])
@@ -1405,7 +1397,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
       { k: 'ogun'    as const, label: 'Ogun' },
       { k: 'kebbi'   as const, label: 'Kebbi' },
     ] : []),
-    { k: 'design',      label: 'Design' },
+    { k: 'design',      label: 'Corridors' },
   ]
 
   return (
@@ -1437,7 +1429,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
             transition: 'all 0.2s', boxShadow: colorBy === opt ? SH_RAISED : 'none',
           }}>{opt}</button>
         ))}
-        {designLoading && <span style={{ fontSize: 10, color: D.amber, fontFamily: 'var(--font-mono)' }}>· loading design…</span>}
+        {corridorLoading && <span style={{ fontSize: 10, color: D.amber, fontFamily: 'var(--font-mono)' }}>· loading corridors…</span>}
 
         {chFrom && chTo && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${D.amber}15`, border: `1px solid ${D.amber}44`, borderRadius: 5, padding: '4px 10px' }}>
@@ -1535,20 +1527,16 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
           </div>
         )}
 
-        {/* Road-design popup — top-right */}
-        {selDesign && (
-          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 20, background: 'rgba(10,8,5,0.96)', border: `1px solid ${selDesign.layer.color}55`, borderRadius: 10, padding: '14px 16px', minWidth: 220, maxWidth: 280, boxShadow: '0 12px 40px rgba(0,0,0,0.7)' }}>
+        {/* Road-corridor popup — top-right */}
+        {selCorridor && (
+          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 20, background: 'rgba(10,8,5,0.96)', border: `1px solid ${CORRIDOR_COLOR[selCorridor.region]}55`, borderRadius: 10, padding: '14px 16px', minWidth: 200, maxWidth: 260, boxShadow: '0 12px 40px rgba(0,0,0,0.7)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-              <span style={{ fontSize: 10, color: selDesign.layer.color, fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>{selDesign.layer.label}</span>
-              <button onClick={() => setSelDesign(null)} style={{ background: 'none', border: 'none', color: D.sub, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 8 }}>✕</button>
+              <span style={{ fontSize: 10, color: CORRIDOR_COLOR[selCorridor.region], fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>{selCorridor.region} corridor</span>
+              <button onClick={() => setSelCorridor(null)} style={{ background: 'none', border: 'none', color: D.sub, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 8 }}>✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <InfoRow label="Entity" value={selDesign.feature.entityName} />
-              <InfoRow label="Section" value={selDesign.feature.roadSection} />
-              <InfoRow label="Chainage" value={selDesign.feature.chainage} />
-              <InfoRow label="Side" value={selDesign.feature.side} />
-              <InfoRow label="Status" value={selDesign.feature.status} />
-              {selDesign.feature.shapeLength != null && <InfoRow label="Length" value={`${selDesign.feature.shapeLength.toFixed(1)} m`} />}
+              <InfoRow label="Segment length" value={`${selCorridor.lengthM.toLocaleString(undefined, { maximumFractionDigits: 0 })} m`} />
+              <InfoRow label="Vertices" value={selCorridor.npoints} />
             </div>
           </div>
         )}
@@ -1562,17 +1550,14 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, i
             <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)' }}>Road assets (Calabar/Ogun/Kebbi)</span>
           </div>
         )}
-        {designData && designData.layers.length > 0 && designData.layers.map(l => {
-          const hidden = hiddenDesignLayers.has(l.id)
-          return (
-            <LegendSwatch key={l.id} color={l.color} label={l.label} hidden={hidden}
-              onClick={() => setHiddenDesignLayers(prev => {
-                const next = new Set(prev)
-                next.has(l.id) ? next.delete(l.id) : next.add(l.id)
-                return next
-              })} />
-          )
-        })}
+        {layers.design && corridorSegments.length > 0 && (['calabar', 'ogun', 'kebbi'] as const)
+          .filter(r => corridorSegments.some(s => s.region === r))
+          .map(r => (
+            <div key={r} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 12, height: 2, background: CORRIDOR_COLOR[r] }} />
+              <span style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', textTransform: 'capitalize' }}>{r} corridor</span>
+            </div>
+          ))}
         {legendItems.map(([name, color]) => {
           const hiddenSet = colorBy === 'category' ? hiddenCategories : hiddenStatuses
           const setHidden = colorBy === 'category' ? setHiddenCategories : setHiddenStatuses

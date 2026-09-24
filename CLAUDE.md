@@ -31,8 +31,7 @@ src/
       dashboard/route.ts    # GET  — aggregate all dashboard data from Supabase (session-guarded)
       progress/route.ts     # GET  — aggregate construction-progress data from Supabase (session-guarded)
       map/route.ts          # GET  — chainage stations + geotagged reports for HitechMap (no session guard)
-      road-design/route.ts  # GET  — ArcGIS road-design CAD overlay (pavement/slope/drainage/culverts/ducts/markings) for HitechMap (session-guarded). See 2026-07-30 changelog
-      road-corridors/route.ts  # GET  — real region summary stats + a viewport/zoom-scoped decimated sample of ingested road_corridors survey-line segments (session-guarded). See 2026-09-17 (2) changelog
+      road-corridors/route.ts  # GET  — real region summary stats + a viewport/zoom-scoped decimated sample of ingested road_corridors survey-line segments (session-guarded). See 2026-09-17 (2) changelog. Also now the source of UnifiedMap's "Corridors" layer on /dashboard + /planning-implementation, replacing the deleted ArcGIS road-design overlay — see 2026-09-24 changelog
       planning-implementation/route.ts  # GET — per-section Total/Planned/Implemented activity counts via the progress_section_breakdown RPC, PLUS road_assets stats (summary/project/section/entity-type) and a combined total/implemented figure (session-guarded). See 2026-08-05 changelog
       road-assets/route.ts  # GET — clustered road-design asset points + summary/project/section/entity-type stats from Supabase (session-guarded) — still used by RoadAssetsMap, now embedded in /planning-implementation rather than its own page. See 2026-08-04/2026-08-05 changelog
       personnel-history/route.ts  # GET — HR staff roster (surveycollection_employee) + merged audit trail from surveycollection_employee_history + surveycollection_employee_status_history (session-guarded). Tiny tables — one payload, no RPC. Backs the /personnel "Personnel History" section. See 2026-09-08 (6) changelog
@@ -40,7 +39,7 @@ src/
   components/
     DashHeader.tsx          # Sticky 52px header — logo, title, user name, logout button. Text nav links are mobile-only fallback (hidden ≥641px, SideNav covers desktop)
     SideNav.tsx             # 64px icon rail (Dashboard/Progress/Machines/Personnel/Planning & Implementation/Asset Coverage), sticky below header, hidden on /login and <640px. Road Assets was removed as a separate entry 2026-08-05 — merged into Planning & Implementation. Streetlights removed 2026-09-07 — see changelog
-    UnifiedMap.tsx          # THE map. One Google Maps (hybrid) instance used on both /dashboard and /planning-implementation, showing every section with geolocation at once: Coastal Road chainage line + 1km ticks, ~1k activity-report pins (all projects, incl. Calabar/Kebbi/Ogun), Calabar/Ogun/Kebbi road_assets clusters (one /api/road-assets call per enabled section), and the ArcGIS road-design CAD overlay. Layer toggles + colour-by + last camera live in src/lib/map-view.tsx so the view is restored across page changes. Absorbed the old HitechMap.tsx + RoadAssetsMap.tsx (both deleted). See 2026-09-09 changelog
+    UnifiedMap.tsx          # THE map. One Google Maps (hybrid) instance used on both /dashboard and /planning-implementation, showing every section with geolocation at once: Coastal Road chainage line + 1km ticks, ~1k activity-report pins (all projects, incl. Calabar/Kebbi/Ogun), Calabar/Ogun/Kebbi road_assets clusters (one /api/road-assets call per enabled section), and the "Corridors" layer — real ingested road_corridors survey lines for Calabar/Ogun/Kebbi (one /api/road-corridors call per region, always all 3 regardless of showRoadAssets/the individual region chips), replacing the ArcGIS road-design CAD overlay this used to carry — see 2026-09-24 changelog. Layer toggles + colour-by + last camera live in src/lib/map-view.tsx so the view is restored across page changes. Absorbed the old HitechMap.tsx + RoadAssetsMap.tsx (both deleted). See 2026-09-09 changelog
     (HitechMap.tsx / RoadAssetsMap.tsx — deleted 2026-09-09, merged into UnifiedMap.tsx)
   lib/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
@@ -285,48 +284,9 @@ Reads `hitech_report_chainage` (station markers) and `hitech_report_hitechreport
 
 ---
 
-### `GET /api/road-design`
-
-Returns the road-design CAD geometry (pavement, slope, drainage, culverts, ducts, road markings) for `HitechMap`'s road-design overlay, sourced from an external ArcGIS Online FeatureServer the user's team publishes to — not Supabase. Session-guarded.
-
-**Query params (all optional):**
-```
-project                          — project display name (default "Coastal Road"); looked up in ROAD_DESIGN_LAYERS in the route file — a project with no entry returns { layers: [] }, not an error
-zoom                              — current map zoom; only used to decide whether to apply the viewport bbox below (requires zoom >= 12, same gate /api/map uses)
-swLat, swLng, neLat, neLng        — current map viewport bounds; used once zoomed in enough, else the query falls back to the project's configured defaultBounds
-```
-
-`ROAD_DESIGN_LAYERS` (in the route file) maps project name → an ArcGIS FeatureServer base URL, a list of sub-layer ids with display label/color/line-style/weight, and a `defaultBounds` envelope. **Add new road sections there when onboarding them** — a config edit, not a code change (mirrors `PROJECT_ID_MAP`'s convention in `src/app/api/map/route.ts`). Only `'Coastal Road'` is configured as of this writing (Section 1c's FeatureServer, 6 layers). The ArcGIS org's content is fully public/anonymous-readable as of this writing — no API key/token needed; if that ever changes, the single `fetch()` call inside `queryLayer()` in the route file is the one place to add `&token=`.
-
-Every ArcGIS query is always bbox-scoped (never unbounded) and paginated (`resultOffset`/`resultRecordCount`, capped at 5 pages/10,000 features per layer as a defensive ceiling) — the underlying FeatureServer's `maxRecordCount` is 2000. Field names are **not** consistent across a FeatureServer's own sub-layers (found the hard way: some layers use `Entity_Name`/`Road_Section`, others use a completely different `SJ_*` spatial-join schema — `SJ_project`/`SJ_section`/`SJ_item`/`SJ_Side`/`SJ_Status`/`SJ_Chainag`) — the route always requests `outFields=*` and tries a list of candidate field names per logical field (`pickField()` in the route file) rather than assuming one schema, so a newly onboarded section's layers work without per-layer field configuration.
-
-**Response (200):**
-```json
-{
-  "project": "Coastal Road",
-  "source": "viewport",
-  "layers": [
-    {
-      "id": 75, "label": "Pavement (CRCP)", "color": "#a8a29e", "dash": "solid", "weight": 4, "zIndex": 2.6,
-      "features": [
-        {
-          "objectId": 1, "entityName": "CRCP", "roadSection": "Section 1C", "shapeLength": 7622.89,
-          "side": null, "status": null, "chainage": null,
-          "paths": [[{ "lat": 6.428, "lng": 3.577 }, { "lat": 6.428, "lng": 3.576 }]]
-        }
-      ]
-    }
-  ]
-}
-```
-
-`source` is `"viewport"` (bbox from the map's current view), `"default-extent"` (project's configured `defaultBounds`, used pre-`idle`/at low zoom), or `"none"` (no config for this project). `paths` is already flattened from GeoJSON `LineString`/`MultiLineString` to `{lat,lng}[][]` server-side — `HitechMap` builds `google.maps.Polyline`s directly from it, no GeoJSON handling on the client.
-
----
-
 ### `GET /api/road-corridors`
 
-Returns real per-region aggregate stats plus a viewport/zoom-scoped sample of the ingested `road_corridors` survey-line segments (Calabar/Ogun/Kebbi), for `RoadCorridorMap` on `/road-corridors`. Session-guarded. See the 2026-09-17 (2) changelog for the full story — this replaced an earlier plain Earth Engine iframe embed (the original 2026-09-17 entry) after the user asked for direct access to the actual shapefiles instead. See the 2026-09-17 (3) changelog for a follow-up fix to how `segments` is sourced at close zoom.
+Returns real per-region aggregate stats plus a viewport/zoom-scoped sample of the ingested `road_corridors` survey-line segments (Calabar/Ogun/Kebbi), for `RoadCorridorMap` on `/road-corridors` **and**, as of 2026-09-24, `UnifiedMap`'s "Corridors" layer on `/dashboard`/`/planning-implementation` (one `region=` call per region, always all three). Session-guarded. See the 2026-09-17 (2) changelog for the full story — this replaced an earlier plain Earth Engine iframe embed (the original 2026-09-17 entry) after the user asked for direct access to the actual shapefiles instead. See the 2026-09-17 (3) changelog for a follow-up fix to how `segments` is sourced at close zoom, and the 2026-09-24 changelog for the second consumer.
 
 **Query params:**
 ```
@@ -715,6 +675,36 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-24 (2) — Replaced the ArcGIS road-design CAD overlay with the real ingested road_corridors survey lines; deleted the now-dead `/api/road-design` route
+
+**Files changed:** `src/components/UnifiedMap.tsx`, `src/app/api/road-corridors/route.ts` (comment only), `src/app/api/road-assets-coverage/route.ts` (comment only), **deleted** `src/app/api/road-design/route.ts`
+
+**What the user asked:** "remember the road designs, we created a new page for, I want to embed those designs as the base for the map on the main dashboard page." Clarified through two rounds of `AskUserQuestion` before touching code, since "embed as the base" and "the new page we created for road designs" were both genuinely ambiguous — the map already had *a* design overlay (the 2026-07-30 ArcGIS CAD layer), and this project has built more than one thing that could plausibly be called "road design" data (`road_assets`'s per-entity-type asset catalog, `road_corridors`'s ingested alignment lines). The user confirmed: not a basemap-style change, and specifically **replace** the existing ArcGIS overlay with `/road-corridors`'s own real ingested shapefile data (the `road_corridors` table — see the 2026-09-17 (2)/(3)/(4) changelog entries for how that data was ingested and made fast).
+
+**What changed, mechanically**: `UnifiedMap`'s 'design' layer (LAYER_CHIPS label now "Corridors", same `MapLayerKey` internally — no `MAP_VIEW_SCHEMA_VERSION` bump needed, a persisted `design: true`/`false` from before this change still means the same on/off toggle) no longer fetches `/api/road-design` (an external ArcGIS FeatureServer query, Coastal Road Section 1c only). It now fetches `/api/road-corridors` — the same endpoint `RoadCorridorMap`'s dedicated `/road-corridors` page already uses — once per region (`calabar`/`ogun`/`kebbi`, always all three when the chip is on), viewport/zoom-scoped via the same `bbox()` helper every other UnifiedMap layer uses. Segments are rendered as `google.maps.Polyline`s colored by region using the exact scheme `/road-corridors` already established for visual continuity (`calabar: '#22e5ff'` cyan / `ogun: '#d4ff00'` neon yellow / `kebbi: '#ff2ec8'` magenta, new `CORRIDOR_COLOR` constant) — replacing the old per-ArcGIS-sub-layer color/dash/weight styling entirely, since there's no longer a discrete "6 CAD layers" concept to style. Clicking a line opens a popup with the region, segment length, and vertex count (mirroring `RoadCorridorMap`'s own popup) instead of the old CAD feature's entity/section/chainage/side/status fields, which don't exist in this data. The legend's per-ArcGIS-layer clickable swatches (`hiddenDesignLayers`) are gone — replaced with a small static per-region swatch row (non-interactive; the single "Corridors" chip is the only on/off control now, matching how the road-line/reports chips are each a single toggle too).
+
+**Deliberately decoupled from `showRoadAssets` and the individual calabar/ogun/kebbi chips** — those gate `road_assets` survey *points* (a separate concern, and `/dashboard` passes `showRoadAssets={false}`, see the 2026-09-22 (4) entry). Corridor *lines* needed to keep working on `/dashboard` regardless, since that's literally where the user asked to see them ("the map on the main dashboard page") — gating them the same way would have silently hidden the whole feature on the one page it was asked for. The "Corridors" chip is on by default (`DEFAULT_LAYERS.design: true`, unchanged), so it's visible immediately on a fresh `/dashboard` load, same as the ArcGIS layer was before.
+
+**The now-orphaned `/api/road-design` route was deleted, not just stopped-being-called** — confirmed via `grep` it had no other consumers anywhere in the codebase before removing it (182 lines: the `ROAD_DESIGN_LAYERS` config, ArcGIS FeatureServer pagination, the `pickField()` schema-normalization logic from the 2026-07-30 entry). Two stray comments elsewhere in the codebase that referenced it as design lineage (`road-assets-coverage/route.ts`, `road-corridors/route.ts`) were updated so they don't point at a deleted file.
+
+**Verified live**, not just built: `tsc --noEmit` and `next build` both clean (25 routes, `/api/road-design` no longer listed — was 26). A scripted Playwright pass against an isolated `next start` on a spare port confirmed: the LAYERS row shows "Corridors" (not "Design"); zero `/api/road-design` requests fire on `/dashboard`; real `/api/road-corridors` requests fire for all 3 regions on load; a `google.maps.Polyline` constructor interception confirmed 231 real corridor lines were constructed on a fresh `/dashboard` load with the correct per-region colors (45 Calabar/cyan, 19 Ogun/yellow, 167 Kebbi/magenta), all `clickable: true`; a screenshot after panning to the Calabar region shows a real cyan line following the actual road alignment through the terrain (not a straight/synthetic line); programmatically triggering a click on a real constructed line opened the new popup showing real data (`Segment length: 1,855 m`, `Vertices: 89`). `/planning-implementation` re-checked too (not just `/dashboard`) — all 6 layer chips present (`Road line`/`Reports`/`Calabar`/`Ogun`/`Kebbi`/`Corridors`), zero console errors. Zero console errors across every check.
+
+**Why:** Direct ask, but scoped through two rounds of clarifying questions rather than guessed at, since "the new page we created for road designs" had at least two real, plausible referents in this codebase's own history (`road_assets`/Asset Coverage vs. `road_corridors`/Road Corridors) and guessing wrong would have meant reworking a shared, heavily-used component's map layer a second time. Once confirmed, the implementation reused this project's own established patterns throughout — the same `bbox()`/multi-region-`Promise.all` fetch shape `road_assets` already uses, the same region color scheme `RoadCorridorMap` already established, the same chunked-attach/staleness-guard discipline every other UnifiedMap overlay layer follows — rather than inventing new conventions. The dead-code deletion (not just leaving `/api/road-design` unreferenced) follows this project's own precedent (e.g. the 2026-09-07 streetlights page removal) of cleaning up code that's confirmed to have zero remaining consumers, rather than accumulating orphaned routes.
+
+### 2026-09-24 — Turn the "Refine the View" filter panel into a floating overlay everywhere
+
+**Files changed:** `src/app/dashboard/page.tsx`, `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`, `src/app/progress/page.tsx`, `src/app/planning-implementation/page.tsx`, `src/app/road-assets-coverage/page.tsx`
+
+**What the user asked:** a screenshot of `/dashboard`'s filter panel showing a large amount of empty space below its last field, asking "this filter box, can it be floating, to avoid unnecessary spaces."
+
+**Root cause, not just a cosmetic tweak**: the "Refine the View" panel (a permanent sticky left column, added 2026-09-19) always reserved a fixed 236px-wide column for the full height of the page's content, regardless of how much of that height its own handful of fields (Search/Category/Project/Section/Date range/Chainage range) actually needed — on any page whose main content ran taller than the filter fields themselves (nearly every page, nearly always), the column's lower portion was permanently empty space with nothing in it.
+
+**Fix**: replaced the sticky column with a small "Filters" pill toggle button (with an active-filter-count badge) that opens the same panel as an absolutely-positioned floating overlay just below it — closable via its own ✕ button, a click anywhere outside it (a transparent full-viewport backdrop div), or Escape. Main content now always uses the page's full width, whether the panel is open or not, instead of permanently ceding a column to it. Applied identically to every page that had the sticky-column pattern: `/dashboard`, `/machines`, `/personnel`, `/progress` (Apply-button-driven filters, same behavior, just floating), `/planning-implementation` (2-field Project/Section version), and `/road-assets-coverage`'s "By Chainage" tab (nested inside that tab's own component, not the page's top level). Filter state/logic/behavior (instant `onChange` vs. Apply-button, URL-param wiring, clear-all) is byte-for-byte unchanged on every page — only the wrapping/positioning changed.
+
+**Verified**: `tsc --noEmit` and `next build` both clean across all 26 routes after every page's edit.
+
+**Why:** Direct user report with a screenshot showing the wasted space plainly. Rolled out to all 5 other pages carrying the same pattern (confirmed via `AskUserQuestion` rather than assumed) instead of fixing only `/dashboard`, since the exact same "empty reserved column" defect existed identically on every one of them.
 
 ### 2026-09-22 (10) — "Verify all filters work and zoom works appropriately": found and fixed two more real bugs beyond the (9) entry's fix, and ruled out three false alarms
 

@@ -139,8 +139,7 @@ export async function GET(req: NextRequest) {
   }))
 
   // ST_AsGeoJSON coordinates are [lng, lat] — flatten to {lat,lng}[] server-side
-  // so the map client never has to touch raw GeoJSON (same convention as
-  // /api/road-design's DesignFeature.paths).
+  // so the map client never has to touch raw GeoJSON.
   const segments = (segmentsRes.data ?? []).map((r: any) => {
     let path: { lat: number; lng: number }[] = []
     try {
