@@ -287,7 +287,10 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
       {data.map((d, i) => {
         const pct = Math.round((d.count / total) * 100)
-        const barPct = (d.count / max) * 100
+        // A real floor, not a cosmetic minimum — with a skewed distribution
+        // (one dominant value, a long tail of small ones), a plain linear
+        // scale renders most rows as an invisible sliver against the track.
+        const barPct = Math.max((d.count / max) * 100, d.count > 0 ? 3 : 0)
         const isHov = hov === i
         const isTop = i < 3
         const barColor = isTop ? VIVID[i] : `${D.muted}88`
@@ -889,7 +892,7 @@ function DashboardPageInner() {
             </Card>
 
             <Reveal style={{ marginBottom: 16 }}>
-              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 0.8fr', gap: 14 }}>
+              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 0.8fr', gap: 14, alignItems: 'start' }}>
                 <Card title="Activity by Category"><DonutChart data={data.byCategory} activeName={data.activeFilters.filterCategory} onSliceClick={name => handleFilter('category', name)} /></Card>
                 <Card title="Reports per Day" sub="Last 30 days"><TimelineChart data={data.byDay} /></Card>
                 <Card title="Completion Rate"><RingStat label="Completed" pct={data.summary.completionRate} color={D.green} /></Card>
@@ -897,7 +900,7 @@ function DashboardPageInner() {
             </Reveal>
 
             <Reveal delay={60} style={{ marginBottom: 16 }}>
-              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14 }}>
+              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14, alignItems: 'start' }}>
                 <Card title="Top Projects by Reports"><HBarChart data={data.byProject} activeName={data.activeFilters.filterProject} onBarClick={name => handleFilter('project', name)} /></Card>
                 <Card title="Weather Conditions" sub={data.unattributed?.byWeather ? `No weather recorded: ${data.unattributed.byWeather.toLocaleString()} not shown in ranking` : undefined}><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
               </div>

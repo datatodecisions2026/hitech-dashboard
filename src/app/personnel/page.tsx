@@ -112,7 +112,10 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
       {data.map((d, i) => {
         const pct = Math.round((d.count / total) * 100)
-        const barPct = (d.count / max) * 100
+        // A real floor, not a cosmetic minimum — with a skewed distribution
+        // (one dominant value, a long tail of small ones), a plain linear
+        // scale renders most rows as an invisible sliver against the track.
+        const barPct = Math.max((d.count / max) * 100, d.count > 0 ? 3 : 0)
         const isHov = hov === i
         const isTop = i < 3
         const isActive = d.name === activeName
@@ -569,7 +572,7 @@ function PersonnelPageInner() {
   }
 
   const totalMentions = (data?.employeeSummary?.totalMentions ?? 0) + (data?.engineerSummary?.totalMentions ?? 0) + (data?.supervisorSummary?.totalMentions ?? 0)
-  const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }
+  const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, alignItems: 'start' }
   const activeFilterCount = data ? Object.entries(data.activeFilters).filter(([, v]) => !!v).length : 0
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'

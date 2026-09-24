@@ -107,7 +107,10 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
       {data.map((d, i) => {
         const pct = Math.round((d.count / total) * 100)
-        const barPct = (d.count / max) * 100
+        // A real floor, not a cosmetic minimum — with a skewed distribution
+        // (one dominant value, a long tail of small ones), a plain linear
+        // scale renders most rows as an invisible sliver against the track.
+        const barPct = Math.max((d.count / max) * 100, d.count > 0 ? 3 : 0)
         const isHov = hov === i
         const isTop = i < 3
         const barColor = isTop ? VIVID[i] : `${D.muted}88`
@@ -451,7 +454,7 @@ function MachinesPageInner() {
             </div>
 
             <Reveal>
-              <div className="mach-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+              <div className="mach-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, alignItems: 'start' }}>
                 <Card title="Machines Used" note={unattributedNote(data, 'byMachine', 'No machine name recorded')}>
                   {data.byMachine?.length > 0
                     ? <HBarChart data={data.byMachine} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)} />

@@ -752,7 +752,7 @@ function ProgressPageInner() {
             {activeTab === 'planning' && (
               <>
                 <Reveal style={{ marginBottom: 14 }}>
-                  <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+                  <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14, alignItems: 'start' }}>
                     <Card title="Delayed vs On Schedule"><DelayDonut delayed={data.summary.delayed} onSchedule={data.summary.onSchedule} /></Card>
                     <Card title="Days for Completion by Entity"><DaysByEntityChart data={data.daysByEntity} /></Card>
                   </div>

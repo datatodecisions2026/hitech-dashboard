@@ -677,6 +677,20 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-24 (7) — Chart-grid cards no longer stretch to match their tallest sibling; ranked-bar charts get a minimum visible width
+
+**Files changed:** `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`, `src/app/dashboard/page.tsx`, `src/app/planning-implementation/page.tsx`, `src/app/progress/page.tsx`
+
+**What the user asked, with a screenshot of `/machines`:** "can the charts be aesthetically improved? too much of unnecessary space" — a screenshot showing "Ownership Breakdown" and "Top Drivers" with a large empty area below their real content, and "Machines Used"'s ranked-bar rows mostly reading as near-invisible slivers against a dominant top value.
+
+**Two distinct real causes, not one, both confirmed by inspecting the actual DOM/CSS rather than guessed at:**
+1. **Every chart-row grid (`mach-grid`, `personnel-grid`, `grid-responsive`, `pi-grid`) used plain CSS Grid with no `align-items` set** — the default is `stretch`, so every card in a row is forced to the height of the *tallest* card in that row, regardless of how much real content it has. `/machines`' "Machines Used" card (14–15 ranked rows) was setting the row height for "Ownership Breakdown" (a small donut + 2-row legend) and "Top Drivers" (7 rows, several near-zero) sitting next to it — both were stretched to match, leaving a large blank area below their actual content. Fixed by adding `alignItems: 'start'` to all 5 of these grid containers across the 5 pages that have them (`road-assets-coverage`'s own grids were left alone — checked first, and found they already set `alignItems` deliberately per-usage, not an oversight there).
+2. **`HBarChart`'s bar width is `(d.count / max) * 100` with no floor** — against a real skewed distribution (one dominant value like Excavator's 1102 next to Total Stations' 1), every row below the top few renders as a sliver a couple of pixels wide, functionally invisible. Every page with its own local `HBarChart` (`/dashboard`, `/machines`, `/personnel`, `/planning-implementation` — 4 separate copies, this project's established per-page-component convention) got the same fix: `Math.max((d.count / max) * 100, d.count > 0 ? 3 : 0)` — any row with a real, nonzero count now always renders as at least a visible 3%-wide bar, while `0` stays truly `0` width (not misleadingly implying a value that isn't there).
+
+**Verified live**: `tsc --noEmit` and `next build` both clean (25 routes). A scripted Playwright pass against a fresh `next start` screenshotted the affected chart rows on `/machines`, `/personnel`, `/dashboard`, and `/planning-implementation` — confirmed every card now sizes to its own content height (no more blank space under short cards next to a long ranked list), and small-but-nonzero bar values are now visibly readable instead of disappearing into the track. Zero console errors on any of the 4 pages checked.
+
+**Why:** Direct, specific ask with a screenshot showing the exact symptom. Investigated the actual cause (CSS Grid's default `stretch` behavior, confirmed by reading the real `display:grid` containers rather than assumed) before treating it as a "chart component" problem — the fix turned out to be almost entirely about the *grid wrapping* the charts, not the charts' own rendering, plus one small, genuinely chart-level improvement (the bar-width floor) that directly serves the same "stop wasting/wasted visual space" ask. Rolled out to every page carrying either of the two affected patterns, not just `/machines`, for the same consistency reasons this session's earlier rollouts (floating filter panel, filter-panel visual pass, hero banner) already established.
+
 ### 2026-09-24 (6) — `/machines` and `/personnel` now carry the same hero banner as `/dashboard`
 
 **Files changed:** `src/components/HeroBanner.tsx` (new), `src/app/dashboard/page.tsx`, `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`

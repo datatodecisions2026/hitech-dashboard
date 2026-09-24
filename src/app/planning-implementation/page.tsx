@@ -152,7 +152,10 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
       {data.map((d, i) => {
         const pct = total > 0 ? Math.round((d.count / total) * 100) : 0
-        const barPct = (d.count / max) * 100
+        // A real floor, not a cosmetic minimum — with a skewed distribution
+        // (one dominant value, a long tail of small ones), a plain linear
+        // scale renders most rows as an invisible sliver against the track.
+        const barPct = Math.max((d.count / max) * 100, d.count > 0 ? 3 : 0)
         const isHov = hov === i
         const isTop = i < 3
         const isActive = d.name === activeName
@@ -547,7 +550,7 @@ function PlanningImplementationPageInner() {
             </div>
 
             <Reveal style={{ marginBottom: 14 }}>
-              <div className="pi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 14 }}>
+              <div className="pi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 14, alignItems: 'start' }}>
                 <Card title="Activities by Section">
                   {topSections.length > 0
                     ? <HBarChart data={topSections} activeName={activeSection} onBarClick={handleSectionFilter} />
