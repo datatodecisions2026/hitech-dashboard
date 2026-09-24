@@ -677,6 +677,20 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-24 (8) — Ranked-bar charts cap at 8 rows with a "Show all N" toggle, to fix the jagged row heights the (7) entry's fix exposed
+
+**Files changed:** `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`, `src/app/dashboard/page.tsx`, `src/app/planning-implementation/page.tsx`
+
+**What the user reported, with a dark-mode screenshot of `/machines`:** after the (7) entry's `alignItems: 'start'` fix shipped, "this is not so good aesthetically" — the fix correctly stopped cards from being force-stretched to match their tallest sibling, but that meant "Machines Used" (15 real rows) now sat next to "Ownership Breakdown" (a small donut + 2-row legend) and "Top Drivers" (9 rows, several near-zero) at three visibly different heights — an uneven, jagged-bottomed row, which reads as unbalanced even though no single card has wasted empty space inside it anymore.
+
+**Root cause carried over directly from the (7) entry's own reasoning, not a new problem**: stopping the forced stretch was correct (empty space inside a card is worse than an uneven row), but it fully exposed just how *different* these ranked lists' real lengths are — a 15-row list next to a 2-row list was always going to look mismatched once nothing was artificially equalizing them.
+
+**Fix**: every local `HBarChart` (4 separate copies — `/dashboard`, `/machines`, `/personnel`, `/planning-implementation`, this project's established per-page-component convention) now shows at most 8 rows by default, with a small "↓ Show all N" / "↑ Show less" mono-text toggle appended when the real list is longer. Capping at 8 brings a long ranked list's default height much closer to a typical donut-plus-legend card's natural height, without ever hiding data — every row is still one click away, and the toggle only appears when there's actually more to show (a 4-row list, like `/dashboard`'s Top Projects, renders exactly as before). `EmptyState`/error paths and the (7) entry's own bar-width floor were left untouched — this is purely about row *count*, not row rendering.
+
+**Verified live**: `tsc --noEmit` and `next build` both clean (25 routes). A scripted Playwright pass against a fresh `next start`, dark mode (matching the reported screenshot), confirmed: `/machines`' three cards now sit at close to the same height by default: real screenshots show "Show all 15" and "Show all 9" toggles on the two long lists, clicking one correctly expands to the full list (and correctly re-collapses on a second click) without disturbing the other cards in the row; `/personnel`, `/dashboard`, and `/planning-implementation` all confirmed to render correctly too, including the short-list case (`/dashboard`'s 4-project "Top Projects" list, `/planning-implementation`'s 5-section list) where no toggle appears and nothing changed visually from before. Zero console errors across every page checked.
+
+**Why:** Direct follow-up report on the (7) entry's own fix, with a screenshot showing the fix had solved one real problem (wasted internal space) while fully surfacing a second, related one (mismatched row heights) that was always latent in the underlying data shape. Rather than reverting to forced-stretch (which would reintroduce the original bug) or leaving the row visually uneven, capped the actual source of the height variance — a 15-row list is inherently going to dominate a 2-row donut card no matter how the grid aligns them — while keeping every row still reachable via the expand toggle, so no information is lost, only the *default* view's footprint.
+
 ### 2026-09-24 (7) — Chart-grid cards no longer stretch to match their tallest sibling; ranked-bar charts get a minimum visible width
 
 **Files changed:** `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`, `src/app/dashboard/page.tsx`, `src/app/planning-implementation/page.tsx`, `src/app/progress/page.tsx`
