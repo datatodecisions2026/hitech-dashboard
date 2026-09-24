@@ -676,6 +676,24 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-24 (5) — Filter panel visual pass: dropped the verbose header, added per-field icons, tightened spacing
+
+**Files changed:** `src/app/dashboard/page.tsx`, `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`, `src/app/progress/page.tsx`, `src/app/planning-implementation/page.tsx`, `src/app/road-assets-coverage/page.tsx`
+
+**What the user asked, with a screenshot:** remove the "Refine the View / Narrows every chart, table, and the map at once" header text from the floating filter panel (added in the (1) entry above), and make the panel more visually appealing generally.
+
+**What changed, on every page that has the panel:**
+- The two-line header sentence is gone. In its place, a slim header strip (same tone as the page's own card headers — `D.panel2` background, hairline bottom border) carrying just a small funnel icon, a "FILTERS" mono label, and — when any filter is active — a small amber count badge, plus the existing close (✕) button. This mirrors the "Filters" toggle button that opens the panel, so the panel doesn't repeat itself with a longer sentence saying the same thing a second way.
+- Every field now has a small inline icon next to its label (search/magnifying-glass, tag for Category, folder for Project, map-pin for Section, layers for Entity, a split-path icon for Side, calendar for date fields, a ruler for chainage fields) — faster to visually scan than plain text labels alone, and ties into this project's existing inline-SVG icon convention (same stroke width/style already used for KPI card icons on every one of these pages).
+- Date-range and chainage-range fields, previously two separately-labeled inputs side by side, are now under one shared label ("Date Range" / "Chainage Range (m)") with the two inputs beneath it — same behavior, less repeated label text.
+- Inputs/selects gained a slightly larger corner radius (7→9px) and padding, matching the panel's own new 14px radius (up from 12px) for a more consistent, rounded look throughout.
+- The bottom "N matched" + "Clear all filters" block was tightened into one row (count on the left, a smaller pill-style "Clear all" button on the right) instead of a full-width button stacked below a separate count line.
+- `/progress` and `/road-assets-coverage`'s By Chainage tab (both Apply-button-driven, inlined `<aside>` rather than a separate `FilterRail` component) got the identical treatment — same header strip, icons, and grouped-range layout — plus their own local `field`/`selectStyle`/`labelStyle`/`hasActiveFilters` locals were confirmed (via `grep`) to be used nowhere else on the page before restyling them, since those two files don't isolate the panel into its own function the way the other four do.
+
+**Verified live**: `tsc --noEmit` and `next build` both clean (25 routes). A scripted Playwright pass against a fresh `next start` opened the panel on all 6 pages (`/road-assets-coverage` via its "By Chainage" tab first) and screenshotted each — confirmed the header strip, icons, and grouped fields render correctly and consistently, in both light and dark mode on `/dashboard`, with the active-filter count badge and the "N matched / Clear all" row appearing correctly once a filter was actually applied. Zero console errors across every page.
+
+**Why:** Direct, specific ask with a screenshot pointing at the exact text to remove — used the opportunity to also address the "more visually appealing" half of the ask with a real design pass (icons, spacing, grouping) rather than just deleting two lines, then rolled the identical treatment out to all 6 pages carrying this pattern for consistency, same discipline as the (1) entry's own floating-panel rollout.
+
 ### 2026-09-24 (4) — Fix the (3) entry's relevance gate missing a real case: a report-click with no Section/Project filter
 
 **Files changed:** `src/components/UnifiedMap.tsx`

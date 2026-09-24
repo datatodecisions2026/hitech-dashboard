@@ -203,11 +203,17 @@ const IconTruck = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="no
 const IconLayers = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
 const IconUser = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
 const IconTag = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.61 3H4a1 1 0 0 0-1 1v5.61a2 2 0 0 0 .59 1.42l9.58 9.58a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.6z" /><circle cx="7.5" cy="7.5" r="1.2" /></svg>
+const FIconSearch = () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+const FIconFolder = () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+const FIconCalendar = () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+const FIconRuler = () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m16.5 7.5 3 3L7.5 22.5l-3-3z" /><path d="m14.5 5.5 4 4" /><path d="m11.5 8.5 2 2" /><path d="m8.5 11.5 2 2" /><path d="m5.5 14.5 2 2" /></svg>
+const FIconFunnel = ({ color }: { color: string }) => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
 
-/* ── filter rail (floating "Refine the View" panel) ──────────
-   Was a sticky left column (2026-09-21); converted to a floating overlay
-   2026-09-24 to match /dashboard (see that page's own FilterRail for the
-   full reasoning) — same field logic verbatim, only the layout changed. */
+/* Was a sticky left column (2026-09-21); converted to a floating overlay
+   2026-09-24 to match /dashboard, then given the same icon-labeled/no-
+   header-text visual pass as that page's own FilterRail — see that
+   component for the full reasoning. Same field logic verbatim throughout,
+   only presentation changed. */
 function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (key: string, val: string) => void; onClose: () => void }) {
   const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
@@ -230,50 +236,64 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
       onFilter('__ch_range__', `${from},${to}`)
   }
 
-  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 12.5, outline: 'none', width: '100%' }
-  const lbl: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6, display: 'block' }
-  const row = (l: string, el: React.ReactNode) => <div key={l}><span style={lbl}>{l}</span>{el}</div>
+  const activeFilterCount = Object.entries(data.activeFilters).filter(([, v]) => !!v).length
+  const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 9, padding: '9px 11px', fontSize: 12.5, outline: 'none', width: '100%', transition: `border-color 0.15s ${EASE}` }
+  const lbl: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: D.muted, marginBottom: 6 }
+  const row = (icon: React.ReactNode, l: string, el: React.ReactNode) => <div key={l}><span style={lbl}>{icon}{l}</span>{el}</div>
 
   return (
     <aside className="filter-rail" style={{
-      width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
-      boxShadow: SH.cardLg, padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-      maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', animation: `fadeIn 0.15s ${EASE}`,
+      width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14,
+      boxShadow: SH.cardLg, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
-          <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart on this page at once.</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', background: D.panel2, borderBottom: `1px solid ${D.border}`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <FIconFunnel color={D.amber} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.text }}>Filters</span>
+          {activeFilterCount > 0 && (
+            <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
+          )}
         </div>
-        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
-          <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+          <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
         </button>
       </div>
-      <div style={{ height: 1, background: D.border }} />
 
-      {row('Search', <input type="text" placeholder="Reporter, project, comment…" value={search} onChange={e => setSearch(e.target.value)} style={field} />)}
-      {row('Category', <select value={active.filterCategory || ''} onChange={e => onFilter('category', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Categories</option>{data.filterOptions.categories.map(c => <option key={c} value={c}>{c}</option>)}</select>)}
-      {row('Project', <select value={active.filterProject || ''} onChange={e => onFilter('project', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Projects</option>{data.filterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}</select>)}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Date From</span><input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={field} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Date To</span><input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={field} /></div>
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Ch. From</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}><span style={lbl}>Ch. To</span><input type="number" placeholder="30000" value={chTo} onChange={e => setChTo(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} /></div>
-      </div>
+      <div style={{ padding: '16px 16px 18px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        {row(<FIconSearch />, 'Search', <input type="text" placeholder="Reporter, project, comment…" value={search} onChange={e => setSearch(e.target.value)} style={field} />)}
+        {row(<IconTag />, 'Category', <select value={active.filterCategory || ''} onChange={e => onFilter('category', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Categories</option>{data.filterOptions.categories.map(c => <option key={c} value={c}>{c}</option>)}</select>)}
+        {row(<FIconFolder />, 'Project', <select value={active.filterProject || ''} onChange={e => onFilter('project', e.target.value)} style={{ ...field, cursor: 'pointer' }}><option value="">All Projects</option>{data.filterOptions.projects.map(p => <option key={p} value={p}>{p}</option>)}</select>)}
 
-      {hasFilters && (
-        <>
-          <div style={{ height: 1, background: D.border }} />
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: D.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />
-            <span style={{ color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{data.summary.totalReports.toLocaleString()}</span> matched
+        <div>
+          <span style={lbl}><FIconCalendar />Date Range</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={field} />
+            <input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={field} />
           </div>
-          <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__', '') }}
-            style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
-        </>
-      )}
+        </div>
+        <div>
+          <span style={lbl}><FIconRuler />Chainage Range (m)</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} />
+            <input type="number" placeholder="30000" value={chTo} onChange={e => setChTo(e.target.value)} onBlur={applyChFilter} onKeyDown={e => { if (e.key === 'Enter') applyChFilter() }} style={field} />
+          </div>
+        </div>
+
+        {hasFilters && (
+          <>
+            <div style={{ height: 1, background: D.border }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: D.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: D.amber, flexShrink: 0 }} />
+                <span style={{ color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{data.summary.totalReports.toLocaleString()}</span> matched
+              </div>
+              <button onClick={() => { setChFrom(''); setChTo(''); setSearch(''); onFilter('__clear__', '') }}
+                style={{ color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>Clear all</button>
+            </div>
+          </>
+        )}
+      </div>
     </aside>
   )
 }

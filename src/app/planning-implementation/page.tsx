@@ -206,6 +206,9 @@ const IconClipboard = () => <svg width={15} height={15} viewBox="0 0 24 24" fill
 const IconCheck = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
 const IconMap = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>
 const IconClock = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></svg>
+const FIconFolder = () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+const FIconPin = () => <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" /></svg>
+const FIconFunnel = ({ color }: { color: string }) => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
 
 /* ── skeleton ─────────────────────────────────────────────── */
 function Skel({ h }: { h: number }) {
@@ -413,8 +416,9 @@ function PlanningImplementationPageInner() {
     ? data.roadAssets.summary.total_estimate - data.roadAssets.summary.geolocated_estimate
     : 0
 
-  const selStyle: React.CSSProperties = { background: D.panel2, color: D.text, border: `1px solid ${D.border}`, borderRadius: 7, padding: '6px 9px', fontSize: 12.5, cursor: 'pointer', outline: 'none' }
-  const lblStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 5 }
+  const selStyle: React.CSSProperties = { background: D.panel2, color: D.text, border: `1px solid ${D.border}`, borderRadius: 9, padding: '9px 11px', fontSize: 12.5, cursor: 'pointer', outline: 'none', transition: `border-color 0.15s ${EASE}` }
+  const lblStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: D.muted, marginBottom: 6 }
+  const activeFilterCount = [activeProjectKey, activeSection].filter(Boolean).length
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
@@ -441,59 +445,64 @@ function PlanningImplementationPageInner() {
                 background: filtersOpen ? `${D.amber}14` : D.panel, border: `1px solid ${filtersOpen ? D.amber + '66' : D.border}`,
                 borderRadius: 10, padding: '9px 14px', color: D.text, font: 'inherit',
               }}>
-                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={D.amber} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
+                <FIconFunnel color={D.amber} />
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Filters</span>
-                {(activeProjectKey || activeSection) && <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: D.amber, color: '#1a1408', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{[activeProjectKey, activeSection].filter(Boolean).length}</span>}
+                {activeFilterCount > 0 && <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: D.amber, color: '#1a1408', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>}
               </button>
               {filtersOpen && (
                 <>
                   <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
                   <aside className="filter-rail" style={{
                     position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
-                    width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.cardLg,
-                    padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-                    maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', animation: `fadeIn 0.15s ${EASE}`,
+                    width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
+                    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                    maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                      <div>
-                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
-                        <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Cross-filters every panel and the map.</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', background: D.panel2, borderBottom: `1px solid ${D.border}`, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <FIconFunnel color={D.amber} />
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.text }}>Filters</span>
+                        {activeFilterCount > 0 && (
+                          <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
+                        )}
                       </div>
-                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
-                        <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+                        <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
                       </button>
                     </div>
-                    <div style={{ height: 1, background: D.border }} />
-                    <div>
-                      <span style={lblStyle}>Project</span>
-                      <select value={activeProjectKey} onChange={e => handleProjectFilter(e.target.value)} style={{ ...selStyle, width: '100%' }}>
-                        <option value=''>All Projects (nationwide)</option>
-                        {PROJECTS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-                      </select>
+
+                    <div style={{ padding: '16px 16px 18px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+                      <div>
+                        <span style={lblStyle}><FIconFolder />Project</span>
+                        <select value={activeProjectKey} onChange={e => handleProjectFilter(e.target.value)} style={{ ...selStyle, width: '100%' }}>
+                          <option value=''>All Projects (nationwide)</option>
+                          {PROJECTS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <span style={lblStyle}><FIconPin />Section</span>
+                        <select value={activeSection} onChange={e => handleSectionFilter(e.target.value)} style={{ ...selStyle, width: '100%' }}>
+                          <option value=''>All Sections</option>
+                          {planningSections.length > 0 && (
+                            <optgroup label="Planning Sections">
+                              {planningSections.map(s => <option key={`p|${s.section}`} value={s.section}>{s.section} ({s.total.toLocaleString()})</option>)}
+                            </optgroup>
+                          )}
+                          {roadAssetSections.length > 0 && (
+                            <optgroup label="Road Asset Sections">
+                              {roadAssetSections.map(s => <option key={`r|${s.section}`} value={s.section}>{s.section} ({s.total.toLocaleString()})</option>)}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
+                      {activeFilterCount > 0 && (
+                        <>
+                          <div style={{ height: 1, background: D.border }} />
+                          <button onClick={clearFilters}
+                            style={{ color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em', alignSelf: 'flex-start' }}>Clear all</button>
+                        </>
+                      )}
                     </div>
-                    <div>
-                      <span style={lblStyle}>Section</span>
-                      <select value={activeSection} onChange={e => handleSectionFilter(e.target.value)} style={{ ...selStyle, width: '100%' }}>
-                        <option value=''>All Sections</option>
-                        {planningSections.length > 0 && (
-                          <optgroup label="Planning Sections">
-                            {planningSections.map(s => <option key={`p|${s.section}`} value={s.section}>{s.section} ({s.total.toLocaleString()})</option>)}
-                          </optgroup>
-                        )}
-                        {roadAssetSections.length > 0 && (
-                          <optgroup label="Road Asset Sections">
-                            {roadAssetSections.map(s => <option key={`r|${s.section}`} value={s.section}>{s.section} ({s.total.toLocaleString()})</option>)}
-                          </optgroup>
-                        )}
-                      </select>
-                    </div>
-                    {(activeProjectKey || activeSection) && (
-                      <>
-                        <div style={{ height: 1, background: D.border }} />
-                        <button onClick={clearFilters}
-                          style={{ ...selStyle, width: '100%', color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
-                      </>
-                    )}
                   </aside>
                 </>
               )}
