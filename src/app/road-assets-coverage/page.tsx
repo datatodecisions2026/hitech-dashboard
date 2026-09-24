@@ -669,7 +669,7 @@ function ChainageLogTable({ entries, totalCount, page, onPage }: { entries: Chai
 
 /* ── By Chainage tab ─────────────────────────────────────── */
 function ByChainageTab({ section, entities }: { section: string; entities: EntityRow[] }) {
-  const { colors: D } = useTheme()
+  const { colors: D, shadows: SH } = useTheme()
   const firstEntity = entities[0]?.entityType ?? ''
   const firstSide = entities[0] ? Object.keys(entities[0].sides).sort()[0] ?? '' : ''
 
@@ -685,6 +685,14 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(0)
   const requestIdRef = useRef(0)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFiltersOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [filtersOpen])
 
   // Section changed (new entity list) — reset to that section's first entity/side.
   useEffect(() => {
@@ -736,48 +744,69 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
   const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6, display: 'block' }
 
   return (
-    <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-      {/* filter rail — converted from a horizontal bar 2026-09-21 to match
-         /dashboard's layout; same Apply-button-driven state as before. */}
-      <aside className="filter-rail" style={{
-        width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
-        background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
-        padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-        maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
-      }}>
-        <div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
-          <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Pick an entity/side, then Apply.</div>
-        </div>
-        <div style={{ height: 1, background: D.border }} />
-        <div><span style={labelStyle}>Entity</span>
-          <select value={entityType} onChange={e => handleEntityChange(e.target.value)} style={selectStyle}>
-            {entities.map(e => <option key={e.entityType} value={e.entityType}>{e.label}</option>)}
-          </select>
-        </div>
-        <div><span style={labelStyle}>Side</span>
-          <select value={side} onChange={e => setSide(e.target.value)} style={selectStyle}>
-            {availableSides.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Date From</span><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={inputStyle} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Date To</span><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. From (m)</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. To (m)</span><input type="number" placeholder="35000" value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
-        </div>
-        <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600 }}>Apply</button>
-        {hasActiveFilters && (
+    <div className="dash-main" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* floating filter toggle — was a permanent sticky left column
+         (2026-09-21); converted to a floating overlay 2026-09-24 to match
+         /dashboard, same Apply-button-driven state as before. */}
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <button onClick={() => setFiltersOpen(v => !v)} className="filter-toggle-btn" style={{
+          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+          background: filtersOpen ? `${D.amber}14` : D.panel, border: `1px solid ${filtersOpen ? D.amber + '66' : D.border}`,
+          borderRadius: 10, padding: '9px 14px', color: D.text, font: 'inherit',
+        }}>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={D.amber} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Filters</span>
+          {hasActiveFilters && <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: D.amber, color: '#1a1408', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{[applied.dateFrom, applied.dateTo, applied.chFrom && applied.chTo].filter(Boolean).length}</span>}
+        </button>
+        {filtersOpen && (
           <>
-            <div style={{ height: 1, background: D.border }} />
-            <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+            <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
+            <aside className="filter-rail" style={{
+              position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
+              width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.cardLg,
+              padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+              maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', animation: `fadeIn 0.15s ${EASE}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                <div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+                  <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Pick an entity/side, then Apply.</div>
+                </div>
+                <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
+                  <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+                </button>
+              </div>
+              <div style={{ height: 1, background: D.border }} />
+              <div><span style={labelStyle}>Entity</span>
+                <select value={entityType} onChange={e => handleEntityChange(e.target.value)} style={selectStyle}>
+                  {entities.map(e => <option key={e.entityType} value={e.entityType}>{e.label}</option>)}
+                </select>
+              </div>
+              <div><span style={labelStyle}>Side</span>
+                <select value={side} onChange={e => setSide(e.target.value)} style={selectStyle}>
+                  {availableSides.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Date From</span><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={inputStyle} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Date To</span><input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={inputStyle} /></div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. From (m)</span><input type="number" placeholder="20000" value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. To (m)</span><input type="number" placeholder="35000" value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
+              </div>
+              <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600 }}>Apply</button>
+              {hasActiveFilters && (
+                <>
+                  <div style={{ height: 1, background: D.border }} />
+                  <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+                </>
+              )}
+            </aside>
           </>
         )}
-      </aside>
+      </div>
 
-      <div className="dash-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {error && <div style={{ padding: 16, borderRadius: 10, background: `${D.red}12`, border: `1px solid ${D.red}3a`, color: D.red, fontFamily: 'var(--font-mono)', fontSize: 12 }}>{error}</div>}
 
         {!error && !applied.entityType && (
@@ -809,9 +838,9 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
           </div>
         )}
       </div>
-    </div>
   )
 }
+
 
 /* ── Icons ────────────────────────────────────────────────── */
 const IconRoad = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><path d="M4 20 9 4h6l5 16" /><path d="M12 4v16" strokeDasharray="2 3" /></svg>
@@ -958,17 +987,18 @@ export default function RoadAssetsPage() {
       </div>
 
       <style>{`
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
         select:focus, input:focus { border-color: ${D.amber} !important; box-shadow: 0 0 0 3px ${D.amber}22 !important; }
         select option { background: ${D.panel}; color: ${D.text}; }
         input[type='date']::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
+        .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
         .tbl-row:nth-child(even) { background: ${D.panel2}66; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 900px) { .ra-2col { grid-template-columns: 1fr !important; } }
-        @media (max-width: 1024px) {
-          .dash-layout { flex-direction: column !important; }
-          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
+        @media (max-width: 640px) {
+          .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; }
         }
       `}</style>
     </div>

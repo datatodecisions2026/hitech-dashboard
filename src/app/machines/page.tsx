@@ -204,12 +204,12 @@ const IconLayers = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="n
 const IconUser = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
 const IconTag = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.61 3H4a1 1 0 0 0-1 1v5.61a2 2 0 0 0 .59 1.42l9.58 9.58a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.6z" /><circle cx="7.5" cy="7.5" r="1.2" /></svg>
 
-/* ── filter rail (vertical "Refine the View" panel) ──────────
-   Converted from a horizontal bar 2026-09-21 to match /dashboard's layout
-   (see that page's own FilterRail) — same field logic verbatim, only the
-   layout changed. */
-function FilterRail({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
-  const { colors: D } = useTheme()
+/* ── filter rail (floating "Refine the View" panel) ──────────
+   Was a sticky left column (2026-09-21); converted to a floating overlay
+   2026-09-24 to match /dashboard (see that page's own FilterRail for the
+   full reasoning) — same field logic verbatim, only the layout changed. */
+function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (key: string, val: string) => void; onClose: () => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
   const hasFilters = !!(active.filterCategory || active.filterProject || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor || active.filterOwnership || active.filterDriver || active.filterEmployeeRole || active.filterEngineerParty || active.filterSupervisorParty)
   const [chFrom, setChFrom] = useState(active.filterChFrom || '')
@@ -236,14 +236,18 @@ function FilterRail({ data, onFilter }: { data: DashData; onFilter: (key: string
 
   return (
     <aside className="filter-rail" style={{
-      width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
-      background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
-      padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-      maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
+      width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+      boxShadow: SH.cardLg, padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+      maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', animation: `fadeIn 0.15s ${EASE}`,
     }}>
-      <div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
-        <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart on this page at once.</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+          <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart on this page at once.</div>
+        </div>
+        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
+          <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+        </button>
       </div>
       <div style={{ height: 1, background: D.border }} />
 
@@ -301,6 +305,14 @@ function MachinesPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const requestIdRef = useRef(0)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFiltersOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [filtersOpen])
 
   const loadData = useCallback(() => {
     const reqId = ++requestIdRef.current
@@ -329,6 +341,8 @@ function MachinesPageInner() {
     router.push(`/machines?${p.toString()}`)
   }
 
+  const activeFilterCount = data ? Object.entries(data.activeFilters).filter(([, v]) => !!v).length : 0
+
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
       <div style={{ padding: '28px 36px', width: '100%' }}>
@@ -342,9 +356,28 @@ function MachinesPageInner() {
         {loading && !data && <PageSkeleton />}
 
         {data && (
-          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-          <FilterRail data={data} onFilter={handleFilter} />
-          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+          <div className="dash-main" style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+            <div style={{ position: 'relative', display: 'inline-block', marginBottom: 16 }}>
+              <button onClick={() => setFiltersOpen(v => !v)} className="filter-toggle-btn" style={{
+                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                background: filtersOpen ? `${D.amber}14` : D.panel, border: `1px solid ${filtersOpen ? D.amber + '66' : D.border}`,
+                borderRadius: 10, padding: '9px 14px', color: D.text, font: 'inherit',
+              }}>
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={D.amber} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: D.amber, color: '#1a1408', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
+                )}
+              </button>
+              {filtersOpen && (
+                <>
+                  <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
+                  <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50 }}>
+                    <FilterRail data={data} onFilter={handleFilter} onClose={() => setFiltersOpen(false)} />
+                  </div>
+                </>
+              )}
+            </div>
             <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
               <KPICard label="Machine Mentions" value={data.machineSummary?.totalMentions ?? 0} icon={<IconTruck />} delay={0} color={VIVID[0]} />
               <KPICard label="Distinct Machines" value={data.machineSummary?.distinctMachines ?? 0} icon={<IconLayers />} delay={60} color={VIVID[1]} />
@@ -372,22 +405,24 @@ function MachinesPageInner() {
               </div>
             </Reveal>
           </div>
-          </div>
         )}
       </div>
 
       <style>{`
         @keyframes shimmer { 0% { transform:translateX(-100%); } 100% { transform:translateX(400%); } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
         select:focus, input:focus { border-color:${D.amber} !important; box-shadow:0 0 0 3px ${D.amber}22 !important; }
         select option { background:${D.panel}; color:${D.text}; }
         input[type='date']::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
+        .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         @media (max-width: 1024px) {
           .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
-          .dash-layout { flex-direction: column !important; }
-          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
         }
-        @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(1,1fr) !important; } }
+        @media (max-width: 640px)  {
+          .kpi-grid { grid-template-columns: repeat(1,1fr) !important; }
+          .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; }
+        }
       `}</style>
     </div>
   )

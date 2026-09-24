@@ -657,14 +657,16 @@ function ActivityCalendar({ data }: { data: CalDay[] }) {
 }
 
 /* ── filter bar ───────────────────────────────────────────── */
-/* Vertical "REFINE THE VIEW" filter rail — replaced the horizontal FilterBar
-   2026-09-19, matching the reference Power BI dashboard's actual layout
-   (confirmed with the user via AskUserQuestion: this was the single biggest
-   structural difference from what this page had). Same filter state/logic
-   as the old FilterBar, just re-laid-out as a sticky left column instead of
-   a full-width bar — every field here is identical in behavior. */
-function FilterRail({ data, onFilter }: { data: DashData; onFilter: (key: string, val: string) => void }) {
-  const { colors: D } = useTheme()
+/* "REFINE THE VIEW" filter panel. Was a permanent sticky left column
+   (2026-09-19) — the user flagged that it reserved a fixed-width column that
+   was mostly empty space once its handful of fields were laid out (its own
+   content never filled the height the sticky column reserved). Turned into a
+   floating panel instead: a small toggle button that opens this as an
+   absolutely-positioned overlay card, so the main content reclaims the full
+   page width whether the panel is open or not. Same filter state/logic as
+   before — only the wrapping/positioning changed. */
+function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (key: string, val: string) => void; onClose: () => void }) {
+  const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
   const hasFilters = !!(active.filterCategory || active.filterProject || active.filterSection || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor)
   const [chFrom, setChFrom] = useState(active.filterChFrom || '')
@@ -691,14 +693,18 @@ function FilterRail({ data, onFilter }: { data: DashData; onFilter: (key: string
 
   return (
     <aside className="filter-rail" style={{
-      width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 68,
-      background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
-      padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-      maxHeight: 'calc(100vh - 88px)', overflowY: 'auto',
+      width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
+      boxShadow: SH.cardLg, padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+      maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', animation: `fadeIn 0.15s ${EASE}`,
     }}>
-      <div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
-        <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart, table, and the map at once.</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+          <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Narrows every chart, table, and the map at once.</div>
+        </div>
+        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
+          <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+        </button>
       </div>
       <div style={{ height: 1, background: D.border }} />
 
@@ -768,6 +774,14 @@ function DashboardPageInner() {
   // When a report row is clicked: isolate just that report's own submitted
   // media in the Site Media panel (independent of the filter-driven gallery).
   const [reportMedia, setReportMedia] = useState<ReportMediaState | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFiltersOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [filtersOpen])
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => { if (d?.user?.first_name) setFirstName(d.user.first_name) }).catch(() => {})
@@ -868,6 +882,7 @@ function DashboardPageInner() {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const latestWeather = data?.recentReports.find(r => r.weather)?.weather
+  const activeFilterCount = data ? Object.entries(data.activeFilters).filter(([, v]) => !!v).length : 0
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
@@ -887,9 +902,32 @@ function DashboardPageInner() {
         {loading && !data && <DashSkeleton />}
 
         {data && (
-          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-          <FilterRail data={data} onFilter={handleFilter} />
-          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+          <div className="dash-main" style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+
+            {/* floating filter toggle — was a permanent sticky left column
+               (2026-09-19); now an overlay so the content below always uses
+               the full page width instead of reserving a mostly-empty column */}
+            <div style={{ position: 'relative', display: 'inline-block', marginBottom: 16 }}>
+              <button onClick={() => setFiltersOpen(v => !v)} className="ui-card" style={{
+                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                background: filtersOpen ? `${D.amber}14` : D.panel, border: `1px solid ${filtersOpen ? D.amber + '66' : D.border}`,
+                borderRadius: 10, padding: '9px 14px', color: D.text, font: 'inherit',
+              }}>
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={D.amber} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: D.amber, color: '#1a1408', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
+                )}
+              </button>
+              {filtersOpen && (
+                <>
+                  <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
+                  <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50 }}>
+                    <FilterRail data={data} onFilter={handleFilter} onClose={() => setFiltersOpen(false)} />
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* overview mini-grid */}
             <Card title="Overview" sub="Current activity across every site" style={{ marginBottom: 16 }}>
@@ -977,7 +1015,6 @@ function DashboardPageInner() {
               </Reveal>
             )}
           </div>
-          </div>
         )}
       </div>
 
@@ -998,14 +1035,13 @@ function DashboardPageInner() {
           .grid-responsive { grid-template-columns: 1fr !important; }
           .exec-grid { grid-template-columns: repeat(3, 1fr) !important; row-gap: 20px !important; }
           .exec-grid .mini-cell:nth-child(3n+1) { border-left: none !important; padding-left: 0 !important; }
-          .dash-layout { flex-direction: column !important; }
-          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
         }
         @media (max-width: 640px) {
           .dash-content { padding: 16px !important; }
           .exec-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .exec-grid .mini-cell { border-left: none !important; padding-left: 0 !important; }
           .media-grid { grid-template-columns: repeat(3, 1fr) !important; }
+          .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; }
         }
       `}</style>
     </div>

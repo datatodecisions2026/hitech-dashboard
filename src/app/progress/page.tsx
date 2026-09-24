@@ -567,13 +567,21 @@ const TABS = [{ key: 'overview', label: 'Overview' }, { key: 'planning', label: 
 
 /* ── Main Page ─────────────────────────────────────────────── */
 function ProgressPageInner() {
-  const { colors: D } = useTheme()
+  const { colors: D, shadows: SH } = useTheme()
   const router = useRouter()
   const [data, setData] = useState<ProgressData | null>(null)
   const [loading, setLoading] = useState(true)
   const [filtering, setFiltering] = useState(false)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'overview' | 'planning' | 'boq' | 'reports'>('overview')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
+  useEffect(() => {
+    if (!filtersOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFiltersOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [filtersOpen])
 
   const [filterEntity, setFilterEntity] = useState('')
   const [filterSide, setFilterSide] = useState('')
@@ -652,44 +660,65 @@ function ProgressPageInner() {
             <Skeleton h={320} /><Skeleton h={420} />
           </div>
         ) : data && (
-          <div className="dash-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-          {/* filter rail — converted from a horizontal bar 2026-09-21 to
-             match /dashboard's layout; same Apply-button-driven state as
-             before, only the layout changed. */}
-          <aside className="filter-rail" style={{
-            width: 236, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 'calc(3.5rem + 14px)',
-            background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12,
-            padding: '18px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
-            maxHeight: 'calc(100vh - 4rem - 28px)', overflowY: 'auto',
-          }}>
-            <div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
-              <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Pick filters, then Apply.</div>
-            </div>
-            <div style={{ height: 1, background: D.border }} />
-            <div><span style={labelStyle}>Entity</span><select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select></div>
-            <div><span style={labelStyle}>Side</span><select value={filterSide} onChange={e => setFilterSide(e.target.value)} style={selectStyle}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select></div>
-            <div><span style={labelStyle}>Planned Month</span><select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={selectStyle}><option value=''>All Months</option>{(data?.filterOptions.months ?? []).map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}</select></div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. From</span><input type='number' placeholder='20000' value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
-              <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. To</span><input type='number' placeholder='35000' value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
-            </div>
-            <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600 }}>Apply</button>
-            {hasFilters && (
-              <>
-                <div style={{ height: 1, background: D.border }} />
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {applied.entity && <Pill kind="mut">{applied.entity}</Pill>}
-                  {applied.side && <Pill kind="mut">{applied.side}</Pill>}
-                  {applied.month && <Pill kind="mut">{fmtMonth(applied.month)}</Pill>}
-                  {applied.chFrom && applied.chTo && <Pill kind="mut">CH {Number(applied.chFrom).toLocaleString()} → {Number(applied.chTo).toLocaleString()}</Pill>}
-                </div>
-                <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
-              </>
-            )}
-          </aside>
+          <div className="dash-main" style={{ opacity: filtering ? 0.6 : 1, pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
 
-          <div className="dash-main" style={{ flex: 1, minWidth: 0, opacity: filtering ? 0.6 : 1, pointerEvents: filtering ? 'none' : 'auto', transition: `opacity 0.25s ${EASE}` }}>
+            {/* floating filter toggle — was a permanent sticky left column
+               (2026-09-21); converted to a floating overlay 2026-09-24 to
+               match /dashboard, same Apply-button-driven state as before,
+               only the layout changed. */}
+            <div style={{ position: 'relative', display: 'inline-block', marginBottom: 16 }}>
+              <button onClick={() => setFiltersOpen(v => !v)} className="filter-toggle-btn" style={{
+                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                background: filtersOpen ? `${D.amber}14` : D.panel, border: `1px solid ${filtersOpen ? D.amber + '66' : D.border}`,
+                borderRadius: 10, padding: '9px 14px', color: D.text, font: 'inherit',
+              }}>
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={D.amber} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><polygon points="4,4 20,4 14,12.5 14,19 10,21 10,12.5" /></svg>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Filters</span>
+                {hasFilters && <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: D.amber, color: '#1a1408', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{[applied.entity, applied.side, applied.month, applied.chFrom && applied.chTo].filter(Boolean).length}</span>}
+              </button>
+              {filtersOpen && (
+                <>
+                  <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
+                  <aside className="filter-rail" style={{
+                    position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
+                    width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.cardLg,
+                    padding: '16px 16px 20px', display: 'flex', flexDirection: 'column', gap: 14,
+                    maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', animation: `fadeIn 0.15s ${EASE}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                      <div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: D.amber }}>Refine the View</div>
+                        <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, lineHeight: 1.4 }}>Pick filters, then Apply.</div>
+                      </div>
+                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
+                        <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+                      </button>
+                    </div>
+                    <div style={{ height: 1, background: D.border }} />
+                    <div><span style={labelStyle}>Entity</span><select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={selectStyle}><option value=''>All Entities</option>{(data?.filterOptions.entities ?? []).map(e => <option key={e} value={e}>{e}</option>)}</select></div>
+                    <div><span style={labelStyle}>Side</span><select value={filterSide} onChange={e => setFilterSide(e.target.value)} style={selectStyle}><option value=''>All Sides</option><option value='LHS'>LHS</option><option value='RHS'>RHS</option><option value='MEDIAN'>MEDIAN</option></select></div>
+                    <div><span style={labelStyle}>Planned Month</span><select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={selectStyle}><option value=''>All Months</option>{(data?.filterOptions.months ?? []).map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}</select></div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. From</span><input type='number' placeholder='20000' value={chFrom} onChange={e => setChFrom(e.target.value)} style={inputStyle} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><span style={labelStyle}>Ch. To</span><input type='number' placeholder='35000' value={chTo} onChange={e => setChTo(e.target.value)} style={inputStyle} /></div>
+                    </div>
+                    <button onClick={applyFilters} style={{ background: D.amberD, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', fontWeight: 600 }}>Apply</button>
+                    {hasFilters && (
+                      <>
+                        <div style={{ height: 1, background: D.border }} />
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {applied.entity && <Pill kind="mut">{applied.entity}</Pill>}
+                          {applied.side && <Pill kind="mut">{applied.side}</Pill>}
+                          {applied.month && <Pill kind="mut">{fmtMonth(applied.month)}</Pill>}
+                          {applied.chFrom && applied.chTo && <Pill kind="mut">CH {Number(applied.chFrom).toLocaleString()} → {Number(applied.chTo).toLocaleString()}</Pill>}
+                        </div>
+                        <button onClick={clearFilters} style={{ ...field, color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textAlign: 'center' }}>✕ Clear all filters</button>
+                      </>
+                    )}
+                  </aside>
+                </>
+              )}
+            </div>
 
             {activeTab === 'overview' && (
               <>
@@ -730,15 +759,16 @@ function ProgressPageInner() {
               </Reveal>
             )}
           </div>
-          </div>
         )}
       </div>
 
       <style>{`
         @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
         select:focus, input:focus { border-color: ${D.amber} !important; box-shadow: 0 0 0 3px ${D.amber}22 !important; }
         select option { background: ${D.panel}; color: ${D.text}; }
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity: 0.3; }
+        .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
         .tbl-row:nth-child(even) { background: ${D.panel2}66; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
@@ -746,14 +776,13 @@ function ProgressPageInner() {
         @media (max-width: 1024px) {
           .kpi-grid { grid-template-columns: repeat(3,1fr) !important; }
           .grid-responsive { grid-template-columns: 1fr !important; }
-          .dash-layout { flex-direction: column !important; }
-          .filter-rail { width: 100% !important; position: static !important; max-height: none !important; }
         }
         @media (max-width: 640px) {
           .kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
           .dash-content { padding: 16px !important; }
           .sub-header-bar { padding: 0 14px !important; }
           .sub-badge, .sub-date { display: none !important; }
+          .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; }
         }
       `}</style>
     </div>
