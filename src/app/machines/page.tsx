@@ -4,16 +4,19 @@ import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 import { VIVID } from '@/lib/theme-constants'
+import { HeroBanner } from '@/components/HeroBanner'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
 interface DashData {
-  summary: { totalReports: number }
+  summary: { totalReports: number; reportsThisMonth: number }
   byMachine:   Array<{ name: string; count: number }>
   byOwnership: Array<{ name: string; count: number }>
   byDriver:    Array<{ name: string; count: number }>
   machineSummary: { totalMentions: number; distinctMachines: number; distinctDrivers: number }
   unattributed?: Record<string, number>
+  mediaItems: Array<{ file: string; media_type: string }>
+  recentReports: Array<{ weather?: string }>
   filterOptions: { categories: string[]; projects: string[] }
   activeFilters: {
     filterCategory: string; filterProject: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
@@ -324,8 +327,14 @@ function MachinesPageInner() {
   const [data, setData] = useState<DashData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [firstName, setFirstName] = useState('')
   const requestIdRef = useRef(0)
+  const pendingExtraRef = useRef<{ reqId: number; x: Partial<DashData> } | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/me').then(r => r.json()).then(d => { if (d?.user?.first_name) setFirstName(d.user.first_name) }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!filtersOpen) return
@@ -334,14 +343,38 @@ function MachinesPageInner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [filtersOpen])
 
+  // Two parallel fetches, same split as /dashboard: /api/dashboard (core,
+  // clears the skeleton) and /api/dashboard/extra (mediaItems/recentReports
+  // — only needed here for the hero banner's photos/weather, merged in once
+  // it lands). See the 2026-09-08 dashboard changelog for the original
+  // reasoning behind this split.
   const loadData = useCallback(() => {
     const reqId = ++requestIdRef.current
     setLoading(true)
+    pendingExtraRef.current = null
     const qs = searchParams.toString()
+    const EMPTY_HEAVY = { mediaItems: [], recentReports: [] }
+
     fetch(`/api/dashboard${qs ? `?${qs}` : ''}`)
       .then(r => { if (r.status === 401) { router.replace('/login'); return null } return r.json() })
-      .then(d => { if (d && reqId === requestIdRef.current) { setData(d); setLoading(false) } })
+      .then(d => {
+        if (!d || reqId !== requestIdRef.current) return
+        const merged: DashData = { ...EMPTY_HEAVY, ...d }
+        if (pendingExtraRef.current?.reqId === reqId) Object.assign(merged, pendingExtraRef.current.x)
+        pendingExtraRef.current = null
+        setData(merged)
+        setLoading(false)
+      })
       .catch(() => { if (reqId === requestIdRef.current) { setError('Failed to load machines data'); setLoading(false) } })
+
+    fetch(`/api/dashboard/extra${qs ? `?${qs}` : ''}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(x => {
+        if (!x || x.error || reqId !== requestIdRef.current) return
+        pendingExtraRef.current = { reqId, x }
+        setData(prev => (prev ? { ...prev, ...x } : prev))
+      })
+      .catch(() => {})
   }, [searchParams, router])
 
   useEffect(() => { loadData() }, [loadData])
@@ -362,10 +395,22 @@ function MachinesPageInner() {
   }
 
   const activeFilterCount = data ? Object.entries(data.activeFilters).filter(([, v]) => !!v).length : 0
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const latestWeather = data?.recentReports.find(r => r.weather)?.weather
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
       <div style={{ padding: '28px 36px', width: '100%' }}>
+        <HeroBanner
+          D={D}
+          greeting={greeting}
+          firstName={firstName}
+          photos={(data?.mediaItems ?? []).filter(m => m.media_type !== 'video').slice(0, 6).map(m => m.file)}
+          stat={data ? `${data.summary.reportsThisMonth.toLocaleString()} reports this month · ${data.summary.totalReports.toLocaleString()} total across every site` : 'Field-activity overview across all sites.'}
+          weather={latestWeather}
+        />
+
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Machines</h2>
           <p style={{ margin: 0, marginTop: 3, fontSize: 13, color: D.muted }}>Equipment usage across activity reports.</p>
