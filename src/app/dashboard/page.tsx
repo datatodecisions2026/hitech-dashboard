@@ -1009,6 +1009,8 @@ function DashboardPageInner() {
                       category={data.activeFilters.filterCategory}
                       project={data.activeFilters.filterProject}
                       weather={data.activeFilters.filterWeather}
+                      dateFrom={data.activeFilters.filterDateFrom}
+                      dateTo={data.activeFilters.filterDateTo}
                       initialSection={data.activeFilters.filterSection}
                       onFilterRequest={handleFilter}
                       showRoadAssets={false}

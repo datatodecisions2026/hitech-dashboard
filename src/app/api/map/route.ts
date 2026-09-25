@@ -124,6 +124,11 @@ export async function GET(req: NextRequest) {
   // fetched every Coastal report and rendered a single, misleadingly huge
   // grid-bucket marker instead of that section's real, much smaller set.
   const section   = searchParams.get('section') || ''
+  // Same convention as category/weather/section — never wired in before.
+  // Applied to the reports query only (not stations, same as every other
+  // filter dimension here) via .gte()/.lte() on date_of_activity.
+  const dateFrom  = searchParams.get('date_from') || ''
+  const dateTo    = searchParams.get('date_to') || ''
   // all=1 → return reports across every project/section, not just `project`
   // (the UnifiedMap needs Calabar/Kebbi/Ogun report pins alongside Coastal's).
   // Paged in full via fetchAll() below — the whole table is ~9.7k rows, well
@@ -168,6 +173,8 @@ export async function GET(req: NextRequest) {
         if (category) q = q.ilike('activity_category', category)
         if (weather) q = q.ilike('weather', weather)
         if (section) q = q.ilike('section_name', section)
+        if (dateFrom) q = q.gte('date_of_activity', dateFrom)
+        if (dateTo) q = q.lte('date_of_activity', dateTo)
         return q
       }
       return fetchAll(build)
@@ -177,6 +184,8 @@ export async function GET(req: NextRequest) {
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
       if (section) q = q.ilike('section_name', section)
+      if (dateFrom) q = q.gte('date_of_activity', dateFrom)
+      if (dateTo) q = q.lte('date_of_activity', dateTo)
       return q
     }
     const buildOther = () => {
@@ -184,6 +193,8 @@ export async function GET(req: NextRequest) {
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
       if (section) q = q.ilike('section_name', section)
+      if (dateFrom) q = q.gte('date_of_activity', dateFrom)
+      if (dateTo) q = q.lte('date_of_activity', dateTo)
       return q
     }
     const [c, o] = await Promise.all([fetchAll(buildCoastal), fetchAll(buildOther)])
@@ -212,5 +223,7 @@ export async function GET(req: NextRequest) {
     category,
     weather,
     section,
+    dateFrom,
+    dateTo,
   })
 }

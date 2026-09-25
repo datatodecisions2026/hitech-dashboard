@@ -256,6 +256,8 @@ zoom                              — current map zoom level; chooses a chainage
 swLat, swLng, neLat, neLng        — current map viewport bounds; only applied once zoom >= 12 (at lower zoom the viewport already ≈ the whole road)
 category                          — matched via .ilike() on activity_category; filters the reports array only (not chainage stations) — used by UnifiedMap to also zoom to fit that category's reports
 weather                          — matched via .ilike() on weather, same treatment as category (filters reports only, feeds UnifiedMap's zoom/decluster) — added 2026-09-18 (2) so the dashboard's Weather Conditions chart zooms the map the same way Category/Project already do
+section                           — matched via .ilike() on section_name, same treatment as category/weather — added 2026-09-22 (5) so the dashboard's Section dropdown actually narrows the map (previously it silently didn't)
+date_from, date_to                — matched via .gte()/.lte() on date_of_activity, same treatment as category/weather/section (reports only, not stations) — added 2026-09-25 (3); never wired in before that, so a Date Range filter on /dashboard had no effect on the map at all
 all                              — "1" → return reports across EVERY project/section, not just `project` (UnifiedMap needs Calabar/Kebbi/Ogun pins alongside Coastal's). PostgREST hard-caps any one response at 1000 rows, so all=1 runs two queries — the Coastal set + a keyword-targeted grab of the ~35 geolocated Calabar/Ogun/Kebbi rows (section_name/project_name ilike, `*` wildcard — the embedded or() syntax, not `%`) — and merges them by id. Stations still scoped to `project`.
 ```
 
@@ -676,6 +678,24 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-25 (3) — Fix: the Date Range filter never narrowed the Activity Map — a genuine, pre-existing gap, not a regression from the same-day preset feature
+
+**Files changed:** `src/app/api/map/route.ts`, `src/components/UnifiedMap.tsx`, `src/app/dashboard/page.tsx`
+
+**What the user reported:** a screenshot of `/dashboard?date_from=2026-08-27&date_to=2026-09-25` — the KPIs/charts correctly narrowed, but the Activity Map still looked like it was showing unfiltered data. "for the date range, the map didn't filter."
+
+**Root-caused via `grep`, not assumed:** searched `dateFrom|date_from|filterDateFrom` across `UnifiedMap.tsx` and `src/app/api/map/route.ts` — zero matches in either file. Neither the map's own API route nor `UnifiedMap`'s `Props`/fetch logic had **ever** accepted or applied a date range, at any point in either file's history — `category`/`weather`/`section` all went through this exact same "never wired in, fixed later" journey individually in earlier changelog entries (2026-09-15, 2026-09-18 (2), 2026-09-22 (5)), and date was simply the one dimension that hadn't been done yet. This predates today's date-range-preset work (which only touched `dashboard/page.tsx`'s filter UI) — the presets just made it far more likely a user would actually set a date range and notice the map ignoring it.
+
+**Fix, mirroring the exact pattern `weather`/`section` were already wired in with:**
+- `GET /api/map` now accepts `date_from`/`date_to`, applied via `.gte('date_of_activity', ...)`/`.lte('date_of_activity', ...)` on the reports query only (never the stations query — same convention as every other filter dimension here), in both the single-project and `all=1` merged-region (`buildCoastal`/`buildOther`) code paths. Echoed back in the response.
+- `UnifiedMap` gained `dateFrom?`/`dateTo?` props, threaded through identically to `weather`: the reports-fetch effect's cache key, its URL params, its `filterKey`/`hasFilter` camera-fit trigger, and its dependency array; the report-pins render effect's `hasActiveFilter` (point-vs-line + individual-vs-clustered decision) and dependency array also now include them.
+- `dashboard/page.tsx`'s `<UnifiedMap>` call now passes `dateFrom={data.activeFilters.filterDateFrom} dateTo={data.activeFilters.filterDateTo}`.
+- Road-asset (Calabar/Ogun/Kebbi) clustering was left untouched — that table has no date column at all, same reasoning as why it's never been category/weather-filterable either.
+
+**Verified live, against the exact reported scenario:** direct `curl` against `/api/map?project=Coastal+Road&all=1` confirmed 9,747 unfiltered reports; adding `&date_from=2026-08-27&date_to=2026-09-25` narrowed that to 4 real reports, with real `date_of_activity` values (2026-09-09 to 2026-09-21) genuinely falling inside the requested window. A scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance, navigating to the user's exact URL, confirmed every `/api/map` request fired (initial load and every subsequent zoom-refinement request) carried `date_from=2026-08-27&date_to=2026-09-25`, the map's own "N reports" readout showed the correct "4 reports" (matching the curl count exactly), and the camera correctly fit to the real filtered locations (a tight Calabar-area zoom) instead of the previous nationwide unfiltered view. Zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct, specific user report on the exact URL/scenario that surfaced it — investigated by grepping both relevant files for any existing date-handling before writing a fix, which is what confirmed this was a real, total gap (not a partial/broken implementation) and let the fix reuse the identical, already-proven pattern every other filter dimension on this map went through, rather than inventing a new approach. Verified against real data at every layer (direct curl on the API, then the rendered UI) per this project's established "measure, don't assume" discipline.
 
 ### 2026-09-25 (2) — `/dashboard`: Activity Status chart, date-range presets, and a "vs last month" trend on the This Month KPI
 
