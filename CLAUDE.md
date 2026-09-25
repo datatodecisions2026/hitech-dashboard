@@ -151,7 +151,7 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
   "byStatus": [{ "name": "Completed", "count": 310 }],
   "byMachine": [{ "name": "Excavator 12", "count": 40 }],
   "machineActivityByDay": [{ "date": "2026-04-16", "count": 3 }],
-  "driverMachineCross": [{ "driver": "Kofi Mensah", "machine": "GPS", "count": 12 }],
+  "driverMachineCross": [{ "driver": "Kofi Mensah", "total": 30, "machines": [{ "machine": "GPS", "count": 18 }, { "machine": "Excavator", "count": 12 }] }],
   "byEmployee": [{ "name": "Kofi Mensah", "count": 30 }],
   "byEngineer": [{ "name": "Ama Owusu", "count": 22 }],
   "bySupervisor": [{ "name": "Yaw Boateng", "count": 18 }],
@@ -205,7 +205,7 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
 
 The `by*` person/weather series have the literal `"Unknown"` entry (blank raw value) **stripped out** in the route (`applyUnknownHandling` in `src/app/api/dashboard/_lib.ts`) so charts rank/percent over named entities only; the removed counts come back as a separate `unattributed: { byEngineer: 4499, byWeather: 3676, … }` map (non-zero keys only) which the pages surface as a muted "N not shown in ranking" caption. Blank `employee_name` additionally falls back to `employee_missing_name` inside `dashboard_core`. See the 2026-09-08 (3)/(4) changelog entries. `byEngineerParty`/`bySupervisorParty` are also run through `normalizePartySeries` to merge dirty label variants (`HITECH employees`, `Sub-contactor` typo) down to the two real parties.
 
-`machineActivityByDay` (last-30-days machine mention counts, same `generate_series` shape as `byDay`) and `driverMachineCross` (top 12 `(driver, machine)` pairs by mention count, both non-blank) back `/machines`' "Machine Activity Trend" and "Driver × Machine" cards — added by `scripts/sql/add_dashboard_machine_trends.sql`, see the 2026-09-25 (5) changelog entry. Both are optional on the response until that SQL is applied (purely additive — no new RPC parameter, so no signature-mismatch risk the way `p_status` had).
+`machineActivityByDay` (last-30-days machine mention counts, same `generate_series` shape as `byDay`) and `driverMachineCross` back `/machines`' "Machine Activity Trend" and "Driver × Machine" cards — added by `scripts/sql/add_dashboard_machine_trends.sql`, see the 2026-09-25 (5) changelog entry. Both are optional on the response until that SQL is applied (purely additive — no new RPC parameter, so no signature-mismatch risk the way `p_status` had). `driverMachineCross`'s own shape changed again the same day, from a flat top-12 `(driver, machine)` pairs list to the nested `{driver, total, machines: [{machine, count}]}[]` shown above (top 10 drivers by total activity, each capped at their own top-5-machines-plus-"Other") — see `scripts/sql/add_dashboard_driver_machine_stacked.sql` and the 2026-09-25 (6) changelog entry for why (the flat version was dominated by whichever one driver logs the most activity).
 
 ---
 
@@ -683,6 +683,26 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-25 (6) — `/machines`: redesigned "Driver × Machine" from a lopsided flat list into stacked bars per driver — **`scripts/sql/add_dashboard_driver_machine_stacked.sql` not yet confirmed applied**
+
+**Files changed:** `scripts/sql/add_dashboard_driver_machine_stacked.sql` (new), `src/app/machines/page.tsx`
+
+**What the user reported, with a screenshot of the just-shipped (5) entry's flat top-12-pairs list**: 11 of the 12 rows were the same driver ("NWACHUKWU CHIJIOKE") against 11 different machines — asked "how can it be better," then "propose a better chart."
+
+**Root cause, confirmed against the real data, not assumed**: the (5) entry's `driverMachineCross` was a flat top-12 `(driver, machine)` pairs ranking — correct as specified, but this dataset has one driver who logs far more activity than the rest of the roster combined, so a plain "top N pairs by count" ranking is naturally dominated by that one person's own machine list. It wasn't broken, just not actually a useful cross-reference once real data hit it.
+
+**Proposed 3 concrete redesigns with mockups via `AskUserQuestion`** rather than guessing at "better": (1) a per-driver "top machine" ranked list (one row per driver, minimal change, but drops all but each driver's #1 machine); (2) a driver×machine heatmap (the most literal "cross-reference," but likely to look sparse since most drivers here appear to be narrow single-machine specialists); (3) **stacked bars per driver** (one bar per driver, segmented by machine, bar length = total activity) — shows both how active each driver is and what they operate in one glance, and stays readable regardless of how lopsided the roster is. User picked (3).
+
+**SQL**: `driverMachineCross`'s shape changes from flat pairs to nested per-driver — `Array<{driver, total, machines: Array<{machine, count}>}>`, top 10 drivers by total activity, each capped at their own top 5 machines with the remainder collapsed into an `"Other"` bucket (so a driver who's touched a dozen machine types doesn't blow their bar into unreadable slivers). Computed via a new `dm_pairs → dm_driver_totals → dm_ranked → dm_capped → dm_final` CTE chain inside `dashboard_core`, still purely additive to the function as a whole (same 19-param signature — the shape of one existing output key changed, no new parameter was added).
+
+**Frontend**: `DriverMachineList` (flat rows) replaced with `DriverMachineBars` — one row per driver, a segmented horizontal bar (each machine's slice width proportional to its share of that driver's total, bar length proportional to the driver's total relative to the top driver), plus a shared legend below mapping machine → color. Colors are assigned by each machine's *combined* total across all shown drivers (not per-bar order), so e.g. GPS is always the same swatch in every driver's bar it appears in; `"Other"` always gets a fixed muted color rather than a `VIVID` slot. **Guards against the OLD flat shape still being live**: filters to `Array.isArray(d.machines) && d.machines.length > 0` before rendering, so if this migration hasn't been applied yet the component safely falls through to the same "No driver–machine pairs recorded yet" empty state every other pending-migration field on this page already uses, rather than crashing on `.machines.map` against data that doesn't have a `machines` array.
+
+**Could not apply the migration directly** (same no-DB-connection constraint as every SQL-migration entry this session) — needs to be run in the Supabase SQL Editor.
+
+**Verified live against the real, currently-unmigrated database**: a scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed `/machines` renders cleanly with the OLD flat `driverMachineCross` shape still live — `DriverMachineBars` correctly shows its empty state (not a crash), the unaffected `Machine Activity Trend` card (from the (5) entry, already applied) still shows real data, and zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct follow-up after a real data-shape problem the user spotted from the actual shipped chart, not a hypothetical — this project's "exploratory question → short recommendation → confirm → implement" pattern applied twice in a row here: first a 2-3-sentence recommendation with the tradeoff ("how can it be better"), then, once asked to "propose a better chart" specifically, three concrete mockup options via `AskUserQuestion` rather than picking one unilaterally, since a chart redesign is a real design decision worth letting the user compare rather than assume. The frontend's shape-guard (filtering on `Array.isArray(d.machines)`) reuses this session's established "new/changed fields degrade to empty state, never crash" discipline, extended here to cover a genuine shape change (not just a newly-added key) to the same field within one day.
 
 ### 2026-09-25 (5) — `/machines`: activity-over-time trend, a Driver × Machine cross-reference, and a low-utilization badge — **`scripts/sql/add_dashboard_machine_trends.sql` not yet confirmed applied**
 

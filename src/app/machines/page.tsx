@@ -20,7 +20,14 @@ interface DashData {
   // defaults with `?? []` and the two new cards fall back to their own empty
   // state rather than the page breaking. See the 2026-09-25 changelog.
   machineActivityByDay?: Array<{ date: string; count: number }>
-  driverMachineCross?:   Array<{ driver: string; machine: string; count: number }>
+  // Nested per-driver shape (add_dashboard_driver_machine_stacked.sql) — a
+  // top-10-drivers-by-total-activity list, each with its own top-5-machines-
+  // plus-"Other" breakdown, for the stacked-bar redesign below. The OLD flat
+  // {driver,machine,count}[] shape (add_dashboard_machine_trends.sql) has no
+  // `machines` array, so DriverMachineBars filters those out — same
+  // "degrades to the empty state, doesn't crash" safety this page's other
+  // pending-migration fields already use.
+  driverMachineCross?: Array<{ driver: string; total: number; machines: Array<{ machine: string; count: number }> }>
   machineSummary: { totalMentions: number; distinctMachines: number; distinctDrivers: number }
   unattributed?: Record<string, number>
   mediaItems: Array<{ file: string; media_type: string }>
@@ -148,31 +155,72 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
 }
 
 /* ── driver × machine cross-reference (top pairs by mention count) ──────── */
-function DriverMachineList({ data }: { data: Array<{ driver: string; machine: string; count: number }> }) {
+// Redesigned from a flat top-12 (driver, machine) pairs list after the real
+// data turned out lopsided — one driver logs far more activity than everyone
+// else, so 11 of 12 top pairs were all the same person against different
+// machines, reading as "one person's machine list" rather than a genuine
+// cross-reference. Proposed 3 alternatives (per-driver top-machine list, a
+// driver×machine heatmap, stacked bars per driver) with mockups; user picked
+// stacked bars. See add_dashboard_driver_machine_stacked.sql.
+function DriverMachineBars({ data }: { data: Array<{ driver: string; total: number; machines: Array<{ machine: string; count: number }> }> }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
-  if (!data.length) return <EmptyState label="No driver–machine pairs recorded yet" />
-  const max = Math.max(...data.map(d => d.count), 1)
+  // Guards against the OLD flat {driver,machine,count} shape still being live
+  // (no `machines` array) — filters down to empty rather than crashing on
+  // `.machines.map`, same "shows the empty state until migrated" convention
+  // every other pending-SQL field on this page already follows.
+  const rows = data.filter(d => Array.isArray(d.machines) && d.machines.length > 0)
+  if (!rows.length) return <EmptyState label="No driver–machine pairs recorded yet" />
+  const maxTotal = Math.max(...rows.map(d => d.total), 1)
+
+  // One color per machine, consistent across every driver's bar (so e.g. GPS
+  // is always the same swatch no matter whose bar it's in) — ranked by that
+  // machine's combined total across the shown drivers, not per-bar order.
+  // "Other" (machines beyond a driver's own top-5 cap) always gets a fixed
+  // muted color rather than a VIVID slot, since it's not one real machine.
+  const machineTotals = new Map<string, number>()
+  for (const d of rows) for (const m of d.machines) {
+    if (m.machine === 'Other') continue
+    machineTotals.set(m.machine, (machineTotals.get(m.machine) ?? 0) + m.count)
+  }
+  const rankedMachines = [...machineTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name)
+  const colorFor = (name: string) => name === 'Other' ? `${D.muted}77` : VIVID[rankedMachines.indexOf(name) % VIVID.length]
+
+  const presentMachines = new Set<string>()
+  for (const d of rows) for (const m of d.machines) presentMachines.add(m.machine)
+  const legend = rankedMachines.filter(m => presentMachines.has(m))
+  if (presentMachines.has('Other')) legend.push('Other')
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
-      {data.map((d, i) => {
-        const barPct = Math.max((d.count / max) * 100, 3)
-        const isTop = i < 3
-        const barColor = isTop ? VIVID[i] : `${D.muted}88`
-        return (
-          <div key={`${d.driver}|${d.machine}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${VIVID[i]}1c` : 'transparent', border: `1px solid ${isTop ? VIVID[i] + '44' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? VIVID[i] : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
-            <span style={{ width: 210, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={`${d.driver} → ${d.machine}`}>
-              <span style={{ color: D.text, fontWeight: 600 }}>{d.driver}</span><span style={{ color: D.sub }}> → </span><span style={{ color: D.muted }}>{d.machine}</span>
-            </span>
-            <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: barColor, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {rows.map((d, i) => {
+          const widthPct = Math.max((d.total / maxTotal) * 100, 4)
+          return (
+            <div key={d.driver} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 128, fontSize: 12, color: D.text, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.driver}>{d.driver}</span>
+              <div style={{ flex: 1, display: 'flex', height: 16, borderRadius: 5, overflow: 'hidden', background: D.panel2 }}>
+                <div style={{ display: 'flex', width: ready ? `${widthPct}%` : '0%', height: '100%', transition: `width 0.8s ${EASE} ${i * 0.04}s` }}>
+                  {d.machines.map((m, mi) => (
+                    <div key={m.machine} title={`${m.machine}: ${m.count}`}
+                      style={{ width: `${(m.count / d.total) * 100}%`, height: '100%', background: colorFor(m.machine), borderRight: mi < d.machines.length - 1 ? `1px solid ${D.panel}` : 'none' }} />
+                  ))}
+                </div>
+              </div>
+              <span style={{ width: 44, textAlign: 'right', fontSize: 12, color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.total.toLocaleString()}</span>
             </div>
-            <span style={{ width: 28, textAlign: 'right', fontSize: 12.5, color: isTop ? VIVID[i] : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count}</span>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', paddingTop: 10, borderTop: `1px solid ${D.border}` }}>
+        {legend.map(m => (
+          <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: colorFor(m), flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: D.muted }}>{m}</span>
           </div>
-        )
-      })}
+        ))}
+      </div>
     </div>
   )
 }
@@ -602,8 +650,8 @@ function MachinesPageInner() {
                     ? <TimelineChart data={data.machineActivityByDay!} />
                     : <EmptyState label="No day-by-day machine activity yet" />}
                 </Card>
-                <Card title="Driver × Machine" note="Top pairings by mention count">
-                  <DriverMachineList data={data.driverMachineCross ?? []} />
+                <Card title="Driver × Machine" note="Top 10 drivers, segmented by machine used">
+                  <DriverMachineBars data={data.driverMachineCross ?? []} />
                 </Card>
               </div>
             </Reveal>
