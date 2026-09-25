@@ -81,7 +81,15 @@ function Card({ children, title, note }: { children: React.ReactNode; title: str
       <div style={{ padding: '14px 16px 8px' }}>
         <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
       </div>
-      <div style={{ padding: '4px 16px 16px' }}>{children}</div>
+      {/* flex:1 + centered content — when the grid row stretches this card
+         taller than its own natural content height (every card in a row now
+         matches its tallest sibling, see the mach-grid/mach-grid-2 style
+         props), the extra room is distributed here and the content centers
+         in it, instead of pinning to the top and leaving a blank strip below
+         (the exact "unnecessary spacing" the 2026-09-25 "equal sizes"
+         follow-up asked to avoid — centering reads as intentional breathing
+         room, a top-pinned gap reads as leftover space). */}
+      <div style={{ padding: '4px 16px 16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>{children}</div>
       {note && <div style={{ padding: '0 16px 12px', marginTop: -4, fontSize: 11, lineHeight: 1.4, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{note}</div>}
     </div>
   )
@@ -670,7 +678,7 @@ function MachinesPageInner() {
             </div>
 
             <Reveal>
-              <div className="mach-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, alignItems: 'start' }}>
+              <div className="mach-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
                 <Card title="Machines Used" note={unattributedNote(data, 'byMachine', 'No machine name recorded')}>
                   {data.byMachine?.length > 0
                     ? <HBarChart data={data.byMachine} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)} lowThreshold={2} />
@@ -690,7 +698,7 @@ function MachinesPageInner() {
             </Reveal>
 
             <Reveal delay={80}>
-              <div className="mach-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, marginTop: 14, alignItems: 'start' }}>
+              <div className="mach-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, marginTop: 14 }}>
                 <Card title="Machine Activity Trend" note="Machine mentions per day · last 30 days">
                   {(data.machineActivityByDay?.length ?? 0) > 0
                     ? <TimelineChart data={data.machineActivityByDay!} />
