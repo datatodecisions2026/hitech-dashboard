@@ -275,28 +275,17 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
 }
 
 /* ── horizontal bars ──────────────────────────────────────── */
-// Ranked lists here can run well past a dozen rows — capping the default
-// view keeps a long tail from dwarfing whatever shorter card (a donut, a
-// small legend) happens to sit next to it in the same grid row, which
-// otherwise reads as a lopsided, jagged-bottomed row even once cards are
-// no longer force-stretched to match (see the 2026-09-24 (7) changelog
-// entry — that fix stopped the *forced* stretch, this addresses the
-// resulting *height mismatch* it exposed).
-const HBAR_SHOW_LIMIT = 8
-
 function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onBarClick?: (name: string) => void }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
-  const [expanded, setExpanded] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
   const max = Math.max(...data.map(d => d.count), 1)
   const total = data.reduce((s, d) => s + d.count, 0) || 1
   const hasActive = !!activeName
-  const visible = expanded ? data : data.slice(0, HBAR_SHOW_LIMIT)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
-      {visible.map((d, i) => {
+      {data.map((d, i) => {
         const pct = Math.round((d.count / total) * 100)
         // A real floor, not a cosmetic minimum — with a skewed distribution
         // (one dominant value, a long tail of small ones), a plain linear
@@ -320,14 +309,6 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
           </div>
         )
       })}
-      {data.length > HBAR_SHOW_LIMIT && (
-        <button onClick={() => setExpanded(v => !v)} style={{
-          alignSelf: 'flex-start', marginTop: 2, background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em', color: D.amber,
-        }}>
-          {expanded ? '↑ Show less' : `↓ Show all ${data.length}`}
-        </button>
-      )}
     </div>
   )
 }
@@ -911,7 +892,7 @@ function DashboardPageInner() {
             </Card>
 
             <Reveal style={{ marginBottom: 16 }}>
-              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 0.8fr', gap: 14, alignItems: 'start' }}>
+              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 0.8fr', gap: 14 }}>
                 <Card title="Activity by Category"><DonutChart data={data.byCategory} activeName={data.activeFilters.filterCategory} onSliceClick={name => handleFilter('category', name)} /></Card>
                 <Card title="Reports per Day" sub="Last 30 days"><TimelineChart data={data.byDay} /></Card>
                 <Card title="Completion Rate"><RingStat label="Completed" pct={data.summary.completionRate} color={D.green} /></Card>
@@ -919,7 +900,7 @@ function DashboardPageInner() {
             </Reveal>
 
             <Reveal delay={60} style={{ marginBottom: 16 }}>
-              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14, alignItems: 'start' }}>
+              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14 }}>
                 <Card title="Top Projects by Reports"><HBarChart data={data.byProject} activeName={data.activeFilters.filterProject} onBarClick={name => handleFilter('project', name)} /></Card>
                 <Card title="Weather Conditions" sub={data.unattributed?.byWeather ? `No weather recorded: ${data.unattributed.byWeather.toLocaleString()} not shown in ranking` : undefined}><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
               </div>
