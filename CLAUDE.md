@@ -150,6 +150,8 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
   "byWeather": [{ "name": "Sunny", "count": 210 }],
   "byStatus": [{ "name": "Completed", "count": 310 }],
   "byMachine": [{ "name": "Excavator 12", "count": 40 }],
+  "machineActivityByDay": [{ "date": "2026-04-16", "count": 3 }],
+  "driverMachineCross": [{ "driver": "Kofi Mensah", "machine": "GPS", "count": 12 }],
   "byEmployee": [{ "name": "Kofi Mensah", "count": 30 }],
   "byEngineer": [{ "name": "Ama Owusu", "count": 22 }],
   "bySupervisor": [{ "name": "Yaw Boateng", "count": 18 }],
@@ -202,6 +204,8 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
 `byMachine`/`byEmployee`/`byEngineer`/`bySupervisor`/`byOwnership` are computed by cross-referencing the HR join tables (fetched in full every request, joined in-memory via `report_id`) against whichever reports match the active filters — see the 2026-07-16/2026-07-18 changelog entries below for the filtering/remount bugs this shape was built to fix.
 
 The `by*` person/weather series have the literal `"Unknown"` entry (blank raw value) **stripped out** in the route (`applyUnknownHandling` in `src/app/api/dashboard/_lib.ts`) so charts rank/percent over named entities only; the removed counts come back as a separate `unattributed: { byEngineer: 4499, byWeather: 3676, … }` map (non-zero keys only) which the pages surface as a muted "N not shown in ranking" caption. Blank `employee_name` additionally falls back to `employee_missing_name` inside `dashboard_core`. See the 2026-09-08 (3)/(4) changelog entries. `byEngineerParty`/`bySupervisorParty` are also run through `normalizePartySeries` to merge dirty label variants (`HITECH employees`, `Sub-contactor` typo) down to the two real parties.
+
+`machineActivityByDay` (last-30-days machine mention counts, same `generate_series` shape as `byDay`) and `driverMachineCross` (top 12 `(driver, machine)` pairs by mention count, both non-blank) back `/machines`' "Machine Activity Trend" and "Driver × Machine" cards — added by `scripts/sql/add_dashboard_machine_trends.sql`, see the 2026-09-25 (5) changelog entry. Both are optional on the response until that SQL is applied (purely additive — no new RPC parameter, so no signature-mismatch risk the way `p_status` had).
 
 ---
 
@@ -679,6 +683,24 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-25 (5) — `/machines`: activity-over-time trend, a Driver × Machine cross-reference, and a low-utilization badge — **`scripts/sql/add_dashboard_machine_trends.sql` not yet confirmed applied**
+
+**Files changed:** `scripts/sql/add_dashboard_machine_trends.sql` (new), `src/app/machines/page.tsx`
+
+**What the user asked:** picked 3 items from a brainstorm list, pasted back verbatim with no further comment — "Activity-over-time trend for machine usage... Driver × Machine cross-reference... Low-utilization flag..." — following the same "select from a suggested list" pattern as the 2026-09-25 (2) dashboard entry.
+
+**1. Machine Activity Trend** — this page had zero time dimension anywhere (every chart was a plain ranked count, unlike `/dashboard`'s "Reports per Day"). `dashboard_core` gained a `mac_dated` CTE (the existing `mac` CTE, inner-joined to `rep` on `report_id = id` to pick up `date_of_activity` — safe because every `mac` row's `report_id` is always present in `rep`, whether or not a filter is active, same reasoning already established for the other HR CTEs) and a `machineActivityByDay` output field — the identical `generate_series`/left-join-count shape `byDay` already uses, just counting machine mentions instead of reports, over the same real last-30-days window. Rendered with a direct copy of `/dashboard`'s `TimelineChart` (this page's own established per-page-component convention — no shared import), recolored to `VIVID[0]` to tie in with the "Machine Mentions" KPI card's color.
+
+**2. Driver × Machine cross-reference** — a genuinely new angle on data already joined in the same `mac` CTE, not a new fetch: `dashboard_core` gained `driverMachineCross`, the top 12 `(driver_name, machine_name)` pairs by mention count (both title-cased via the existing `_titlecase()` helper, both sides required non-blank — a driver with no machine, or vice versa, isn't a real pairing). Rendered by a new `DriverMachineList` component, styled to match `HBarChart`'s existing ranked-row visual language (same rank-badge/bar/count treatment) so it reads as part of the same design system rather than a new table style.
+
+**3. Low-utilization flag** — pure frontend, no SQL needed (`byMachine` already carries the count every row needs). `HBarChart` gained an opt-in `lowThreshold`/`lowLabel` prop pair — a row at or below the threshold gets a small amber "low use" badge next to its name. Passed only on the "Machines Used" chart (`lowThreshold={2}`), not "Top Drivers" — the ask was specifically about flagging underused equipment, not drivers, and it's this page's own local `HBarChart` copy (per-page-component convention), so `/dashboard`/`/personnel`/`/planning-implementation`'s copies are unaffected.
+
+**Migration is purely additive, unlike the same-day status-filter migration — deliberately no retry/degradation safeguard needed**: `add_dashboard_machine_trends.sql` only adds two new output *keys* to `dashboard_core`'s returned jsonb; it does not touch the function's 19-parameter signature at all, so there's no "PostgREST can't find a matching function" risk the way adding `p_status` had. Before this SQL is applied, the two keys are simply absent from the response — `machines/page.tsx` reads both as optional (`data.machineActivityByDay?.length ?? 0`, `data.driverMachineCross ?? []`) so the two new cards just show their own real empty state ("No day-by-day machine activity yet" / "No driver–machine pairs recorded yet") rather than the page breaking. **Could not apply the migration directly** (same no-DB-connection constraint as every other SQL-migration entry in this file this session) — needs to be run in the Supabase SQL Editor before either card shows real data.
+
+**Verified live against the real, currently-unmigrated database**: `curl` confirmed `/api/dashboard` stays a healthy 200 with `'machineActivityByDay' in response === false` and `'driverMachineCross' in response === false` (correctly absent, not erroring). Found the real dataset's unfiltered top-15 `byMachine` has no entry at count ≤2 (smallest is 69) — not a bug, just this dataset's current shape — so tested the low-use badge against `?project=Refinery+Road` instead, which has real machines at count 2 (`Dozer`, `GPS`); a scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed both render the amber "low use" badge, and (after scrolling through the page so the below-the-fold `Reveal` cards actually fade in — the same IntersectionObserver gotcha `scripts/visual-check.mjs` already documents) a full-page screenshot shows both new cards rendering cleanly with their correct empty-state copy. Zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct follow-up selecting 3 specific items from a previously-suggested list, same pattern as the dashboard's (2) entry earlier the same day — implemented exactly the three picked, at the effort level each was originally scoped at (the trend chart and cross-reference both needed a real SQL migration; the low-utilization flag genuinely needed none). The additive-migration design (new output keys, not new parameters) was a deliberate choice to avoid needing the heavier retry-safeguard machinery the status-filter migration required — since nothing about this change could break an existing call, no safeguard was needed, and building one anyway would have been unjustified complexity for a risk that doesn't exist here.
 
 ### 2026-09-25 (4) — Activity Status donut is now click-to-filter (KPIs/charts + the map), same as Activity by Category — **`scripts/sql/add_dashboard_status_filter.sql` confirmed applied and live** (see below)
 

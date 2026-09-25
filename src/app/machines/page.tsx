@@ -13,6 +13,14 @@ interface DashData {
   byMachine:   Array<{ name: string; count: number }>
   byOwnership: Array<{ name: string; count: number }>
   byDriver:    Array<{ name: string; count: number }>
+  // Both optional: added by scripts/sql/add_dashboard_machine_trends.sql,
+  // which only adds new output keys (no new RPC parameters, so no
+  // signature-mismatch risk like the status-filter migration) — until it's
+  // applied, these are simply absent from the response, so every read below
+  // defaults with `?? []` and the two new cards fall back to their own empty
+  // state rather than the page breaking. See the 2026-09-25 changelog.
+  machineActivityByDay?: Array<{ date: string; count: number }>
+  driverMachineCross?:   Array<{ driver: string; machine: string; count: number }>
   machineSummary: { totalMentions: number; distinctMachines: number; distinctDrivers: number }
   unattributed?: Record<string, number>
   mediaItems: Array<{ file: string; media_type: string }>
@@ -94,6 +102,81 @@ function KPICard({ label, value, icon, delay = 0, color }: { label: string; valu
   )
 }
 
+/* ── activity-over-time (adapted from dashboard's TimelineChart — this page
+   had zero time dimension before, everything was a plain ranked count) ──── */
+function TimelineChart({ data }: { data: Array<{ date: string; count: number }> }) {
+  const { colors: D } = useTheme()
+  const [ready, setReady] = useState(false)
+  const [hov, setHov] = useState<number | null>(null)
+  useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
+  const maxVal = Math.max(...data.map(d => d.count), 1)
+  const W = 720, H = 150, padL = 28, padB = 28, padR = 6, padT = 10
+  const chartW = W - padL - padR, chartH = H - padB - padT
+  const barW = Math.max(2, chartW / data.length - 2)
+  const step = chartW / data.length
+  const gridLines = [0.25, 0.5, 0.75, 1].map(f => Math.round(f * maxVal))
+  const fmtD = (d: string) => { const dt = new Date(d); return `${dt.getDate()} ${dt.toLocaleString('en', { month: 'short' })}` }
+  return (
+    <div style={{ width: '100%', overflowX: 'auto' }}>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', minWidth: 320 }}>
+        {gridLines.map((v, gi) => { const y = padT + chartH - (v / maxVal) * chartH; return <g key={gi}><line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} /><text x={padL - 4} y={y + 3} textAnchor="end" fill={D.sub} fontSize="7" fontFamily="var(--font-mono)">{v}</text></g> })}
+        <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={D.border} strokeWidth={1} />
+        {data.map((d, i) => {
+          const barH = (d.count / maxVal) * chartH
+          const x = padL + i * step + (step - barW) / 2
+          const y = padT + chartH - barH
+          const isHov = hov === i
+          return (
+            <g key={d.date} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
+              <rect x={x} y={ready ? y : padT + chartH} width={barW} height={ready ? barH : 0} fill={isHov ? VIVID[0] : `${VIVID[0]}cc`} rx={1.5}
+                style={{ transition: `y 0.5s ${EASE} ${i * 0.006}s, height 0.5s ${EASE} ${i * 0.006}s, fill 0.15s` }} />
+              {isHov && d.count > 0 && (() => {
+                const tx = Math.min(Math.max(x - 22, padL), W - padR - 70)
+                const ty = Math.max(padT + 2, y - 26)
+                return <g>
+                  <rect x={tx} y={ty} width={70} height={19} rx={4} fill={D.panel} stroke={D.border} strokeWidth={1} />
+                  <text x={tx + 35} y={ty + 13} textAnchor="middle" fill={D.text} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}: {d.count}</text>
+                </g>
+              })()}
+            </g>
+          )
+        })}
+        {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={padL + i * step + step / 2} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="7.5" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
+      </svg>
+    </div>
+  )
+}
+
+/* ── driver × machine cross-reference (top pairs by mention count) ──────── */
+function DriverMachineList({ data }: { data: Array<{ driver: string; machine: string; count: number }> }) {
+  const { colors: D } = useTheme()
+  const [ready, setReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
+  if (!data.length) return <EmptyState label="No driver–machine pairs recorded yet" />
+  const max = Math.max(...data.map(d => d.count), 1)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
+      {data.map((d, i) => {
+        const barPct = Math.max((d.count / max) * 100, 3)
+        const isTop = i < 3
+        const barColor = isTop ? VIVID[i] : `${D.muted}88`
+        return (
+          <div key={`${d.driver}|${d.machine}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${VIVID[i]}1c` : 'transparent', border: `1px solid ${isTop ? VIVID[i] + '44' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? VIVID[i] : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
+            <span style={{ width: 210, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={`${d.driver} → ${d.machine}`}>
+              <span style={{ color: D.text, fontWeight: 600 }}>{d.driver}</span><span style={{ color: D.sub }}> → </span><span style={{ color: D.muted }}>{d.machine}</span>
+            </span>
+            <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+              <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: barColor, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
+            </div>
+            <span style={{ width: 28, textAlign: 'right', fontSize: 12.5, color: isTop ? VIVID[i] : D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.count}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ── horizontal bars ──────────────────────────────────────── */
 // Ranked lists on this page can run 10-15+ rows deep — capping the default
 // view keeps a long tail from dwarfing whatever shorter card (a donut, a
@@ -104,7 +187,18 @@ function KPICard({ label, value, icon, delay = 0, color }: { label: string; valu
 // resulting *height mismatch* it exposed).
 const HBAR_SHOW_LIMIT = 8
 
-function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onBarClick?: (name: string) => void }) {
+function HBarChart({ data, activeName, onBarClick, lowThreshold, lowLabel = 'low use' }: {
+  data: Array<{ name: string; count: number }>; activeName?: string; onBarClick?: (name: string) => void
+  /** Rows at or below this count get a small badge — otherwise a machine
+     mentioned once or twice sits at the bottom of the list with no visual
+     distinction from one that's just moderately used (the bar-width floor
+     means every nonzero row already reads as "some bar"). Opt-in per chart
+     instance — only passed on "Machines Used", not "Top Drivers", since the
+     ask was specifically about flagging underused equipment. See the
+     2026-09-25 changelog. */
+  lowThreshold?: number
+  lowLabel?: string
+}) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
@@ -126,12 +220,14 @@ function HBarChart({ data, activeName, onBarClick }: { data: Array<{ name: strin
         const isTop = i < 3
         const barColor = isTop ? VIVID[i] : `${D.muted}88`
         const isActive = d.name === activeName
+        const isLow = lowThreshold != null && d.count > 0 && d.count <= lowThreshold
         return (
           <div key={d.name} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}
             onClick={() => onBarClick?.(d.name === activeName ? '' : d.name)}
             style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: onBarClick ? 'pointer' : 'default', opacity: hasActive ? (isActive ? 1 : 0.4) : (hov !== null && !isHov ? 0.45 : 1), transition: 'opacity 0.2s' }}>
             <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTop ? `${VIVID[i]}1c` : 'transparent', border: `1px solid ${isTop ? VIVID[i] + '44' : 'transparent'}`, fontSize: 9, fontFamily: 'var(--font-mono)', color: isTop ? VIVID[i] : D.sub, fontWeight: isTop ? 700 : 400 }}>{i + 1}</div>
-            <span style={{ width: 140, fontSize: 12.5, color: isHov || isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
+            <span style={{ width: isLow ? 96 : 140, fontSize: 12.5, color: isHov || isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.name}>{d.name}</span>
+            {isLow && <span style={{ flexShrink: 0, fontSize: 9, fontFamily: 'var(--font-mono)', letterSpacing: '0.03em', color: D.amber, background: `${D.amber}14`, border: `1px solid ${D.amber}38`, borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap' }} title="Mentioned only a handful of times — may be sitting idle">{lowLabel}</span>}
             <div style={{ flex: 1, height: 5, background: D.panel2, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
               <div style={{ position: 'absolute', inset: 0, right: 'auto', width: ready ? `${barPct}%` : '0%', background: barColor, borderRadius: 6, transition: `width 0.8s ${EASE} ${i * 0.03}s` }} />
             </div>
@@ -483,7 +579,7 @@ function MachinesPageInner() {
               <div className="mach-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, alignItems: 'start' }}>
                 <Card title="Machines Used" note={unattributedNote(data, 'byMachine', 'No machine name recorded')}>
                   {data.byMachine?.length > 0
-                    ? <HBarChart data={data.byMachine} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)} />
+                    ? <HBarChart data={data.byMachine} activeName={data.activeFilters.filterMachine} onBarClick={name => handleFilter('machine', name)} lowThreshold={2} />
                     : <EmptyState label="No machine data matches your filters" />}
                 </Card>
                 <Card title="Ownership Breakdown" note={unattributedNote(data, 'byOwnership', 'No ownership recorded')}>
@@ -495,6 +591,19 @@ function MachinesPageInner() {
                   {data.byDriver?.length > 0
                     ? <HBarChart data={data.byDriver} activeName={data.activeFilters.filterDriver} onBarClick={name => handleFilter('driver', name)} />
                     : <EmptyState label="No driver data matches your filters" />}
+                </Card>
+              </div>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <div className="mach-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14, marginTop: 14, alignItems: 'start' }}>
+                <Card title="Machine Activity Trend" note="Machine mentions per day · last 30 days">
+                  {(data.machineActivityByDay?.length ?? 0) > 0
+                    ? <TimelineChart data={data.machineActivityByDay!} />
+                    : <EmptyState label="No day-by-day machine activity yet" />}
+                </Card>
+                <Card title="Driver × Machine" note="Top pairings by mention count">
+                  <DriverMachineList data={data.driverMachineCross ?? []} />
                 </Card>
               </div>
             </Reveal>
