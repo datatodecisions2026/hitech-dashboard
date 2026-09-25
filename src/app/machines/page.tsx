@@ -117,7 +117,12 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
   const maxVal = Math.max(...data.map(d => d.count), 1)
-  const W = 720, H = 150, padL = 28, padB = 28, padR = 6, padT = 10
+  // H bumped from dashboard's original 150 — a real size increase (more
+  // vertical resolution on the bars/gridlines, not padding) that also
+  // narrows the height gap against this card's row-2 neighbor, "Driver ×
+  // Machine" (measured live, see the 2026-09-25 "rearrange for uniformity"
+  // follow-up — capping that chart's own rows/legend wasn't enough alone).
+  const W = 720, H = 195, padL = 28, padB = 28, padR = 6, padT = 10
   const chartW = W - padL - padR, chartH = H - padB - padT
   const barW = Math.max(2, chartW / data.length - 2)
   const step = chartW / data.length
@@ -155,6 +160,14 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
 }
 
 /* ── driver × machine cross-reference (top pairs by mention count) ──────── */
+// Rows capped at DM_SHOW_LIMIT by default, same "Show all N" pattern
+// HBarChart already established on this page (2026-09-24 (8) changelog) —
+// without it, a full 10-driver stack ran visibly taller than its neighbor
+// "Machine Activity Trend" card (a fixed-height chart), leaving row 2
+// jagged-bottomed the same way row 1's ranked lists did before that fix.
+// See the 2026-09-25 "rearrange for uniformity" follow-up.
+const DM_SHOW_LIMIT = 4
+
 // Redesigned from a flat top-12 (driver, machine) pairs list after the real
 // data turned out lopsided — one driver logs far more activity than everyone
 // else, so 11 of 12 top pairs were all the same person against different
@@ -165,6 +178,7 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
 function DriverMachineBars({ data }: { data: Array<{ driver: string; total: number; machines: Array<{ machine: string; count: number }> }> }) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
   // Guards against the OLD flat {driver,machine,count} shape still being live
   // (no `machines` array) — filters down to empty rather than crashing on
@@ -172,7 +186,11 @@ function DriverMachineBars({ data }: { data: Array<{ driver: string; total: numb
   // every other pending-SQL field on this page already follows.
   const rows = data.filter(d => Array.isArray(d.machines) && d.machines.length > 0)
   if (!rows.length) return <EmptyState label="No driver–machine pairs recorded yet" />
+  // Bar-width scale and the legend are both computed from the FULL row set,
+  // not just what's currently visible — expanding/collapsing only changes
+  // which rows are shown, never rescales the bars or reshuffles the legend.
   const maxTotal = Math.max(...rows.map(d => d.total), 1)
+  const visible = expanded ? rows : rows.slice(0, DM_SHOW_LIMIT)
 
   // One color per machine, consistent across every driver's bar (so e.g. GPS
   // is always the same swatch no matter whose bar it's in) — ranked by that
@@ -185,17 +203,34 @@ function DriverMachineBars({ data }: { data: Array<{ driver: string; total: numb
     machineTotals.set(m.machine, (machineTotals.get(m.machine) ?? 0) + m.count)
   }
   const rankedMachines = [...machineTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name)
+  // Colors stay pinned to the full dataset's ranking (so a machine never
+  // changes swatch when the row cap expands/collapses), but the legend ITSELF
+  // only lists machines actually present in the currently-visible rows — no
+  // point explaining a color a collapsed-away driver's bar uses. This is also
+  // what keeps the card's collapsed height close to its "Machine Activity
+  // Trend" neighbor: the legend was the real remaining height driver once the
+  // row cap alone turned out not to be enough (measured, not assumed).
   const colorFor = (name: string) => name === 'Other' ? `${D.muted}77` : VIVID[rankedMachines.indexOf(name) % VIVID.length]
 
   const presentMachines = new Set<string>()
-  for (const d of rows) for (const m of d.machines) presentMachines.add(m.machine)
-  const legend = rankedMachines.filter(m => presentMachines.has(m))
-  if (presentMachines.has('Other')) legend.push('Other')
+  for (const d of visible) for (const m of d.machines) presentMachines.add(m.machine)
+  const legendFull = rankedMachines.filter(m => presentMachines.has(m))
+  if (presentMachines.has('Other')) legendFull.push('Other')
+  // Measured live that scoping the legend to `visible` alone barely helped —
+  // the dominant driver's own bar already spans most of the real machine
+  // catalog, so hiding the smaller drivers' rows doesn't shrink the machine
+  // *set* much. A hard cap on legend entries bounds the height regardless of
+  // how diverse the underlying data is (a static "+N more" note rather than
+  // a second expand toggle — two independent expand/collapse controls in one
+  // small card would be more confusing than the height it'd save).
+  const LEGEND_SHOW_LIMIT = 8
+  const legend = legendFull.slice(0, LEGEND_SHOW_LIMIT)
+  const legendHiddenCount = legendFull.length - legend.length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {rows.map((d, i) => {
+        {visible.map((d, i) => {
           const widthPct = Math.max((d.total / maxTotal) * 100, 4)
           return (
             <div key={d.driver} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -212,6 +247,14 @@ function DriverMachineBars({ data }: { data: Array<{ driver: string; total: numb
             </div>
           )
         })}
+        {rows.length > DM_SHOW_LIMIT && (
+          <button onClick={() => setExpanded(v => !v)} style={{
+            alignSelf: 'flex-start', marginTop: 2, background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+            fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em', color: D.amber,
+          }}>
+            {expanded ? '↑ Show less' : `↓ Show all ${rows.length}`}
+          </button>
+        )}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', paddingTop: 10, borderTop: `1px solid ${D.border}` }}>
         {legend.map(m => (
@@ -220,6 +263,9 @@ function DriverMachineBars({ data }: { data: Array<{ driver: string; total: numb
             <span style={{ fontSize: 11, color: D.muted }}>{m}</span>
           </div>
         ))}
+        {legendHiddenCount > 0 && (
+          <span style={{ fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)' }} title="Hover a bar segment to see its machine and count">+{legendHiddenCount} more</span>
+        )}
       </div>
     </div>
   )

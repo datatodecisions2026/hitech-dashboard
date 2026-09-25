@@ -684,6 +684,24 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-25 (7) — `/machines`: closed the row-2 card height mismatch ("rearrange the charts for uniformity"), measured live rather than guessed
+
+**Files changed:** `src/app/machines/page.tsx`
+
+**What the user asked, with a screenshot of the just-applied (6) entry's real stacked-bar data:** "rearrange the charts for uniformity in layout" — the screenshot showed row 2's "Driver × Machine" card visibly much taller than its neighbor "Machine Activity Trend" (10 unbounded driver rows + a 12-item wrapped legend vs. one fixed-height chart), the same class of jagged-row mismatch this page's row 1 had already been fixed for (2026-09-24 (7)/(8)/(9) entries).
+
+**Fixed by reusing this page's own already-established idiom, not inventing a new one, then measuring rather than assuming it was enough:**
+1. **Row cap**: `DriverMachineBars` gained the same `expanded`/"Show all N" pattern `HBarChart` already uses on this page — a new `DM_SHOW_LIMIT` constant. First measured at 6, then tightened to 4 after the first round's real numbers (below) showed 6 wasn't enough.
+2. **Legend scoped to what's actually visible**: the legend was originally built from the *full* driver set regardless of the row cap — pointless once rows are hidden. Recomputing it from `visible` (not `rows`) turned out to barely help on its own: this dataset's single dominant driver already touches most of the real machine catalog, so hiding the smaller drivers' rows doesn't shrink the *set* of machines needing a swatch. Confirmed by direct DOM measurement, not assumed.
+3. **Legend item cap**: since (2) alone wasn't enough, added a hard `LEGEND_SHOW_LIMIT` (8) with a static "+N more" note instead of a second expand toggle — two independent expand/collapse controls stacked in one small card would have been more confusing than the height they'd save, and every machine's name/count is already available on hover regardless.
+4. **A real, content-driven height increase on the shorter neighbor**: bumped `TimelineChart`'s `H` (150 → 195) — more vertical resolution on the bars/gridlines, not filler padding, the same "genuinely enlarge the shorter chart" move the 2026-09-24 (9) donut-enlargement entry already established as this page's preferred lever over stretching/padding.
+
+**Measured after each step, not shipped on the first plausible-looking fix**: a scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance measured the two cards' real rendered heights via `getBoundingClientRect()` at every stage. Row cap alone (6): delta unchanged at ~186px — the legend, not the rows, turned out to be the actual remaining height driver, which is what the next two steps then targeted specifically. After the legend fix (scoped-to-visible + 8-item cap) and the chart-height bump together: delta closed from ~186px to ~79px (Trend 178px→205px, Driver × Machine 364px→284px) — a real, meaningfully less jarring pairing, confirmed with actual numbers at each step rather than eyeballing a screenshot.
+
+**Verified live**: the same Playwright pass confirmed the "Show all 9" toggle still correctly expands to the full driver list (including the smallest entries, e.g. "Alex") and flips to "Show less," a full-page screenshot (post-scroll, so the below-the-fold `Reveal` cards actually fade in) shows both cards reading as a balanced pair, and zero console errors throughout. `tsc --noEmit` and `next build` both clean (25 routes). No SQL changes this pass — purely a frontend layout fix, `driverMachineCross`'s data shape is untouched from the (6) entry.
+
+**Why:** Direct follow-up naming the specific visual problem from a real screenshot of the just-applied redesign. Reused this page's own already-proven "cap + Show all N" idiom rather than a new mechanism (consistent with what "uniformity" should mean — the same solution pattern applied consistently, not a bespoke one-off), and treated the first fix attempt's result as a measurement to react to, not a foregone conclusion — the row cap alone looked like it should have helped and measurably didn't, which is what redirected the actual fix toward the legend instead of stopping short at a plausible-but-wrong explanation.
+
 ### 2026-09-25 (6) — `/machines`: redesigned "Driver × Machine" from a lopsided flat list into stacked bars per driver — **`scripts/sql/add_dashboard_driver_machine_stacked.sql` not yet confirmed applied**
 
 **Files changed:** `scripts/sql/add_dashboard_driver_machine_stacked.sql` (new), `src/app/machines/page.tsx`
