@@ -67,7 +67,7 @@ interface DashData {
   filterOptions: { categories: string[]; projects: string[]; sections: string[] }
   activeFilters: {
     filterCategory: string; filterProject: string; filterSection: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
-    filterWeather: string; filterMachine: string; filterEmployee: string; filterEngineer: string; filterSupervisor: string
+    filterWeather: string; filterStatus: string; filterMachine: string; filterEmployee: string; filterEngineer: string; filterSupervisor: string
   }
 }
 
@@ -392,7 +392,7 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
 function MediaGallery({ items, activeFilters }: { items: MediaItem[]; activeFilters: DashData['activeFilters'] }) {
   const hasAnyFilter = !!(
     activeFilters.filterProject || activeFilters.filterCategory || activeFilters.filterSection ||
-    activeFilters.filterWeather || activeFilters.filterDateFrom || activeFilters.filterDateTo ||
+    activeFilters.filterWeather || activeFilters.filterStatus || activeFilters.filterDateFrom || activeFilters.filterDateTo ||
     activeFilters.filterChFrom || activeFilters.filterChTo || activeFilters.filterSearch ||
     activeFilters.filterMachine || activeFilters.filterEmployee || activeFilters.filterEngineer || activeFilters.filterSupervisor
   )
@@ -640,7 +640,7 @@ const FIconFunnel = ({ color }: { color: string }) => <svg width={14} height={14
 function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (key: string, val: string) => void; onClose: () => void }) {
   const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
-  const hasFilters = !!(active.filterCategory || active.filterProject || active.filterSection || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor)
+  const hasFilters = !!(active.filterCategory || active.filterProject || active.filterSection || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterStatus || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor)
   const [chFrom, setChFrom] = useState(active.filterChFrom || '')
   const [chTo, setChTo] = useState(active.filterChTo || '')
   const [search, setSearch] = useState(active.filterSearch || '')
@@ -855,7 +855,7 @@ function DashboardPageInner() {
   function handleFilter(key: string, val: string) {
     const p = new URLSearchParams(searchParams.toString())
     if (key === '__clear__') {
-      ['category', 'project', 'section', 'date_from', 'date_to', 'ch_from', 'ch_to', 'search', 'weather', 'machine', 'employee', 'engineer', 'supervisor'].forEach(k => p.delete(k))
+      ['category', 'project', 'section', 'date_from', 'date_to', 'ch_from', 'ch_to', 'search', 'weather', 'status', 'machine', 'employee', 'engineer', 'supervisor'].forEach(k => p.delete(k))
     } else if (key === '__ch_range__') {
       const [from, to] = val.split(',')
       p.set('ch_from', from); p.set('ch_to', to)
@@ -989,7 +989,7 @@ function DashboardPageInner() {
               <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '2fr 1.3fr 1.3fr', gap: 14 }}>
                 <Card title="Top Projects by Reports"><HBarChart data={data.byProject} activeName={data.activeFilters.filterProject} onBarClick={name => handleFilter('project', name)} /></Card>
                 <Card title="Weather Conditions" sub={data.unattributed?.byWeather ? `No weather recorded: ${data.unattributed.byWeather.toLocaleString()} not shown in ranking` : undefined}><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
-                <Card title="Activity Status"><DonutChart data={data.byStatus} colorFor={(name) => statusColor(name, D)} emptyLabel="No status data" /></Card>
+                <Card title="Activity Status"><DonutChart data={data.byStatus} colorFor={(name) => statusColor(name, D)} emptyLabel="No status data" activeName={data.activeFilters.filterStatus} onSliceClick={name => handleFilter('status', name)} /></Card>
               </div>
             </Reveal>
 
@@ -1009,6 +1009,7 @@ function DashboardPageInner() {
                       category={data.activeFilters.filterCategory}
                       project={data.activeFilters.filterProject}
                       weather={data.activeFilters.filterWeather}
+                      status={data.activeFilters.filterStatus}
                       dateFrom={data.activeFilters.filterDateFrom}
                       dateTo={data.activeFilters.filterDateTo}
                       initialSection={data.activeFilters.filterSection}

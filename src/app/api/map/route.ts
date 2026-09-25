@@ -129,6 +129,10 @@ export async function GET(req: NextRequest) {
   // filter dimension here) via .gte()/.lte() on date_of_activity.
   const dateFrom  = searchParams.get('date_from') || ''
   const dateTo    = searchParams.get('date_to') || ''
+  // Same convention as category — matched via .ilike() on activity_status,
+  // added so clicking a segment on the dashboard's Activity Status donut
+  // zooms/decluters the map the same way Category already does.
+  const status    = searchParams.get('status') || ''
   // all=1 → return reports across every project/section, not just `project`
   // (the UnifiedMap needs Calabar/Kebbi/Ogun report pins alongside Coastal's).
   // Paged in full via fetchAll() below — the whole table is ~9.7k rows, well
@@ -173,6 +177,7 @@ export async function GET(req: NextRequest) {
         if (category) q = q.ilike('activity_category', category)
         if (weather) q = q.ilike('weather', weather)
         if (section) q = q.ilike('section_name', section)
+        if (status) q = q.ilike('activity_status', status)
         if (dateFrom) q = q.gte('date_of_activity', dateFrom)
         if (dateTo) q = q.lte('date_of_activity', dateTo)
         return q
@@ -184,6 +189,7 @@ export async function GET(req: NextRequest) {
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
       if (section) q = q.ilike('section_name', section)
+      if (status) q = q.ilike('activity_status', status)
       if (dateFrom) q = q.gte('date_of_activity', dateFrom)
       if (dateTo) q = q.lte('date_of_activity', dateTo)
       return q
@@ -193,6 +199,7 @@ export async function GET(req: NextRequest) {
       if (category) q = q.ilike('activity_category', category)
       if (weather) q = q.ilike('weather', weather)
       if (section) q = q.ilike('section_name', section)
+      if (status) q = q.ilike('activity_status', status)
       if (dateFrom) q = q.gte('date_of_activity', dateFrom)
       if (dateTo) q = q.lte('date_of_activity', dateTo)
       return q
@@ -223,6 +230,7 @@ export async function GET(req: NextRequest) {
     category,
     weather,
     section,
+    status,
     dateFrom,
     dateTo,
   })

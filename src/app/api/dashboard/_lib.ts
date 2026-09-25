@@ -24,6 +24,7 @@ export function dashboardRpcArgs(sp: URLSearchParams) {
     p_project:          s('project'),
     p_section:          s('section'),
     p_weather:          s('weather'),
+    p_status:           s('status'),
     p_date_from:        s('date_from'),
     p_date_to:          s('date_to'),
     p_ch_from:          applyCh ? chFrom : null,
@@ -158,6 +159,7 @@ export function activeFiltersFrom(sp: URLSearchParams) {
   const g = (k: string) => sp.get(k) || ''
   return {
     filterCategory: g('category'), filterProject: g('project'), filterSection: g('section'),
+    filterStatus: g('status'),
     filterDateFrom: g('date_from'), filterDateTo: g('date_to'),
     filterChFrom: g('ch_from'), filterChTo: g('ch_to'), filterSearch: g('search'),
     filterWeather: g('weather'), filterMachine: g('machine'),
@@ -168,14 +170,45 @@ export function activeFiltersFrom(sp: URLSearchParams) {
   }
 }
 
+// PostgREST's "no function matches this name/argument-shape" error — returned
+// while the SQL adding a new p_* param (e.g. p_status, 2026-09-25) hasn't been
+// applied to this Supabase project yet. Checked by code first (PGRST202) with a
+// message fallback, since the exact code isn't guaranteed stable across
+// postgrest-js/PostgREST versions.
+function isMissingFunctionError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null
+  return e?.code === 'PGRST202' || /could not find the function/i.test(e?.message || '')
+}
+
 // retry-once on a hard RPC error (a canceled/timed-out query sets .error) —
-// mirrors /api/progress's rpcWithRetry.
+// mirrors /api/progress's rpcWithRetry. Additionally: if the failure looks like
+// a missing-function error and the args carry a param this route added after
+// the RPC itself was last deployed (currently just p_status — see the
+// 2026-09-25 "Activity Status filter" changelog entry), drop that one param and
+// retry once with the older signature, so the whole dashboard doesn't 503 for
+// every user just because one SQL migration hasn't been applied yet — it only
+// means that one new filter silently doesn't narrow anything until it is.
+const OPTIONAL_ARGS = ['p_status'] as const
+
 export async function rpcWithRetry(fn: string, args: Record<string, unknown>) {
   let lastErr: unknown = null
+  let currentArgs = args
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { data, error } = await supabase.rpc(fn, args)
+    const { data, error } = await supabase.rpc(fn, currentArgs)
     if (!error) return { data, error: null as null }
     lastErr = error
+    if (attempt === 0 && isMissingFunctionError(error)) {
+      // Strip whenever the key is present at all, not just when it carries a
+      // real value — PostgREST resolves the function overload by which named
+      // arguments were sent, so even p_status: null still fails to match a
+      // signature that has no p_status parameter yet.
+      const stripped = { ...currentArgs }
+      let changed = false
+      for (const k of OPTIONAL_ARGS) {
+        if (k in stripped) { delete stripped[k]; changed = true }
+      }
+      if (changed) { currentArgs = stripped; continue }
+    }
   }
   return { data: null, error: lastErr }
 }

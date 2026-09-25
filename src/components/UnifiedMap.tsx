@@ -200,6 +200,10 @@ interface Props {
      changelog entry ("for the date range, the map didn't filter"). */
   dateFrom?: string
   dateTo?: string
+  /** From /dashboard's Activity Status donut — same treatment as category:
+     narrows which reports are fetched and counts as an active filter for
+     both clusterers' decluster check + the camera-fit trigger. */
+  status?: string
   /** From /planning-implementation's section filter — fits that region once
      on mount / when it changes. '' = show everything (national). */
   initialSection?: string
@@ -264,7 +268,7 @@ function attachOverlaysChunked<T extends { setMap(map: google.maps.Map | null): 
 }
 
 /* ── Component ─────────────────────────────────────────────── */
-export default function UnifiedMap({ chFrom, chTo, category, project, weather, dateFrom, dateTo, initialSection, onLoadStats, onFilterRequest, showRoadAssets = true }: Props) {
+export default function UnifiedMap({ chFrom, chTo, category, project, weather, dateFrom, dateTo, status, initialSection, onLoadStats, onFilterRequest, showRoadAssets = true }: Props) {
   const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
 
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -409,7 +413,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
   useEffect(() => {
     if (!layers.coastalLine && !layers.reports) { setReports([]); setCoastalStations([]); setReportsLoading(false); return }
     const b = bbox(viewState)
-    const key = `${layers.reports}|${category || ''}|${project || ''}|${weather || ''}|${dateFrom || ''}|${dateTo || ''}|${initialSection || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
+    const key = `${layers.reports}|${category || ''}|${project || ''}|${weather || ''}|${status || ''}|${dateFrom || ''}|${dateTo || ''}|${initialSection || ''}|${viewState?.zoom ?? ''}|${b ? `${b.swLat.toFixed(2)},${b.swLng.toFixed(2)},${b.neLat.toFixed(2)},${b.neLng.toFixed(2)}` : 'wide'}`
     if (mapReqKeyRef.current === key) return
     mapReqKeyRef.current = key
 
@@ -417,6 +421,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
     if (!project) p.set('all', '1')
     if (category) p.set('category', category)
     if (weather) p.set('weather', weather)
+    if (status) p.set('status', status)
     if (dateFrom) p.set('date_from', dateFrom)
     if (dateTo) p.set('date_to', dateTo)
     // Never actually wired in before (2026-09-22 (5) changelog): the
@@ -486,8 +491,8 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
         // response gets a real chance to perform the fit instead of losing
         // it permanently to a race the user can't see or retry.
         if (!mapRef.current) return
-        const filterKey = `${category || ''}|${project || ''}|${weather || ''}|${dateFrom || ''}|${dateTo || ''}|${initialSection || ''}`
-        const hasFilter = !!category || !!project || !!weather || !!dateFrom || !!dateTo || !!initialSection
+        const filterKey = `${category || ''}|${project || ''}|${weather || ''}|${status || ''}|${dateFrom || ''}|${dateTo || ''}|${initialSection || ''}`
+        const hasFilter = !!category || !!project || !!weather || !!status || !!dateFrom || !!dateTo || !!initialSection
         if (catFitRef.current === null) {
           catFitRef.current = filterKey
           if (!hasFilter) return
@@ -569,7 +574,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
       .catch(() => { if (mapFetchGenRef.current === gen) setError('Failed to load map data') })
       .finally(() => { if (mapFetchGenRef.current === gen) setReportsLoading(false) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layers.coastalLine, layers.reports, category, project, weather, dateFrom, dateTo, initialSection, viewState])
+  }, [layers.coastalLine, layers.reports, category, project, weather, status, dateFrom, dateTo, initialSection, viewState])
 
   /* ── Fetch: Kebbi corridor line (static context, fixed coarse zoom) ── */
   useEffect(() => {
@@ -946,7 +951,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
       const chF = chFrom ? Number(chFrom) : NaN
       const chT = chTo ? Number(chTo) : NaN
       const chActive = !isNaN(chF) && !isNaN(chT) && chT > chF
-      const hasActiveFilter = !!category || !!project || !!weather || !!dateFrom || !!dateTo || chActive
+      const hasActiveFilter = !!category || !!project || !!weather || !!status || !!dateFrom || !!dateTo || chActive
 
       // Measured live via a real CPU profile (2026-09-22 (2) changelog
       // entry): chunking each setMap() call keeps *my own* JS fast, but
@@ -1243,7 +1248,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
     } else {
       setVisibleReportCount(0)
     }
-  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, dateFrom, dateTo, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses, viewState, focusedId])
+  }, [mapLoaded, coastalStations, kebbiStations, reports, colorBy, category, project, weather, status, dateFrom, dateTo, chFrom, chTo, layers.coastalLine, layers.reports, layers.kebbi, hiddenCategories, hiddenStatuses, viewState, focusedId])
 
   /* ── Render: road-asset clusters ──────────────────────────── */
   useEffect(() => {

@@ -126,7 +126,7 @@ Returns all aggregated analytics data. Requires a valid session (401 if not auth
 
 **Query params (all optional — combine freely, HR params are AND'd together):**
 ```
-category, project, section, weather   — case-insensitive .ilike() match on the report columns (section matches section_name)
+category, project, section, weather, status — case-insensitive .ilike() match on the report columns (section matches section_name, status matches activity_status; status requires scripts/sql/add_dashboard_status_filter.sql to be applied — see the 2026-09-25 (4) changelog for the pre-migration fallback behavior)
 date_from, date_to           — inclusive date range on date_of_activity
 ch_from, ch_to                — inclusive chainage range on start_chainage_val (only applied if both are valid numbers with ch_to > ch_from)
 search                        — matches reporter_name/project_name/section_name/activity_type/comment_activity
@@ -194,7 +194,7 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
   "activeFilters": {
     "filterCategory": "", "filterProject": "", "filterSection": "", "filterDateFrom": "", "filterDateTo": "",
     "filterChFrom": "", "filterChTo": "", "filterSearch": "",
-    "filterWeather": "", "filterMachine": "", "filterEmployee": "", "filterEngineer": "", "filterSupervisor": ""
+    "filterWeather": "", "filterStatus": "", "filterMachine": "", "filterEmployee": "", "filterEngineer": "", "filterSupervisor": ""
   }
 }
 ```
@@ -257,6 +257,7 @@ swLat, swLng, neLat, neLng        — current map viewport bounds; only applied 
 category                          — matched via .ilike() on activity_category; filters the reports array only (not chainage stations) — used by UnifiedMap to also zoom to fit that category's reports
 weather                          — matched via .ilike() on weather, same treatment as category (filters reports only, feeds UnifiedMap's zoom/decluster) — added 2026-09-18 (2) so the dashboard's Weather Conditions chart zooms the map the same way Category/Project already do
 section                           — matched via .ilike() on section_name, same treatment as category/weather — added 2026-09-22 (5) so the dashboard's Section dropdown actually narrows the map (previously it silently didn't)
+status                            — matched via .ilike() on activity_status, same treatment as category — added 2026-09-25 (4) so clicking the dashboard's Activity Status donut zooms/declusters the map the same way Category already does
 date_from, date_to                — matched via .gte()/.lte() on date_of_activity, same treatment as category/weather/section (reports only, not stations) — added 2026-09-25 (3); never wired in before that, so a Date Range filter on /dashboard had no effect on the map at all
 all                              — "1" → return reports across EVERY project/section, not just `project` (UnifiedMap needs Calabar/Kebbi/Ogun pins alongside Coastal's). PostgREST hard-caps any one response at 1000 rows, so all=1 runs two queries — the Coastal set + a keyword-targeted grab of the ~35 geolocated Calabar/Ogun/Kebbi rows (section_name/project_name ilike, `*` wildcard — the embedded or() syntax, not `%`) — and merges them by id. Stations still scoped to `project`.
 ```
@@ -678,6 +679,28 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-09-25 (4) — Activity Status donut is now click-to-filter (KPIs/charts + the map), same as Activity by Category
+
+**Files changed:** `scripts/sql/add_dashboard_status_filter.sql` (new), `src/app/api/dashboard/_lib.ts`, `src/app/api/map/route.ts`, `src/components/UnifiedMap.tsx`, `src/app/dashboard/page.tsx`
+
+**What the user asked:** with a screenshot of the Activity Status donut — "can the segments be used as a filter for the page too just like the activity category donut chart."
+
+**Why this wasn't already possible:** the (2) entry above shipped the Activity Status donut deliberately display-only — `dashboard_filtered_ids`/`dashboard_core`/`dashboard_extra` had no `p_status` parameter at all, and adding one was flagged then as "would need a real SQL migration," scoped out rather than silently built. This entry is that follow-up.
+
+**SQL** (`add_dashboard_status_filter.sql`, applied as a consolidated, authoritative recreation of all three functions — folds in both prior deltas, `p_section` from `add_dashboard_rpcs.sql` and the `employee_name → coalesce(employee_name, employee_missing_name)` recovery from `add_dashboard_unknown_handling.sql`, plus the new param): `p_status text default null` added to `dashboard_filtered_ids` (`r.activity_status ilike p_status`), and threaded through `dashboard_core`/`dashboard_extra`'s `v_has` flag and their nested call to `dashboard_filtered_ids`. Signature grows 18 → 19 params, so old signatures are dropped first (same requirement the 2026-09-08 section-filter delta hit — Postgres resolves an overload by full parameter list, and `CREATE OR REPLACE` can't change it).
+
+**Could not apply the migration directly this session** (no Supabase MCP/DB connection available, same constraint as the 2026-08-04 `/planning-implementation` entry — only the REST `service_role` key, which can call RPCs but not run DDL) — **so this needed a real safeguard, not just an "apply this SQL" note**, since unlike a brand-new route, this change touches the live, already-in-use `/api/dashboard` signature every page load calls. Sending a `p_status` argument (even `null`) to a Postgres function that doesn't have that parameter makes PostgREST fail to resolve any matching overload (`PGRST202`) — deploying the code changes alone, before the SQL is applied, would have 503'd the entire dashboard for every user, not just degraded the one new filter.
+
+**Fix — `rpcWithRetry` now detects a missing-function error and retries once with the new-but-not-yet-deployed param stripped** (`isMissingFunctionError()` + an `OPTIONAL_ARGS` list, currently just `p_status`, in `_lib.ts`): on the first attempt's failure, if it looks like a signature-mismatch (`error.code === 'PGRST202'` or a "could not find the function" message) and `p_status` is present in the call args, it's deleted and the call retried once more before falling through to the existing "still failing → 503" path. Net effect: **the dashboard keeps working exactly as before the moment this code deploys**, whether or not the SQL has been applied yet — until it is, `?status=Ongoing` in the URL is accepted and echoed back in `activeFilters`, but silently doesn't narrow anything (confirmed live, see below); once the migration runs, filtering activates with zero further code changes or deploys.
+
+**Frontend**: `DonutChart`'s existing `activeName`/`onSliceClick` props (already used by `Activity by Category`) wired onto the Activity Status card — `activeName={data.activeFilters.filterStatus}` `onSliceClick={name => handleFilter('status', name)}`. `'status'` added to the filter-panel's clear-all key list and its two "any filter active" checks (the media-gallery gate, the panel's active-filter-count badge).
+
+**Extended to the map too, matching "just like category" fully** — Category's click doesn't just filter KPIs, it also zooms/declusters `UnifiedMap` (2026-07-22 changelog); did the same for status rather than leaving the map as a partial case. `GET /api/map` gained a `status` param (`.ilike('activity_status', status)` on the reports query only, same convention as category/weather/section/date — this one didn't need the RPC-signature safeguard, since `/api/map` never went through an RPC for reports, just a direct `.ilike()`-built table query, so there's no matching signature to be out of sync). `UnifiedMap` gained a `status?: string` prop, threaded through identically to `weather`: the reports-fetch cache key/URL params/dependency array, the camera-fit `filterKey`/`hasFilter`, and the report-pins render effect's `hasActiveFilter` + dependency array. `dashboard/page.tsx`'s `<UnifiedMap>` call passes `status={data.activeFilters.filterStatus}`.
+
+**Verified live, against the real (currently unmigrated) database — this is what actually proved the safeguard works, not just code review**: direct `curl` against `/api/dashboard` (no `status` param) returned a normal 200 with full real data — confirming the fallback correctly stripped `p_status` and didn't break the baseline case. `/api/dashboard?status=Ongoing` also returned 200 (not 503) with `totalReports: 9780` (the true unfiltered total) and `activeFilters.filterStatus: "Ongoing"` — exactly the documented degraded behavior: accepted, echoed, not yet narrowing. `/api/map?status=Ongoing` (no RPC involved, so no degradation needed) genuinely narrowed 9,747 → 5,315 reports, confirmed every returned row's `activity_status` is `"Ongoing"`. A scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance clicked the "Ongoing" segment on a live `/dashboard`: URL became `?status=Ongoing`, the "FILTERS" badge showed an active-filter count of 1, the segment's legend row highlighted (full opacity, matching the active-slice convention every other donut/bar chart uses), and the map's own `/api/map` request picked up `status=Ongoing`. Zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct, specific follow-up naming the exact prior gap ("just like the activity category donut chart") — the (2) entry had already flagged this as scoped-out pending a migration, so this session closed that gap rather than leaving it open indefinitely. The missing-function retry fallback is the one piece of this that wasn't simply "port the category pattern" — it exists because this change, unlike every previous "add a new page/route" migration-pending entry in this file, modifies the *signature* of a function every single page load already depends on, and shipping that unguarded would have taken the whole dashboard down for every user until the SQL was run, not just left one new filter inert.
 
 ### 2026-09-25 (3) — Fix: the Date Range filter never narrowed the Activity Map — a genuine, pre-existing gap, not a regression from the same-day preset feature
 
