@@ -5,13 +5,38 @@ const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, type ColorTokens } from '@/lib/theme'
 import { useMapView } from '@/lib/map-view'
 import { VIVID } from '@/lib/theme-constants'
 import { HeroBanner, WEATHER_ICON } from '@/components/HeroBanner'
 
 /* ── motion ────────────────────────────────────────────────── */
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
+
+// Activity status is a real, meaningful status (not an arbitrary category),
+// so it gets a fixed semantic color mapping rather than the VIVID rainbow
+// ramp — same "semantic colors for real status, VIVID only for genuinely
+// categorical series" rule this project's design system has used since the
+// 2026-09-21 (2) theme rollout. See the 2026-09-25 "Activity Status" entry.
+function statusColor(name: string, D: ColorTokens): string {
+  const n = name.toLowerCase()
+  if (n.includes('complet')) return D.green
+  if (n.includes('progress') || n.includes('ongoing')) return D.amber
+  if (n.includes('pending')) return D.blue
+  return D.muted
+}
+
+// Local-date formatting (not toISOString(), which is UTC-based and can land
+// on the wrong calendar day depending on the browser's timezone offset —
+// date_from/date_to are plain "YYYY-MM-DD" strings matched against
+// date_of_activity, so these presets need to agree with what the date
+// <input>s themselves would produce for "today").
+const toDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const DATE_PRESETS: { key: string; label: string; range: () => [string, string] }[] = [
+  { key: '7d', label: '7D', range: () => { const to = new Date(); const from = new Date(); from.setDate(from.getDate() - 6); return [toDateStr(from), toDateStr(to)] } },
+  { key: '30d', label: '30D', range: () => { const to = new Date(); const from = new Date(); from.setDate(from.getDate() - 29); return [toDateStr(from), toDateStr(to)] } },
+  { key: 'month', label: 'This month', range: () => { const now = new Date(); return [toDateStr(new Date(now.getFullYear(), now.getMonth(), 1)), toDateStr(now)] } },
+]
 
 interface MediaItem { file: string; media_type: string; project_name: string }
 interface MapPoint { lat: number; lng: number; lat2: number | null; lng2: number | null; project: string; category: string; status: string }
@@ -133,35 +158,52 @@ function Pill({ kind, children }: { kind: 'ok' | 'accent' | 'crit' | 'mut'; chil
 }
 
 /* ── mini KPI grid ────────────────────────────────────────── */
-function Mini({ k, value, delay = 0, i = 0, color }: { k: string; value: number; delay?: number; i?: number; color?: string }) {
+/** `null` = no comparison data yet (still loading, or last month had zero
+   activity too — nothing meaningful to show). `'new'` = last month was zero
+   but this month has real activity (a % change would be infinite/undefined). */
+type MiniDelta = { pct: number } | 'new' | null
+function Mini({ k, value, delay = 0, i = 0, color, delta }: { k: string; value: number; delay?: number; i?: number; color?: string; delta?: MiniDelta }) {
   const { colors: D } = useTheme()
   const [vis, setVis] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay); return () => clearTimeout(t) }, [delay])
   const shown = useCountUp(vis ? value : 0, 1100)
+  const deltaColor = delta === 'new' || (delta && delta.pct > 0) ? D.green : delta && delta.pct < 0 ? D.red : D.muted
   return (
     <div className="mini-cell" style={{ paddingLeft: i === 0 ? 0 : 16, borderLeft: i === 0 ? 'none' : `1px solid ${D.border}` }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>{k}</div>
       <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: color || D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>
         {shown.toLocaleString()}
       </div>
+      {delta && (
+        <div style={{ fontSize: 10.5, fontFamily: 'var(--font-mono)', color: deltaColor, marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
+          {delta === 'new' ? '● new activity' : `${delta.pct > 0 ? '↑' : delta.pct < 0 ? '↓' : '●'} ${delta.pct > 0 ? '+' : ''}${delta.pct}% vs last month`}
+        </div>
+      )}
     </div>
   )
 }
 
 /* ── donut (vivid multi-hue palette) ──────────────────────── */
-function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: string; count: number }>; activeName?: string; onSliceClick?: (name: string) => void }) {
+function DonutChart({ data, activeName, onSliceClick, colorFor, emptyLabel = 'No category data' }: {
+  data: Array<{ name: string; count: number }>; activeName?: string; onSliceClick?: (name: string) => void
+  /** Override the default VIVID rainbow ramp — e.g. for a genuinely semantic
+     series (a real status: Completed/In Progress/Pending) where a fixed
+     meaning-to-color mapping reads better than an arbitrary categorical hue.
+     See the 2026-09-25 "Activity Status" changelog entry. */
+  colorFor?: (name: string, i: number) => string
+  emptyLabel?: string
+}) {
   const { colors: D } = useTheme()
   const [ready, setReady] = useState(false)
   const [hov, setHov] = useState<number | null>(null)
   useEffect(() => { const t = setTimeout(() => setReady(true), 180); return () => clearTimeout(t) }, [])
-  const RAMP = VIVID
   const total = data.reduce((s, d) => s + d.count, 0)
-  if (!total) return <EmptyState label="No category data" />
+  if (!total) return <EmptyState label={emptyLabel} />
   const r = 78, sw = 24, gap = 2, circ = 2 * Math.PI * r
   let cumLen = 0
   const segments = data.map((d, i) => {
     const len = (d.count / total) * (circ - data.length * gap)
-    const s = { ...d, offset: cumLen, len, color: RAMP[i % RAMP.length] }
+    const s = { ...d, offset: cumLen, len, color: colorFor ? colorFor(d.name, i) : VIVID[i % VIVID.length] }
     cumLen += len + gap
     return s
   })
@@ -650,6 +692,15 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
 
         <div>
           <span style={lbl}><FIconCalendar />Date Range</span>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            {DATE_PRESETS.map(p => (
+              <button key={p.key} onClick={() => onFilter('__date_range__', p.range().join(','))} style={{
+                flex: 1, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 7,
+                padding: '5px 4px', fontSize: 10.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em',
+                color: D.muted, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>{p.label}</button>
+            ))}
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input type="date" value={active.filterDateFrom || ''} onChange={e => onFilter('date_from', e.target.value)} style={field} />
             <input type="date" value={active.filterDateTo || ''} onChange={e => onFilter('date_to', e.target.value)} style={field} />
@@ -731,6 +782,34 @@ function DashboardPageInner() {
     fetch('/api/auth/me').then(r => r.json()).then(d => { if (d?.user?.first_name) setFirstName(d.user.first_name) }).catch(() => {})
   }, [])
 
+  // "vs last month" trend for the This Month KPI — reuses GET /api/dashboard
+  // itself (no new backend endpoint/RPC needed) with date_from/date_to
+  // overridden to last calendar month's real bounds, every other active
+  // filter preserved as-is. .summary.totalReports under that date window is
+  // exactly "last month's count under the current non-date filters", the
+  // correct comparison basis for reportsThisMonth (itself always anchored to
+  // the real current calendar month server-side, independent of any
+  // date_from/date_to the user has separately applied — see
+  // add_dashboard_rpcs.sql's `v_month` — so this comparison intentionally
+  // ignores the user's own date filter too, for the same reason). See the
+  // 2026-09-25 "trend deltas" changelog entry.
+  const [lastMonthCount, setLastMonthCount] = useState<number | null>(null)
+  const lastMonthReqIdRef = useRef(0)
+  useEffect(() => {
+    const reqId = ++lastMonthReqIdRef.current
+    const now = new Date()
+    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
+    const p = new URLSearchParams(searchParams.toString())
+    p.set('date_from', toDateStr(firstOfLastMonth))
+    p.set('date_to', toDateStr(lastOfLastMonth))
+    fetch(`/api/dashboard?${p.toString()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (reqId === lastMonthReqIdRef.current && d && !d.error) setLastMonthCount(d.summary?.totalReports ?? null) })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   // Two parallel fetches: /api/dashboard (core: KPIs + charts, clears the
   // skeleton) and /api/dashboard/extra (map points / media / calendar / recent
   // feed, merged in once it lands). See the 2026-09-08 changelog.
@@ -780,6 +859,9 @@ function DashboardPageInner() {
     } else if (key === '__ch_range__') {
       const [from, to] = val.split(',')
       p.set('ch_from', from); p.set('ch_to', to)
+    } else if (key === '__date_range__') {
+      const [from, to] = val.split(',')
+      p.set('date_from', from); p.set('date_to', to)
     } else if (val) {
       p.set(key, val)
     } else {
@@ -827,6 +909,10 @@ function DashboardPageInner() {
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const latestWeather = data?.recentReports.find(r => r.weather)?.weather
   const activeFilterCount = data ? Object.entries(data.activeFilters).filter(([, v]) => !!v).length : 0
+  const monthDelta: MiniDelta = !data || lastMonthCount === null ? null
+    : lastMonthCount === 0
+      ? (data.summary.reportsThisMonth > 0 ? 'new' : null)
+      : { pct: Math.round(((data.summary.reportsThisMonth - lastMonthCount) / lastMonthCount) * 100) }
 
   return (
     <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
@@ -877,7 +963,7 @@ function DashboardPageInner() {
             <Card title="Overview" sub="Current activity across every site" style={{ marginBottom: 16 }}>
               <div className="exec-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '18px 0' }}>
                 <Mini i={0} k="Total reports" value={data.summary.totalReports} color={VIVID[0]} />
-                <Mini i={1} k="This month" value={data.summary.reportsThisMonth} delay={60} color={VIVID[1]} />
+                <Mini i={1} k="This month" value={data.summary.reportsThisMonth} delay={60} color={VIVID[1]} delta={monthDelta} />
                 <Mini i={2} k="Active projects" value={data.summary.activeProjects} delay={120} color={VIVID[2]} />
                 <Mini i={3} k="Site photos" value={data.summary.totalPhotos} delay={180} color={VIVID[3]} />
                 <Mini i={4} k="Unique reporters" value={data.summary.uniqueReporters} delay={240} color={VIVID[5]} />
@@ -900,9 +986,10 @@ function DashboardPageInner() {
             </Reveal>
 
             <Reveal delay={60} style={{ marginBottom: 16 }}>
-              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14 }}>
+              <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '2fr 1.3fr 1.3fr', gap: 14 }}>
                 <Card title="Top Projects by Reports"><HBarChart data={data.byProject} activeName={data.activeFilters.filterProject} onBarClick={name => handleFilter('project', name)} /></Card>
                 <Card title="Weather Conditions" sub={data.unattributed?.byWeather ? `No weather recorded: ${data.unattributed.byWeather.toLocaleString()} not shown in ranking` : undefined}><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
+                <Card title="Activity Status"><DonutChart data={data.byStatus} colorFor={(name) => statusColor(name, D)} emptyLabel="No status data" /></Card>
               </div>
             </Reveal>
 
