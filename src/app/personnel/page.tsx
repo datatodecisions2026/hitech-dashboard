@@ -16,6 +16,14 @@ interface DashData {
   byEmployeeRole:    Array<{ name: string; count: number }>
   byEngineerParty:   Array<{ name: string; count: number }>
   bySupervisorParty: Array<{ name: string; count: number }>
+  // Both optional: added by scripts/sql/add_dashboard_personnel_trends.sql,
+  // which only adds new output keys (no new RPC parameter, so no
+  // signature-mismatch risk) — until it's applied, these are simply absent
+  // from the response, so every read below defaults with `?? []`/a length
+  // check and the two new cards show their own empty state instead of the
+  // page breaking. See the 2026-09-25 changelog.
+  personnelActivityByDay?: Array<{ date: string; employees: number; engineers: number; supervisors: number }>
+  engineerSupervisorCross?: Array<{ supervisor: string; total: number; engineers: Array<{ engineer: string; count: number }> }>
   employeeSummary:   { totalMentions: number; distinctEmployees: number }
   engineerSummary:   { totalMentions: number; distinctEngineers: number }
   supervisorSummary: { totalMentions: number; distinctSupervisors: number }
@@ -71,7 +79,14 @@ function Card({ children, title, note }: { children: React.ReactNode; title: str
       <div style={{ padding: '14px 16px 8px' }}>
         <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
       </div>
-      <div style={{ padding: '4px 16px 16px' }}>{children}</div>
+      {/* flex:1 + centered — only takes visible effect on a grid row that
+         actually stretches this card taller than its own content (this
+         page's existing personnel-grid rows keep alignItems:'start', so
+         they're unaffected; the new personnel-grid-2 row below uses default
+         stretch and relies on this). See the 2026-09-25 (8) machines-page
+         changelog entry for the full "equal sizes, no unnecessary spacing"
+         reasoning this reuses. */}
+      <div style={{ padding: '4px 16px 16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>{children}</div>
       {note && <div style={{ padding: '0 16px 12px', marginTop: -4, fontSize: 11, lineHeight: 1.4, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{note}</div>}
     </div>
   )
@@ -95,6 +110,155 @@ function KPICard({ label, value, icon, delay = 0, color }: { label: string; valu
       <div style={{ width: 26, height: 26, borderRadius: 7, background: color ? `${color}1c` : D.panel2, border: `1px solid ${color ? color + '38' : D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: color ?? D.muted, marginBottom: 10 }}>{icon}</div>
       <div style={{ fontFamily: 'var(--font-loader)', fontSize: 26, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}</div>
       <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+    </div>
+  )
+}
+
+/* ── personnel activity trend (3-series: employees/engineers/supervisors) ──
+   This page had zero time dimension anywhere before — every chart was a
+   plain ranked count. Adapted from /machines' single-series TimelineChart,
+   extended to 3 overlaid lines rather than one blended count, since the
+   three join tables aren't a normalized unit (a "mention" means a different
+   thing per table) — summing them would be a meaningless number. */
+function PersonnelTrendChart({ data }: { data: Array<{ date: string; employees: number; engineers: number; supervisors: number }> }) {
+  const { colors: D } = useTheme()
+  const [ready, setReady] = useState(false)
+  const [hov, setHov] = useState<number | null>(null)
+  useEffect(() => { const t = setTimeout(() => setReady(true), 300); return () => clearTimeout(t) }, [])
+  const series = [
+    { key: 'employees' as const, label: 'Employees', color: VIVID[0] },
+    { key: 'engineers' as const, label: 'Engineers', color: VIVID[1] },
+    { key: 'supervisors' as const, label: 'Supervisors', color: VIVID[2] },
+  ]
+  const maxVal = Math.max(...data.flatMap(d => [d.employees, d.engineers, d.supervisors]), 1)
+  const W = 720, H = 195, padL = 28, padB = 28, padR = 6, padT = 10
+  const chartW = W - padL - padR, chartH = H - padB - padT
+  const step = data.length > 1 ? chartW / (data.length - 1) : chartW
+  const gridLines = [0.25, 0.5, 0.75, 1].map(f => Math.round(f * maxVal))
+  const fmtD = (d: string) => { const dt = new Date(d); return `${dt.getDate()} ${dt.toLocaleString('en', { month: 'short' })}` }
+  const xFor = (i: number) => padL + i * step
+  const yFor = (v: number) => padT + chartH - (v / maxVal) * chartH
+  const pathFor = (key: 'employees' | 'engineers' | 'supervisors') =>
+    data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i)} ${yFor(d[key])}`).join(' ')
+  const hovDay = hov !== null ? data[hov] : null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+      <div style={{ width: '100%', overflowX: 'auto' }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', minWidth: 320 }} onMouseLeave={() => setHov(null)}>
+          {gridLines.map((v, gi) => { const y = yFor(v); return <g key={gi}><line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} /><text x={padL - 4} y={y + 3} textAnchor="end" fill={D.sub} fontSize="7" fontFamily="var(--font-mono)">{v}</text></g> })}
+          <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={D.border} strokeWidth={1} />
+          {series.map(s => (
+            <path key={s.key} d={pathFor(s.key)} fill="none" stroke={s.color} strokeWidth={1.6}
+              style={{ opacity: ready ? 1 : 0, transition: `opacity 0.6s ${EASE}` }} />
+          ))}
+          {data.map((d, i) => (
+            <rect key={i} x={Math.max(padL, xFor(i) - step / 2)} y={padT} width={step} height={chartH} fill="transparent" onMouseEnter={() => setHov(i)} />
+          ))}
+          {hov !== null && (() => {
+            const x = xFor(hov)
+            return <g>
+              <line x1={x} y1={padT} x2={x} y2={padT + chartH} stroke={D.border} strokeWidth={1} strokeDasharray="2 2" />
+              {series.map(s => <circle key={s.key} cx={x} cy={yFor(data[hov][s.key])} r={2.8} fill={s.color} stroke={D.panel} strokeWidth={1} />)}
+            </g>
+          })()}
+          {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={xFor(i)} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="7.5" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
+        </svg>
+      </div>
+      <div style={{ minHeight: 15, fontSize: 11, color: D.muted, fontFamily: 'var(--font-mono)' }}>
+        {hovDay ? `${fmtD(hovDay.date)} — ${series.map(s => `${s.label} ${hovDay[s.key]}`).join(' · ')}` : ' '}
+      </div>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        {series.map(s => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: D.muted }}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── engineer × supervisor cross-reference ────────────────────────────────
+   Same "stacked bars per primary entity, segmented by counterpart" shape as
+   /machines' Driver × Machine, adapted to a genuinely different question:
+   which supervisor's reports are staffed by which engineers. Checked the
+   real data before building (not assumed the same lopsided shape /machines
+   had) — supervisors here are fairly evenly spread and engineers only have a
+   mild 2:1 lead, nowhere near the 10:1 skew one dominant driver had, so this
+   was expected to render cleanly without heavy caps — capped defensively
+   anyway (row cap + legend cap), for robustness against future data. */
+const ES_SHOW_LIMIT = 6
+const ES_LEGEND_SHOW_LIMIT = 8
+
+function EngineerSupervisorBars({ data }: { data: Array<{ supervisor: string; total: number; engineers: Array<{ engineer: string; count: number }> }> }) {
+  const { colors: D } = useTheme()
+  const [ready, setReady] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setReady(true), 250); return () => clearTimeout(t) }, [])
+  // Guards against a not-yet-migrated response shape the same way
+  // DriverMachineBars does on /machines — filters down to empty (not a
+  // crash) if `engineers` isn't a real array.
+  const rows = data.filter(d => Array.isArray(d.engineers) && d.engineers.length > 0)
+  if (!rows.length) return <EmptyState label="No engineer–supervisor pairs recorded yet" />
+  const maxTotal = Math.max(...rows.map(d => d.total), 1)
+  const visible = expanded ? rows : rows.slice(0, ES_SHOW_LIMIT)
+
+  const engineerTotals = new Map<string, number>()
+  for (const d of rows) for (const e of d.engineers) {
+    if (e.engineer === 'Other') continue
+    engineerTotals.set(e.engineer, (engineerTotals.get(e.engineer) ?? 0) + e.count)
+  }
+  const rankedEngineers = [...engineerTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name)
+  const colorFor = (name: string) => name === 'Other' ? `${D.muted}77` : VIVID[rankedEngineers.indexOf(name) % VIVID.length]
+
+  const presentEngineers = new Set<string>()
+  for (const d of visible) for (const e of d.engineers) presentEngineers.add(e.engineer)
+  const legendFull = rankedEngineers.filter(e => presentEngineers.has(e))
+  if (presentEngineers.has('Other')) legendFull.push('Other')
+  const legend = legendFull.slice(0, ES_LEGEND_SHOW_LIMIT)
+  const legendHiddenCount = legendFull.length - legend.length
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {visible.map((d, i) => {
+          const widthPct = Math.max((d.total / maxTotal) * 100, 4)
+          return (
+            <div key={d.supervisor} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 128, fontSize: 12, color: D.text, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 }} title={d.supervisor}>{d.supervisor}</span>
+              <div style={{ flex: 1, display: 'flex', height: 16, borderRadius: 5, overflow: 'hidden', background: D.panel2 }}>
+                <div style={{ display: 'flex', width: ready ? `${widthPct}%` : '0%', height: '100%', transition: `width 0.8s ${EASE} ${i * 0.04}s` }}>
+                  {d.engineers.map((e, ei) => (
+                    <div key={e.engineer} title={`${e.engineer}: ${e.count}`}
+                      style={{ width: `${(e.count / d.total) * 100}%`, height: '100%', background: colorFor(e.engineer), borderRight: ei < d.engineers.length - 1 ? `1px solid ${D.panel}` : 'none' }} />
+                  ))}
+                </div>
+              </div>
+              <span style={{ width: 44, textAlign: 'right', fontSize: 12, color: D.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{d.total.toLocaleString()}</span>
+            </div>
+          )
+        })}
+        {rows.length > ES_SHOW_LIMIT && (
+          <button onClick={() => setExpanded(v => !v)} style={{
+            alignSelf: 'flex-start', marginTop: 2, background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+            fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em', color: D.amber,
+          }}>
+            {expanded ? '↑ Show less' : `↓ Show all ${rows.length}`}
+          </button>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', paddingTop: 10, borderTop: `1px solid ${D.border}` }}>
+        {legend.map(e => (
+          <div key={e} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: colorFor(e), flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: D.muted }}>{e}</span>
+          </div>
+        ))}
+        {legendHiddenCount > 0 && (
+          <span style={{ fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)' }} title="Hover a bar segment to see its engineer and count">+{legendHiddenCount} more</span>
+        )}
+      </div>
     </div>
   )
 }
@@ -413,7 +577,7 @@ function PersonnelHistory() {
   const events = (payload?.history ?? []).filter(h => h.employeeId === activeId)
 
   return (
-    <Card title="Personnel History" note="Audit trail for the HR staff roster — role, status, project & section changes. Separate from activity-report mentions above.">
+    <Card title="Personnel History" note="Audit trail for the HR staff roster — role, status, project & section changes. This is a different population from the Employees/Engineers/Supervisors charts above: those rank names typed into field activity reports, this lists the HR-managed staff directory, and the two lists barely overlap in practice — a name here usually won't show any activity above, and vice versa.">
       {state === 'loading' && (
         <div style={{ display: 'flex', gap: 12, minHeight: 200 }}>
           <Skel h={200} /><div style={{ flex: 1 }}><Skel h={200} /></div>
@@ -689,6 +853,19 @@ function PersonnelPageInner() {
             </Reveal>
 
             <Reveal delay={160} style={{ marginTop: 14 }}>
+              <div className="personnel-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+                <Card title="Personnel Activity Trend" note="Mentions per day, by role · last 30 days">
+                  {(data.personnelActivityByDay?.length ?? 0) > 0
+                    ? <PersonnelTrendChart data={data.personnelActivityByDay!} />
+                    : <EmptyState label="No day-by-day personnel activity yet" />}
+                </Card>
+                <Card title="Engineer × Supervisor" note="Top 10 supervisors, segmented by engineer staffed">
+                  <EngineerSupervisorBars data={data.engineerSupervisorCross ?? []} />
+                </Card>
+              </div>
+            </Reveal>
+
+            <Reveal delay={200} style={{ marginTop: 14 }}>
               <PersonnelHistory />
             </Reveal>
           </div>
