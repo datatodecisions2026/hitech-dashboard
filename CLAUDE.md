@@ -684,6 +684,14 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-09-28 (3) — `/personnel`: removed the Personnel History card's explanatory note
+
+**Files changed:** `src/app/personnel/page.tsx`
+
+**What changed:** direct instruction — the `note` prop added to the "Personnel History" `Card` in the (2) entry above (explaining the roster is a different, barely-overlapping population from the Employees/Engineers/Supervisors charts, plus "click a name for its change timeline") was removed outright, not shortened. `tsc --noEmit` and `next build` both clean; a one-line prop removal with no logic change, not re-verified live in a browser this pass.
+
+**Why:** Direct user instruction to remove it. The underlying fact it stated (near-zero name overlap between the two populations, documented in the 2026-09-08 (6) and 2026-09-25 (2) entries) is still true and still noted in CLAUDE.md/the route docs for `GET /api/personnel-history` — only the on-page UI disclosure was removed, not the underlying documentation.
+
 ### 2026-09-28 (2) — `/personnel`: Personnel History is now a full-width roster grid with a click-to-open popup timeline, replacing the side-by-side roster/timeline panes from the (1) entry below
 
 **Files changed:** `src/app/personnel/page.tsx`

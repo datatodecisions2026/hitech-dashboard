@@ -651,7 +651,7 @@ function PersonnelHistory() {
   const modalEvents = modalId != null ? (payload?.history ?? []).filter(h => h.employeeId === modalId) : []
 
   return (
-    <Card title="Personnel History" note="Audit trail for the HR staff roster — role, status, project & section changes. This is a different population from the Employees/Engineers/Supervisors charts above: those rank names typed into field activity reports, this lists the HR-managed staff directory, and the two lists barely overlap in practice — a name here usually won't show any activity above, and vice versa. Click a name for its change timeline.">
+    <Card title="Personnel History">
       {state === 'loading' && (
         <div className="phist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
           {[0, 1, 2, 3].map(i => <Skel key={i} h={64} />)}
