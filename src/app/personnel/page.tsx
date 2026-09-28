@@ -538,11 +538,86 @@ function ChangeValue({ v }: { v: string | null }) {
   return <span>{v}</span>
 }
 
+// A dedicated side-by-side timeline pane only worked at full-width desktop —
+// on a narrower card it either got cramped or needed its own height-matching
+// machinery (the earlier 2026-09-28 roster/timeline fix, now superseded by
+// this). A popup opened on click reuses the same timeline content but scales
+// to whatever it needs without fighting a fixed pane width, and the roster
+// itself gets to be a plain, full-width grid — better use of the space this
+// section actually has. See the 2026-09-28 (2) changelog entry.
+function PersonnelHistoryModal({ employee, events, onClose }: { employee: RosterEmployee; events: HistoryEvent[]; onClose: () => void }) {
+  const { colors: D, shadows: SH } = useTheme()
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, animation: `fadeIn 0.15s ${EASE}` }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+        background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.cardLg,
+        animation: `fadeIn 0.2s ${EASE}`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '16px 18px 14px', borderBottom: `1px solid ${D.border}`, flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: D.text }}>{employee.name}</div>
+            <div style={{ fontSize: 11.5, color: D.muted, marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {employee.removed
+                ? <span style={{ color: D.sub }}>Removed from roster — history retained</span>
+                : <>
+                    <span>{employee.role}</span>
+                    {employee.projectName && <span>· {employee.projectName}</span>}
+                    {employee.sectionName && <span>· {employee.sectionName}</span>}
+                    {employee.dateAdded && <span>· added {employee.dateAdded}</span>}
+                  </>}
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ flexShrink: 0, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, border: `1px solid ${D.border}`, background: D.panel2, color: D.muted, cursor: 'pointer' }}>
+            <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
+          </button>
+        </div>
+        <div style={{ padding: '16px 18px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          {events.length === 0 ? (
+            <EmptyState label="No recorded changes for this employee" />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {events.map((ev, i) => {
+                const dot = ev.kind === 'status' ? D.amber : D.muted
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: i === events.length - 1 ? 0 : 14 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, paddingTop: 3 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: dot, border: `2px solid ${D.panel}`, boxShadow: `0 0 0 1px ${dot}55` }} />
+                      {i !== events.length - 1 && <span style={{ flex: 1, width: 1, background: D.border, marginTop: 3 }} />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingBottom: 2 }}>
+                      <div style={{ fontSize: 12.5, color: D.text, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: D.muted, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 5, padding: '1px 6px' }}>{fieldLabel(ev.field)}</span>
+                        <span style={{ color: D.muted }}><ChangeValue v={ev.oldValue} /></span>
+                        <span style={{ color: D.sub }}>→</span>
+                        <span style={{ fontWeight: 600 }}><ChangeValue v={ev.newValue} /></span>
+                      </div>
+                      <div style={{ fontSize: 11, color: D.sub, marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                        by {ev.changedBy} · {fmtWhen(ev.changedAt)}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PersonnelHistory() {
   const { colors: D } = useTheme()
   const [payload, setPayload] = useState<HistoryPayload | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [modalId, setModalId] = useState<number | null>(null)
 
   useEffect(() => {
     let live = true
@@ -572,106 +647,47 @@ function PersonnelHistory() {
     return a.name.localeCompare(b.name)
   })
 
-  const activeId = selectedId ?? roster[0]?.id ?? null
-  const selected = roster.find(e => e.id === activeId) ?? null
-  const events = (payload?.history ?? []).filter(h => h.employeeId === activeId)
+  const modalEmployee = modalId != null ? roster.find(e => e.id === modalId) ?? null : null
+  const modalEvents = modalId != null ? (payload?.history ?? []).filter(h => h.employeeId === modalId) : []
 
   return (
-    <Card title="Personnel History" note="Audit trail for the HR staff roster — role, status, project & section changes. This is a different population from the Employees/Engineers/Supervisors charts above: those rank names typed into field activity reports, this lists the HR-managed staff directory, and the two lists barely overlap in practice — a name here usually won't show any activity above, and vice versa.">
+    <Card title="Personnel History" note="Audit trail for the HR staff roster — role, status, project & section changes. This is a different population from the Employees/Engineers/Supervisors charts above: those rank names typed into field activity reports, this lists the HR-managed staff directory, and the two lists barely overlap in practice — a name here usually won't show any activity above, and vice versa. Click a name for its change timeline.">
       {state === 'loading' && (
-        <div style={{ display: 'flex', gap: 12, minHeight: 200 }}>
-          <Skel h={200} /><div style={{ flex: 1 }}><Skel h={200} /></div>
+        <div className="phist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
+          {[0, 1, 2, 3].map(i => <Skel key={i} h={64} />)}
         </div>
       )}
       {state === 'error' && <EmptyState label="Couldn't load personnel history" />}
       {state === 'ready' && roster.length === 0 && <EmptyState label="No staff records found" />}
-      {/* Fixed height on the row itself, not on each panel independently —
-         the roster was previously capped at a flat maxHeight:420 while the
-         timeline column had its own separate 420 cap on JUST the events
-         list, sitting below a header block with no equivalent height on
-         the roster side, so the timeline's real total was taller than the
-         roster's and the two never actually lined up. Both panels now fill
-         this shared 460px row via flex:1 + minHeight:0 (see below), so
-         they're genuinely equal-height regardless of content length. */}
       {state === 'ready' && roster.length > 0 && (
-        <div className="phist-layout" style={{ display: 'flex', gap: 16, alignItems: 'stretch', height: 460 }}>
-          {/* roster */}
-          <div className="phist-roster" style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
-            {roster.map(e => {
-              const isActive = e.id === activeId
-              const n = (payload?.history.filter(h => h.employeeId === e.id).length) ?? 0
-              return (
-                <button key={e.id} onClick={() => setSelectedId(e.id)}
-                  style={{
-                    textAlign: 'left', font: 'inherit', cursor: 'pointer', borderRadius: 8,
-                    padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 5,
-                    background: isActive ? D.panel2 : 'transparent',
-                    border: `1px solid ${isActive ? `${D.amber}44` : D.border}`,
-                    borderLeft: `2px solid ${isActive ? D.amber : 'transparent'}`,
-                    transition: `background 0.15s ${EASE}, border-color 0.15s ${EASE}`,
-                  }}>
-                  <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: isActive ? D.text : D.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</span>
-                    <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: n ? D.amber : D.sub, flexShrink: 0 }}>{n} {n === 1 ? 'change' : 'changes'}</span>
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {e.removed
-                      ? <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textTransform: 'uppercase', color: D.sub, border: `1px solid ${D.border}`, borderRadius: 5, padding: '0 5px' }}>removed from roster</span>
-                      : <><span style={{ fontSize: 11, color: D.sub }}>{e.role}</span><StatusPill status={e.status} /></>}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* timeline */}
-          <div className="phist-timeline" style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${D.border}`, paddingLeft: 16, height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {selected && (
-              <div style={{ marginBottom: 12, flexShrink: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: D.text }}>{selected.name}</div>
-                <div style={{ fontSize: 11.5, color: D.muted, marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {selected.removed
-                    ? <span style={{ color: D.sub }}>Removed from roster — history retained</span>
-                    : <>
-                        <span>{selected.role}</span>
-                        {selected.projectName && <span>· {selected.projectName}</span>}
-                        {selected.sectionName && <span>· {selected.sectionName}</span>}
-                        {selected.dateAdded && <span>· added {selected.dateAdded}</span>}
-                      </>}
-                </div>
-              </div>
-            )}
-            {events.length === 0 ? (
-              <EmptyState label="No recorded changes for this employee" />
-            ) : (
-              <div className="phist-events" style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, minHeight: 0, overflowY: 'auto' }}>
-                {events.map((ev, i) => {
-                  const dot = ev.kind === 'status' ? D.amber : D.muted
-                  return (
-                    <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: i === events.length - 1 ? 0 : 14 }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, paddingTop: 3 }}>
-                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: dot, border: `2px solid ${D.panel}`, boxShadow: `0 0 0 1px ${dot}55` }} />
-                        {i !== events.length - 1 && <span style={{ flex: 1, width: 1, background: D.border, marginTop: 3 }} />}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0, paddingBottom: 2 }}>
-                        <div style={{ fontSize: 12.5, color: D.text, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: D.muted, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 5, padding: '1px 6px' }}>{fieldLabel(ev.field)}</span>
-                          <span style={{ color: D.muted }}><ChangeValue v={ev.oldValue} /></span>
-                          <span style={{ color: D.sub }}>→</span>
-                          <span style={{ fontWeight: 600 }}><ChangeValue v={ev.newValue} /></span>
-                        </div>
-                        <div style={{ fontSize: 11, color: D.sub, marginTop: 4, fontFamily: 'var(--font-mono)' }}>
-                          by {ev.changedBy} · {fmtWhen(ev.changedAt)}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+        <div className="phist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
+          {roster.map(e => {
+            const n = (payload?.history.filter(h => h.employeeId === e.id).length) ?? 0
+            return (
+              <button key={e.id} onClick={() => setModalId(e.id)}
+                style={{
+                  textAlign: 'left', font: 'inherit', cursor: 'pointer', borderRadius: 8,
+                  padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6,
+                  background: D.panel2, border: `1px solid ${D.border}`,
+                  transition: `border-color 0.15s ${EASE}, transform 0.15s ${EASE}`,
+                }}
+                onMouseEnter={ev => { (ev.currentTarget as HTMLButtonElement).style.borderColor = `${D.amber}55`; (ev.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
+                onMouseLeave={ev => { (ev.currentTarget as HTMLButtonElement).style.borderColor = D.border; (ev.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)' }}>
+                <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: D.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</span>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: n ? D.amber : D.sub, flexShrink: 0 }}>{n} {n === 1 ? 'change' : 'changes'}</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {e.removed
+                    ? <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textTransform: 'uppercase', color: D.sub, border: `1px solid ${D.border}`, borderRadius: 5, padding: '0 5px' }}>removed from roster</span>
+                    : <><span style={{ fontSize: 11, color: D.sub }}>{e.role}</span><StatusPill status={e.status} /></>}
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
+      {modalEmployee && <PersonnelHistoryModal employee={modalEmployee} events={modalEvents} onClose={() => setModalId(null)} />}
     </Card>
   )
 }
@@ -903,21 +919,6 @@ function PersonnelPageInner() {
         @media (max-width: 640px)  {
           .kpi-grid { grid-template-columns: repeat(1,1fr) !important; }
           .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; }
-        }
-        .phist-roster::-webkit-scrollbar, .phist-timeline div::-webkit-scrollbar { width: 6px; }
-        .phist-roster::-webkit-scrollbar-thumb, .phist-timeline div::-webkit-scrollbar-thumb { background:${D.border}; border-radius:3px; }
-        @media (max-width: 760px) {
-          /* Stacked layout doesn't share one fixed height between the two
-             panels the way the side-by-side desktop layout does — reset it
-             back to auto so roster/timeline each just take the height their
-             own (independently re-capped) content needs. */
-          .phist-layout { flex-direction: column !important; height: auto !important; }
-          .phist-roster { width: 100% !important; height: auto !important; max-height: 260px !important; }
-          .phist-timeline { height: auto !important; border-left: none !important; padding-left: 0 !important; border-top: 1px solid ${D.border} !important; padding-top: 14px !important; }
-          /* flex:1 has nothing definite to grow into once .phist-timeline
-             goes back to height:auto here — restore an explicit cap so a
-             long history still scrolls instead of growing unbounded. */
-          .phist-events { flex: none !important; max-height: 320px !important; }
         }
       `}</style>
     </div>
