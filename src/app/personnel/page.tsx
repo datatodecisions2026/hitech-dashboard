@@ -585,10 +585,18 @@ function PersonnelHistory() {
       )}
       {state === 'error' && <EmptyState label="Couldn't load personnel history" />}
       {state === 'ready' && roster.length === 0 && <EmptyState label="No staff records found" />}
+      {/* Fixed height on the row itself, not on each panel independently —
+         the roster was previously capped at a flat maxHeight:420 while the
+         timeline column had its own separate 420 cap on JUST the events
+         list, sitting below a header block with no equivalent height on
+         the roster side, so the timeline's real total was taller than the
+         roster's and the two never actually lined up. Both panels now fill
+         this shared 460px row via flex:1 + minHeight:0 (see below), so
+         they're genuinely equal-height regardless of content length. */}
       {state === 'ready' && roster.length > 0 && (
-        <div className="phist-layout" style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+        <div className="phist-layout" style={{ display: 'flex', gap: 16, alignItems: 'stretch', height: 460 }}>
           {/* roster */}
-          <div className="phist-roster" style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+          <div className="phist-roster" style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, height: '100%', overflowY: 'auto', paddingRight: 4 }}>
             {roster.map(e => {
               const isActive = e.id === activeId
               const n = (payload?.history.filter(h => h.employeeId === e.id).length) ?? 0
@@ -617,9 +625,9 @@ function PersonnelHistory() {
           </div>
 
           {/* timeline */}
-          <div className="phist-timeline" style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${D.border}`, paddingLeft: 16 }}>
+          <div className="phist-timeline" style={{ flex: 1, minWidth: 0, borderLeft: `1px solid ${D.border}`, paddingLeft: 16, height: '100%', display: 'flex', flexDirection: 'column' }}>
             {selected && (
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 12, flexShrink: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: D.text }}>{selected.name}</div>
                 <div style={{ fontSize: 11.5, color: D.muted, marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {selected.removed
@@ -636,7 +644,7 @@ function PersonnelHistory() {
             {events.length === 0 ? (
               <EmptyState label="No recorded changes for this employee" />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: 420, overflowY: 'auto' }}>
+              <div className="phist-events" style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 {events.map((ev, i) => {
                   const dot = ev.kind === 'status' ? D.amber : D.muted
                   return (
@@ -762,7 +770,16 @@ function PersonnelPageInner() {
   }
 
   const totalMentions = (data?.employeeSummary?.totalMentions ?? 0) + (data?.engineerSummary?.totalMentions ?? 0) + (data?.supervisorSummary?.totalMentions ?? 0)
-  const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, alignItems: 'start' }
+  // Default grid stretch (no alignItems override) — matches /machines' 2026-09-25
+  // (8) "equal sizes, no unnecessary spacing" fix and the personnel-grid-2 row
+  // below, which already used stretch from the start. Rows 1-3 previously used
+  // 'start' (their own natural content height, capped at 8 rows/donut size —
+  // see the 2026-09-24 (7)/(8)/(9) entries), which was a reasonable earlier
+  // attempt but still left real gaps between a short donut and a tall ranked
+  // list; Card's body already centers extra room (flex:1 + justifyContent:
+  // 'center'), so switching to stretch here is now safe and gives genuinely
+  // equal card heights instead of just a smaller mismatch.
+  const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }
   const activeFilterCount = data ? Object.entries(data.activeFilters).filter(([, v]) => !!v).length : 0
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -890,9 +907,17 @@ function PersonnelPageInner() {
         .phist-roster::-webkit-scrollbar, .phist-timeline div::-webkit-scrollbar { width: 6px; }
         .phist-roster::-webkit-scrollbar-thumb, .phist-timeline div::-webkit-scrollbar-thumb { background:${D.border}; border-radius:3px; }
         @media (max-width: 760px) {
-          .phist-layout { flex-direction: column !important; }
-          .phist-roster { width: 100% !important; max-height: 260px !important; }
-          .phist-timeline { border-left: none !important; padding-left: 0 !important; border-top: 1px solid ${D.border} !important; padding-top: 14px !important; }
+          /* Stacked layout doesn't share one fixed height between the two
+             panels the way the side-by-side desktop layout does — reset it
+             back to auto so roster/timeline each just take the height their
+             own (independently re-capped) content needs. */
+          .phist-layout { flex-direction: column !important; height: auto !important; }
+          .phist-roster { width: 100% !important; height: auto !important; max-height: 260px !important; }
+          .phist-timeline { height: auto !important; border-left: none !important; padding-left: 0 !important; border-top: 1px solid ${D.border} !important; padding-top: 14px !important; }
+          /* flex:1 has nothing definite to grow into once .phist-timeline
+             goes back to height:auto here — restore an explicit cap so a
+             long history still scrolls instead of growing unbounded. */
+          .phist-events { flex: none !important; max-height: 320px !important; }
         }
       `}</style>
     </div>
