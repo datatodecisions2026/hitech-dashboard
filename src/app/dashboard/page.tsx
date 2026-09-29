@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme, type ColorTokens } from '@/lib/theme'
 import { useMapView } from '@/lib/map-view'
-import { VIVID } from '@/lib/theme-constants'
+import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 import { HeroBanner, WEATHER_ICON } from '@/components/HeroBanner'
 
 /* ── motion ────────────────────────────────────────────────── */
@@ -129,7 +129,7 @@ function Card({ children, title, sub, action, style: st, bodyPad = true }: { chi
       {title && (
         <div style={{ padding: '14px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: '-0.02em', color: D.text }}>{title}</h3>
+            <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
             {sub && <div style={{ fontSize: 12, color: D.muted, marginTop: 2, fontFamily: 'var(--font-body)', letterSpacing: 0 }}>{sub}</div>}
           </div>
           {action}
@@ -170,8 +170,8 @@ function Mini({ k, value, delay = 0, i = 0, color, delta }: { k: string; value: 
   const deltaColor = delta === 'new' || (delta && delta.pct > 0) ? D.green : delta && delta.pct < 0 ? D.red : D.muted
   return (
     <div className="mini-cell" style={{ paddingLeft: i === 0 ? 0 : 16, borderLeft: i === 0 ? 'none' : `1px solid ${D.border}` }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>{k}</div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: color || D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted }}>{k}</div>
+      <div style={{ ...TYPE_SCALE.heroKpi, color: color || D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
         {shown.toLocaleString()}
       </div>
       {delta && (
@@ -224,12 +224,12 @@ function DonutChart({ data, activeName, onSliceClick, colorFor, emptyLabel = 'No
             onMouseEnter={() => setHov(i)} onClick={() => handleClick(seg.name)} />
         })}
         {hovSeg ? (<>
-          <text x="0" y="-12" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="22" fontWeight="600">{hovSeg.count}</text>
+          <text x="0" y="-12" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="22" fontWeight="700">{hovSeg.count}</text>
           <text x="0" y="5" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9">{Math.round(hovSeg.count / total * 100)}%</text>
-          <text x="0" y="19" textAnchor="middle" fill={D.sub} fontFamily="var(--font-mono)" fontSize="7.5">{hovSeg.name.length > 15 ? hovSeg.name.slice(0, 14) + '…' : hovSeg.name}</text>
+          <text x="0" y="20" textAnchor="middle" fill={D.sub} fontFamily="var(--font-mono)" fontSize="9">{hovSeg.name.length > 15 ? hovSeg.name.slice(0, 14) + '…' : hovSeg.name}</text>
         </>) : (<>
-          <text x="0" y="-4" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="26" fontWeight="600">{total}</text>
-          <text x="0" y="14" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1.5">TOTAL</text>
+          <text x="0" y="-4" textAnchor="middle" fill={D.text} fontFamily="var(--font-display)" fontSize="22" fontWeight="700" letterSpacing="-0.4">{total}</text>
+          <text x="0" y="14" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9" letterSpacing="1.5">TOTAL</text>
         </>)}
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 150 }}>
@@ -265,8 +265,8 @@ function RingStat({ label, pct, color }: { label: string; pct: number; color: st
         <circle r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
           strokeDasharray={circ} strokeDashoffset={offset} transform="rotate(-90)"
           style={{ transition: `stroke-dashoffset 1s ${EASE}` }} />
-        <text x="0" y="0" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="24" fontWeight="600">{pct}%</text>
-        <text x="0" y="18" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="7.5" letterSpacing="1">{label.toUpperCase()}</text>
+        <text x="0" y="0" textAnchor="middle" fill={D.text} fontFamily="var(--font-display)" fontSize="22" fontWeight="700" letterSpacing="-0.4">{pct}%</text>
+        <text x="0" y="18" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9" letterSpacing="1">{label.toUpperCase()}</text>
       </svg>
     </div>
   )
@@ -288,7 +288,7 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', minWidth: 320 }}>
-        {gridLines.map((v, gi) => { const y = padT + chartH - (v / maxVal) * chartH; return <g key={gi}><line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} /><text x={padL - 4} y={y + 3} textAnchor="end" fill={D.sub} fontSize="7" fontFamily="var(--font-mono)">{v}</text></g> })}
+        {gridLines.map((v, gi) => { const y = padT + chartH - (v / maxVal) * chartH; return <g key={gi}><line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} /><text x={padL - 4} y={y + 3} textAnchor="end" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{v}</text></g> })}
         <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={D.border} strokeWidth={1} />
         {data.map((d, i) => {
           const barH = (d.count / maxVal) * chartH
@@ -300,17 +300,17 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
               <rect x={x} y={ready ? y : padT + chartH} width={barW} height={ready ? barH : 0} fill={isHov ? VIVID[1] : `${VIVID[1]}cc`} rx={1.5}
                 style={{ transition: `y 0.5s ${EASE} ${i * 0.006}s, height 0.5s ${EASE} ${i * 0.006}s, fill 0.15s` }} />
               {isHov && d.count > 0 && (() => {
-                const tx = Math.min(Math.max(x - 22, padL), W - padR - 70)
-                const ty = Math.max(padT + 2, y - 26)
+                const tx = Math.min(Math.max(x - 26, padL), W - padR - 82)
+                const ty = Math.max(padT + 2, y - 27)
                 return <g>
-                  <rect x={tx} y={ty} width={70} height={19} rx={4} fill={D.panel} stroke={D.border} strokeWidth={1} />
-                  <text x={tx + 35} y={ty + 13} textAnchor="middle" fill={D.text} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}: {d.count}</text>
+                  <rect x={tx} y={ty} width={82} height={20} rx={4} fill={D.panel} stroke={D.border} strokeWidth={1} />
+                  <text x={tx + 41} y={ty + 13.5} textAnchor="middle" fill={D.text} fontSize="11" fontFamily="var(--font-mono)">{fmtD(d.date)}: {d.count}</text>
                 </g>
               })()}
             </g>
           )
         })}
-        {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={padL + i * step + step / 2} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="7.5" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
+        {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={padL + i * step + step / 2} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
       </svg>
     </div>
   )
@@ -662,7 +662,12 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
   const activeFilterCount = Object.entries(data.activeFilters).filter(([, v]) => !!v).length
 
   const field: React.CSSProperties = { font: 'inherit', color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 9, padding: '9px 11px', fontSize: 12.5, outline: 'none', width: '100%', transition: `border-color 0.15s ${EASE}` }
-  const lbl: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: D.muted, marginBottom: 6 }
+  // Deliberately its own mono styling, not TYPE_SCALE.microLabel — that
+  // token was reclassified to the display face for KPI titles specifically
+  // (2026-09-29 user follow-up); a filter field's caption is a form label,
+  // not a KPI title, and keeping it on mono avoids the quirkier display
+  // face bleeding into a dense list of short field captions unasked.
+  const lbl: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 6 }
   const row = (icon: React.ReactNode, l: string, el: React.ReactNode) => <div key={l}><span style={lbl}>{icon}{l}</span>{el}</div>
 
   return (
@@ -968,8 +973,8 @@ function DashboardPageInner() {
                 <Mini i={3} k="Site photos" value={data.summary.totalPhotos} delay={180} color={VIVID[3]} />
                 <Mini i={4} k="Unique reporters" value={data.summary.uniqueReporters} delay={240} color={VIVID[5]} />
                 <div className="mini-cell" style={{ paddingLeft: 16, borderLeft: `1px solid ${D.border}` }}>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: D.muted }}>Completion</div>
-                  <div style={{ fontFamily: 'var(--font-loader)', fontSize: 27, fontWeight: 600, letterSpacing: '-0.03em', color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4, lineHeight: 1.05 }}>{data.summary.completionRate}%</div>
+                  <div style={{ ...TYPE_SCALE.microLabel, color: D.muted }}>Completion</div>
+                  <div style={{ ...TYPE_SCALE.heroKpi, color: D.text, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>{data.summary.completionRate}%</div>
                   <div style={{ marginTop: 8, height: 4, borderRadius: 3, background: D.panel2, overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, data.summary.completionRate))}%`, background: D.green, borderRadius: 3, transition: `width 0.9s ${EASE}` }} />
                   </div>

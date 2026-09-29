@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
-import { VIVID } from '@/lib/theme-constants'
+import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
@@ -139,7 +139,7 @@ function Panel({ children, title, style: st }: { children: React.ReactNode; titl
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
       <div style={{ padding: '14px 16px 8px' }}>
-        <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
+        <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
       </div>
       <div style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>{children}</div>
     </div>
@@ -154,8 +154,8 @@ function KPICard({ label, value, color, icon, suffix = '', delay = 0 }: { label:
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
       <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}>{icon}</div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 24, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
-      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      <div style={{ ...TYPE_SCALE.heroKpi, color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
     </div>
   )
 }
@@ -170,8 +170,8 @@ function StatCard({ label, value, color, icon, delay = 0, tag }: { label: string
         <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted }}>{icon}</div>
         {tag && <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: D.sub, background: D.panel2, border: `1px solid ${D.border}`, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{tag}</span>}
       </div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 19, fontWeight: 600, color: color, lineHeight: 1.1, letterSpacing: '-0.01em' }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      <div style={{ ...TYPE_SCALE.statNumber, fontSize: 19, color: color, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
     </div>
   )
 }
@@ -301,8 +301,8 @@ function Gauge({ value, label, color, delay = 0 }: { value: number; label: strin
         <circle r={r} fill="none" stroke={D.panel2} strokeWidth={sw} strokeDasharray={`${arcLen} ${circ}`} strokeLinecap="round" transform={`rotate(${rotateStart})`} />
         <circle r={r} fill="none" stroke={color} strokeWidth={sw} strokeDasharray={`${ready ? valueLen : 0} ${circ}`} strokeLinecap="round" transform={`rotate(${rotateStart})`}
           style={{ transition: `stroke-dasharray 1.1s ${EASE}` }} />
-        <text x="0" y="0" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="24" fontWeight="600">{value.toFixed(0)}%</text>
-        <text x="0" y="18" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1">{label.toUpperCase()}</text>
+        <text x="0" y="0" textAnchor="middle" fill={D.text} fontFamily="var(--font-display)" fontSize="22" fontWeight="700" letterSpacing="-0.4">{value.toFixed(0)}%</text>
+        <text x="0" y="18" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9" letterSpacing="1">{label.toUpperCase()}</text>
       </svg>
     </div>
   )
@@ -486,7 +486,7 @@ function TimelineChart({ points, granularity }: { points: TimelinePoint[]; granu
         {gapAreaD && <path d={gapAreaD} fill={D.red} opacity={ready ? 0.08 : 0} style={{ transition: `opacity 0.8s ${EASE}` }} />}
 
         {todayX != null && <line x1={todayX} y1={padT} x2={todayX} y2={padT + chartH} stroke={D.muted} strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />}
-        {todayX != null && <text x={todayX} y={padT - 8} textAnchor="middle" fill={D.muted} fontSize="8" fontFamily="var(--font-mono)" opacity={0.7}>TODAY</text>}
+        {todayX != null && <text x={todayX} y={padT - 8} textAnchor="middle" fill={D.muted} fontSize="9" fontFamily="var(--font-mono)" opacity={0.7}>TODAY</text>}
 
         <path d={plannedPathD} fill="none" stroke={D.sub} strokeWidth={2} strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" opacity={ready ? 1 : 0} style={{ transition: `opacity 1s ${EASE}` }} />
 
@@ -515,7 +515,7 @@ function TimelineChart({ points, granularity }: { points: TimelinePoint[]; granu
 
         {points.filter((_, i) => i % labelEvery === 0 || i === n - 1).map(p => {
           const i = points.indexOf(p)
-          return <text key={p.date} x={toX(i)} y={H - 6} textAnchor="middle" fill={D.sub} fontSize="8" fontFamily="var(--font-mono)">{fmtTimelineDate(p.date, granularity)}</text>
+          return <text key={p.date} x={toX(i)} y={H - 6} textAnchor="middle" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{fmtTimelineDate(p.date, granularity)}</text>
         })}
       </svg>
       <div style={{ display: 'flex', gap: 18, marginTop: 8 }}>
@@ -552,12 +552,12 @@ function TimelineTab({ timeline, entities, selected, gapDetail, gapLoading, onSe
               <Gauge value={timeline.actualPctToday} label="Actual" color={D.green} delay={100} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
-                  <div style={{ fontFamily: 'var(--font-loader)', fontSize: 22, fontWeight: 600, color: ahead ? D.green : D.red, lineHeight: 1, letterSpacing: '-0.01em' }}>{timeline.gapPctToday >= 0 ? '+' : ''}{timeline.gapPctToday.toFixed(1)}pp</div>
-                  <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 4 }}>Gap</div>
+                  <div style={{ ...TYPE_SCALE.statNumber, color: ahead ? D.green : D.red }}>{timeline.gapPctToday >= 0 ? '+' : ''}{timeline.gapPctToday.toFixed(1)}pp</div>
+                  <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 4 }}>Gap</div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: 'var(--font-loader)', fontSize: 18, fontWeight: 600, color: statusColor, lineHeight: 1.1 }}>{statusLabel}</div>
-                  <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 4 }}>Status</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: statusColor, lineHeight: 1.1, letterSpacing: '-0.02em' }}>{statusLabel}</div>
+                  <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 4 }}>Status</div>
                 </div>
               </div>
             </div>

@@ -10,21 +10,30 @@ html, body {
 }
 
 body {
-  /* The `next/font` variables (--font-space-grotesk / --font-fira-sans /
+  /* The `next/font` variables (--font-bricolage-grotesque / --font-fira-sans /
      --font-jetbrains-mono) are injected onto <body> via a className, so the
      semantic aliases below MUST also live on <body> — declaring them on
      :root would leave `var(--font-fira-sans)` undefined at that scope and
      poison the whole declaration (invalid-at-computed-value-time).
 
-     Three distinct roles: Space Grotesk carries display + all big numbers
-     (a technical, drafting-table character that suits an engineering firm),
-     Fira Sans carries body / labels / tables (humanist but precise, built
-     for dense readouts), JetBrains Mono carries codes / chainages. */
-  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+     Three distinct roles: Fira Sans carries body / labels / tables
+     (humanist but precise, built for dense readouts), JetBrains Mono
+     carries codes / chainages, and Bricolage Grotesque carries display +
+     all big numbers. Bricolage Grotesque replaced Space Grotesk here
+     2026-09-29 — direct user report, confirmed by inspecting computed
+     styles (Space Grotesk genuinely was loading and applying correctly,
+     not a bug): in a KPI-dominated view that's almost entirely digits,
+     Space Grotesk's fairly neutral/geometric numerals read as visually
+     indistinguishable from the body/mono faces at a glance. Bricolage
+     Grotesque's numerals and letterforms carry deliberately more
+     idiosyncratic character while staying legible down to card-title
+     sizes — chosen specifically to survive a "just the numbers" screenshot,
+     not only a full-page comparison. */
+  --font-display: var(--font-bricolage-grotesque), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-body:    var(--font-fira-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono:    var(--font-jetbrains-mono), ui-monospace, 'SF Mono', Menlo, monospace;
-  /* display numbers (the ~300 `var(--font-loader)` call sites) render Space Grotesk */
-  --font-loader:  var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  /* display numbers (the ~300 `var(--font-loader)` call sites) render Bricolage Grotesque */
+  --font-loader:  var(--font-bricolage-grotesque), ui-sans-serif, system-ui, sans-serif;
   /* back-compat aliases — pages still referencing these names */
   --font-dm-sans: var(--font-fira-sans), ui-sans-serif, system-ui, sans-serif;
   --font-dm-mono: var(--font-jetbrains-mono), ui-monospace, monospace;

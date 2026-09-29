@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
-import { VIVID } from '@/lib/theme-constants'
+import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 import { HeroBanner } from '@/components/HeroBanner'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
@@ -79,7 +79,7 @@ function Card({ children, title, note }: { children: React.ReactNode; title: str
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '14px 16px 8px' }}>
-        <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
+        <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
       </div>
       {/* flex:1 + centered content — when the grid row stretches this card
          taller than its own natural content height (every card in a row now
@@ -111,8 +111,8 @@ function KPICard({ label, value, icon, delay = 0, color }: { label: string; valu
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
       <div style={{ width: 26, height: 26, borderRadius: 7, background: color ? `${color}1c` : D.panel2, border: `1px solid ${color ? color + '38' : D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: color ?? D.muted, marginBottom: 10 }}>{icon}</div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 26, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}</div>
-      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      <div style={{ ...TYPE_SCALE.heroKpi, color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}</div>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
     </div>
   )
 }
@@ -139,7 +139,7 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', minWidth: 320 }}>
-        {gridLines.map((v, gi) => { const y = padT + chartH - (v / maxVal) * chartH; return <g key={gi}><line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} /><text x={padL - 4} y={y + 3} textAnchor="end" fill={D.sub} fontSize="7" fontFamily="var(--font-mono)">{v}</text></g> })}
+        {gridLines.map((v, gi) => { const y = padT + chartH - (v / maxVal) * chartH; return <g key={gi}><line x1={padL} y1={y} x2={W - padR} y2={y} stroke={D.border} strokeWidth={1} /><text x={padL - 4} y={y + 3} textAnchor="end" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{v}</text></g> })}
         <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={D.border} strokeWidth={1} />
         {data.map((d, i) => {
           const barH = (d.count / maxVal) * chartH
@@ -151,17 +151,17 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
               <rect x={x} y={ready ? y : padT + chartH} width={barW} height={ready ? barH : 0} fill={isHov ? VIVID[0] : `${VIVID[0]}cc`} rx={1.5}
                 style={{ transition: `y 0.5s ${EASE} ${i * 0.006}s, height 0.5s ${EASE} ${i * 0.006}s, fill 0.15s` }} />
               {isHov && d.count > 0 && (() => {
-                const tx = Math.min(Math.max(x - 22, padL), W - padR - 70)
-                const ty = Math.max(padT + 2, y - 26)
+                const tx = Math.min(Math.max(x - 26, padL), W - padR - 82)
+                const ty = Math.max(padT + 2, y - 27)
                 return <g>
-                  <rect x={tx} y={ty} width={70} height={19} rx={4} fill={D.panel} stroke={D.border} strokeWidth={1} />
-                  <text x={tx + 35} y={ty + 13} textAnchor="middle" fill={D.text} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}: {d.count}</text>
+                  <rect x={tx} y={ty} width={82} height={20} rx={4} fill={D.panel} stroke={D.border} strokeWidth={1} />
+                  <text x={tx + 41} y={ty + 13.5} textAnchor="middle" fill={D.text} fontSize="11" fontFamily="var(--font-mono)">{fmtD(d.date)}: {d.count}</text>
                 </g>
               })()}
             </g>
           )
         })}
-        {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={padL + i * step + step / 2} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="7.5" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
+        {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={padL + i * step + step / 2} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
       </svg>
     </div>
   )
@@ -390,12 +390,18 @@ function DonutChart({ data, activeName, onSliceClick }: { data: Array<{ name: st
             style={{ transition: `stroke-dasharray 0.8s ${EASE} ${i * 0.06}s, stroke-width 0.2s ${EASE}, stroke-opacity 0.2s`, cursor: onSliceClick ? 'pointer' : 'default' }}
             onMouseEnter={() => setHov(i)} onClick={() => handleClick(seg.name)} />
         })}
+        {/* Center text uses the display face + statNumber's weight/tracking,
+           but not its literal 22px — this donut was deliberately enlarged to
+           196px (2026-09-24 (9) changelog) to close a height gap with its
+           taller sibling card; forcing the spec's standard size back down
+           would leave the bigger circle looking hollow and re-open that gap.
+           Scaled ~1.09x to match the enlargement instead. */}
         {hovSeg ? (<>
-          <text x="0" y="-7" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="24" fontWeight="600">{hovSeg.count}</text>
-          <text x="0" y="13" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8">{hovSeg.name.length > 13 ? hovSeg.name.slice(0, 12) + '…' : hovSeg.name}</text>
+          <text x="0" y="-7" textAnchor="middle" fill={D.text} fontFamily="var(--font-display)" fontSize="22" fontWeight="700" letterSpacing="-0.4">{hovSeg.count}</text>
+          <text x="0" y="13" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9">{hovSeg.name.length > 13 ? hovSeg.name.slice(0, 12) + '…' : hovSeg.name}</text>
         </>) : (<>
-          <text x="0" y="-4" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="29" fontWeight="600">{total}</text>
-          <text x="0" y="17" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1.5">TOTAL</text>
+          <text x="0" y="-4" textAnchor="middle" fill={D.text} fontFamily="var(--font-display)" fontSize="24" fontWeight="700" letterSpacing="-0.4">{total}</text>
+          <text x="0" y="17" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9" letterSpacing="1.5">TOTAL</text>
         </>)}
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 130 }}>

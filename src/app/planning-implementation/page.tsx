@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useTheme } from '@/lib/theme'
-import { VIVID } from '@/lib/theme-constants'
+import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 
 const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false })
 
@@ -117,7 +117,7 @@ function Card({ children, title }: { children: React.ReactNode; title: string })
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '14px 16px 8px' }}>
-        <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
+        <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
       </div>
       <div style={{ padding: '4px 16px 16px' }}>{children}</div>
     </div>
@@ -132,8 +132,8 @@ function KPICard({ label, value, suffix, sub, icon, delay = 0, color }: { label:
   return (
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
       <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}>{icon}</div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 24, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix ?? ''}</div>
-      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      <div style={{ ...TYPE_SCALE.heroKpi, color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix ?? ''}</div>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
       {sub && <div style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)', marginTop: 4, lineHeight: 1.5 }}>{sub}</div>}
     </div>
   )
@@ -555,10 +555,10 @@ function PlanningImplementationPageInner() {
                 <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}><IconClock /></div>
                 {loadStats ? (
                   <>
-                    <div style={{ fontFamily: 'var(--font-loader)', fontSize: 15, fontWeight: 600, lineHeight: 1.2, color: D.text, fontVariantNumeric: 'tabular-nums' }}>
+                    <div style={{ ...TYPE_SCALE.statNumber, color: D.text, fontVariantNumeric: 'tabular-nums' }}>
                       {loadStats.queryMs}ms <span style={{ fontSize: 11, color: D.sub }}>db</span> / {loadStats.clientMs}ms <span style={{ fontSize: 11, color: D.sub }}>total</span>
                     </div>
-                    <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 8 }}>
+                    <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>
                       Map Load Time · {loadStats.mode === 'live' ? 'live query' : 'materialized view'}
                     </div>
                   </>

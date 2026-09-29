@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
-import { VIVID } from '@/lib/theme-constants'
+import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
 
@@ -73,7 +73,7 @@ function Card({ children, title, sub, action, style: st }: { children: React.Rea
     <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
       <div style={{ padding: '14px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 600, letterSpacing: '-0.01em', color: D.text }}>{title}</h3>
+          <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
           {sub && <div style={{ fontSize: 12, color: D.muted, marginTop: 2 }}>{sub}</div>}
         </div>
         {action}
@@ -106,8 +106,8 @@ function KPICard({ label, value, color, icon, suffix = '', delay = 0 }: { label:
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted }}>{icon}</div>
       </div>
-      <div style={{ fontFamily: 'var(--font-loader)', fontSize: 26, fontWeight: 600, lineHeight: 1, letterSpacing: '-0.02em', color: numColor, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
-      <div style={{ fontSize: 10.5, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>{label}</div>
+      <div style={{ ...TYPE_SCALE.heroKpi, color: numColor, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
     </div>
   )
 }
@@ -171,7 +171,7 @@ function ProgressCurve({ data }: { data: Array<{ date: string; pct: number }> })
         })()}
         {data.filter((_, i) => i % labelEvery === 0 || i === data.length - 1).map(d => {
           const i = data.indexOf(d)
-          return <text key={d.date} x={toX(i)} y={H - 6} textAnchor="middle" fill={D.sub} fontSize="8" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
+          return <text key={d.date} x={toX(i)} y={H - 6} textAnchor="middle" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
         })}
       </svg>
     </div>
@@ -316,8 +316,8 @@ function DelayDonut({ delayed, onSchedule }: { delayed: number; onSchedule: numb
         <circle r={r} fill="none" stroke={D.panel2} strokeWidth={sw} />
         <circle r={r} fill="none" stroke={D.green} strokeWidth={sw} strokeDasharray={`${ready ? onLen : 0} ${circ}`} strokeLinecap="butt" style={{ transition: `stroke-dasharray 1s ${EASE}` }} />
         <circle r={r} fill="none" stroke={D.red} strokeWidth={sw} strokeDasharray={`${ready ? delLen : 0} ${circ}`} strokeDashoffset={-onLen} strokeLinecap="butt" style={{ transition: `stroke-dasharray 1s ${EASE} 0.15s` }} />
-        <text x="0" y="-6" textAnchor="middle" fill={D.text} fontFamily="var(--font-loader)" fontSize="22" fontWeight="600">{total.toLocaleString()}</text>
-        <text x="0" y="12" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="8" letterSpacing="1">ENTITIES</text>
+        <text x="0" y="-6" textAnchor="middle" fill={D.text} fontFamily="var(--font-display)" fontSize="22" fontWeight="700" letterSpacing="-0.4">{total.toLocaleString()}</text>
+        <text x="0" y="12" textAnchor="middle" fill={D.muted} fontFamily="var(--font-mono)" fontSize="9" letterSpacing="1">ENTITIES</text>
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {[{ label: 'On Schedule', val: onSchedule, color: D.green }, { label: 'Delayed', val: delayed, color: D.red }].map(({ label, val, color }) => (
@@ -454,8 +454,8 @@ function BOQTable({ items, byCategory }: { items: ProgressData['boqItems']; byCa
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 8, padding: '8px 16px' }}>
-          <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', marginBottom: 3 }}>ACTUAL QUANTITY</div>
-          <div style={{ fontSize: 20, color: D.text, fontFamily: 'var(--font-loader)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{(totalQty / 1000).toFixed(0)}K</div>
+          <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginBottom: 3 }}>ACTUAL QUANTITY</div>
+          <div style={{ ...TYPE_SCALE.statNumber, color: D.text, fontVariantNumeric: 'tabular-nums' }}>{(totalQty / 1000).toFixed(0)}K</div>
         </div>
         <Seg value={view} onChange={setView} options={[{ key: 'summary', label: 'Summary' }, { key: 'detail', label: 'Detail' }]} />
       </div>
