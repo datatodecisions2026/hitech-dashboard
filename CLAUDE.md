@@ -690,6 +690,20 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-10-01 (3) — `/dashboard`: clicking a "Recent Activity Reports" row again now un-focuses it on the map
+
+**Files changed:** `src/lib/map-view.tsx`, `src/components/UnifiedMap.tsx`, `src/app/dashboard/page.tsx`
+
+**What the user asked:** "I noticed if I click a row on the table, the map filters yes, but can it be unclicked?"
+
+**Root cause**: clicking a row (`handleSelectReport`) sets a `focusRequest` that pans the map, opens its popup, and marks that report `focusedId` (the dedicated white-ringed marker from the 2026-09-22 (8) entry) — but nothing could ever clear that focus again except clicking elsewhere on the map background (`UnifiedMap`'s own `click` listener). There was no way to drop it from the table itself, and the popup's own ✕ close button only cleared the popup (`setSelReport(null)`), silently leaving the oversized focused-marker treatment active on the map.
+
+**Fix**: `useMapView()` gained `focusClearToken`/`requestClearFocus()` — a bumped counter the map watches via a dedicated effect that runs the exact same four calls (`setSelReport(null); setSelCorridor(null); setSelCell(null); setFocusedId(null)`) the background-click handler already uses, so "unclick" behaves identically to clicking elsewhere on the map, just without moving the camera. `dashboard/page.tsx` now tracks `selectedReportId`; `handleSelectReport` toggles — clicking the already-active row calls `requestClearFocus()` and drops the isolated media view instead of re-focusing. The active row gets a visible highlight (amber tint + left accent bar, same treatment every other active-filter row/bar in this app already uses) so it's clear which report (if any) is currently focused, and its title hint changes to "Click to clear" while active. The existing "← All filtered media" button (which already dropped the isolated media view) now also clears the map focus and the row highlight, so both "undo" paths stay consistent. The popup's own ✕ button was also fixed to clear `focusedId`, not just the popup — a related gap in the same spirit, since leaving the marker behind with no popup was equally confusing.
+
+**Verified live**: a scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed the full round-trip — clicking a row pans/zooms the map (center + zoom changed, confirmed via `window.__debugMap`), opens the popup (a `Filter: ` pill present), and highlights the row (`box-shadow` set); clicking the *same* row again removed the popup and the row highlight while the camera's center/zoom stayed byte-identical to where the first click had left it (no second camera move). Zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct user report of a real missing affordance — the toggle convention (clicking an already-active selection again clears it) already exists everywhere else on this dashboard (every chart's click-to-filter, the Activity Status donut, etc.); this just extends the same pattern to the one remaining click target that didn't have it, reusing the map's own existing "clear on background click" logic rather than inventing a new clearing path.
+
 ### 2026-10-01 (2) — Correction: the Planning Status feature's real numbers were wrong at ship time — a flawed investigation, not a flawed feature
 
 **Files changed:** `scripts/sql/add_dashboard_planned_filter.sql`, `CLAUDE.md`

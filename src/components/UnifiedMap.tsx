@@ -269,7 +269,7 @@ function attachOverlaysChunked<T extends { setMap(map: google.maps.Map | null): 
 
 /* ── Component ─────────────────────────────────────────────── */
 export default function UnifiedMap({ chFrom, chTo, category, project, weather, dateFrom, dateTo, status, initialSection, onLoadStats, onFilterRequest, showRoadAssets = true }: Props) {
-  const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest } = useMapView()
+  const { camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, clearFocusRequest, focusClearToken } = useMapView()
 
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<google.maps.Map | null>(null)
@@ -1408,6 +1408,17 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
     clearFocusRequest()
   }, [focusRequest, mapLoaded, setLayer, clearFocusRequest, coastalStations])
 
+  /* ── Explicit "unclick" of a previously-set focus (report row clicked
+     again elsewhere) — same effect as a background map click (clear the
+     popup + the dedicated focused-marker treatment), without moving the
+     camera. Guarded against firing on mount, since the token starts at 0. */
+  const lastClearTokenRef = useRef(focusClearToken)
+  useEffect(() => {
+    if (focusClearToken === lastClearTokenRef.current) return
+    lastClearTokenRef.current = focusClearToken
+    setSelReport(null); setSelCorridor(null); setSelCell(null); setFocusedId(null)
+  }, [focusClearToken])
+
   /* ── Fit to an active chainage-only filter (dashboard) ──────────────────
      The category case is fitted where its data actually arrives (the
      reports-fetch effect above) — computing it here from `reports` state
@@ -1553,7 +1564,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
           <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 20, background: 'rgba(10,8,5,0.96)', border: `1px solid ${catColor(selReport.activity_category)}55`, borderRadius: 10, padding: '14px 16px', minWidth: 240, maxWidth: 300, boxShadow: '0 12px 40px rgba(0,0,0,0.7)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
               <span style={{ fontSize: 10, color: catColor(selReport.activity_category), fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>{selReport.activity_category}</span>
-              <button onClick={() => setSelReport(null)} style={{ background: 'none', border: 'none', color: D.sub, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 8 }}>✕</button>
+              <button onClick={() => { setSelReport(null); setFocusedId(null) }} style={{ background: 'none', border: 'none', color: D.sub, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 8 }}>✕</button>
             </div>
             <div style={{ fontSize: 13, color: D.text, fontWeight: 600, marginBottom: 8 }}>{selReport.activity_type}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>

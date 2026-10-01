@@ -549,7 +549,7 @@ function ReportMedia({ state }: { state: ReportMediaState }) {
 }
 
 /* ── report feed ──────────────────────────────────────────── */
-function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports']; onSelect?: (r: DashData['recentReports'][number]) => void }) {
+function ReportFeed({ reports, onSelect, activeId }: { reports: DashData['recentReports']; onSelect?: (r: DashData['recentReports'][number]) => void; activeId?: number | null }) {
   const { colors: D } = useTheme()
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 15
@@ -573,9 +573,15 @@ function ReportFeed({ reports, onSelect }: { reports: DashData['recentReports'];
           <tbody>
             {pageItems.map((r, i) => {
               const dt = r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
+              const isActive = activeId != null && activeId === r.id
               return (
-                <tr key={r.id} className="tbl-row" onClick={() => onSelect?.(r)} title={onSelect ? "Show this report's media & locate it on the map" : undefined}
-                  style={{ cursor: onSelect ? 'pointer' : 'default', opacity: 0, animation: `fadeIn 0.3s ${EASE} ${Math.min(i, 12) * 0.03}s forwards` }}>
+                <tr key={r.id} className="tbl-row" onClick={() => onSelect?.(r)}
+                  title={onSelect ? (isActive ? 'Click to clear — unlocate on the map' : "Show this report's media & locate it on the map") : undefined}
+                  style={{
+                    cursor: onSelect ? 'pointer' : 'default', opacity: 0, animation: `fadeIn 0.3s ${EASE} ${Math.min(i, 12) * 0.03}s forwards`,
+                    background: isActive ? `${D.amber}16` : undefined,
+                    boxShadow: isActive ? `inset 3px 0 0 ${D.amber}` : undefined,
+                  }}>
                   <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{dt}</td>
                   <td style={{ ...td, color: D.text, fontWeight: 600, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.project_name || '—'}</td>
                   <td style={{ ...td, color: D.muted, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.section_name || '—'}</td>
@@ -806,7 +812,12 @@ function DashboardPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [firstName, setFirstName] = useState('')
-  const { setFocusRequest } = useMapView()
+  const { setFocusRequest, requestClearFocus } = useMapView()
+  // Which report row is currently "active" (its own click set the map's
+  // focus + isolated the Site Media panel) — tracked here so a second click
+  // on the same row can toggle it back off, instead of only a background
+  // map click being able to clear it.
+  const [selectedReportId, setSelectedReportId] = useState<number | null>(null)
   const requestIdRef = useRef(0)
   const pendingExtraRef = useRef<{ reqId: number; x: Partial<DashData> } | null>(null)
   const mapPanelRef = useRef<HTMLDivElement>(null)
@@ -863,6 +874,7 @@ function DashboardPageInner() {
     setLoading(true)
     pendingExtraRef.current = null
     setReportMedia(null) // a filter / nav change drops any isolated-report media view
+    setSelectedReportId(null)
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
     const EMPTY_HEAVY = { mapPoints: [], mediaItems: [], activityCalendar: [], recentReports: [] }
 
@@ -917,6 +929,17 @@ function DashboardPageInner() {
   }
 
   function handleSelectReport(r: DashData['recentReports'][number]) {
+    // Clicking the already-active row again "unclicks" it — same toggle
+    // convention every chart's click-to-filter already uses. Drop the map's
+    // focus (without moving the camera) and the isolated media view.
+    if (selectedReportId === r.id) {
+      setSelectedReportId(null)
+      setReportMedia(null)
+      requestClearFocus()
+      return
+    }
+    setSelectedReportId(r.id)
+
     // Zoom the shared map to this report's real location. Calabar/Kebbi/Ogun
     // reports carry real GPS; Section 1 reports are positioned by chainage on
     // the map itself, so passing their raw GPS (also present) is fine here.
@@ -1091,7 +1114,7 @@ function DashboardPageInner() {
                   title="Site Media"
                   sub={reportMedia ? undefined : `${data.summary.totalPhotos.toLocaleString()} photos`}
                   action={reportMedia
-                    ? <button onClick={() => setReportMedia(null)}
+                    ? <button onClick={() => { setReportMedia(null); setSelectedReportId(null); requestClearFocus() }}
                         style={{ font: 'inherit', fontSize: 11.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', color: D.amber, background: 'transparent', border: `1px solid ${D.amber}55`, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         ← All filtered media
                       </button>
@@ -1107,7 +1130,7 @@ function DashboardPageInner() {
               <Reveal>
                 <Card title={data.activeFilters.filterSearch ? `Search Results for "${data.activeFilters.filterSearch}"` : 'Recent Activity Reports'}>
                   {data.recentReports.length > 0
-                    ? <ReportFeed reports={data.recentReports} onSelect={handleSelectReport} />
+                    ? <ReportFeed reports={data.recentReports} onSelect={handleSelectReport} activeId={selectedReportId} />
                     : <EmptyState label={data.activeFilters.filterSearch ? 'No reports match your search' : 'No reports match your filters'} />}
                 </Card>
               </Reveal>

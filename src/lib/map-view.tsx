@@ -66,6 +66,12 @@ interface MapViewContextValue {
   focusRequest: MapFocusRequest | null
   setFocusRequest: (r: MapFocusRequest) => void
   clearFocusRequest: () => void
+  /** Bumped by requestClearFocus() — tells the map to drop whichever report is
+     currently `focusedId` (and close its popup) without moving the camera,
+     the same effect a background map click already has. Lets a report-row
+     click elsewhere "unclick" a focus it previously set. */
+  focusClearToken: number
+  requestClearFocus: () => void
 }
 
 const MapViewContext = createContext<MapViewContextValue | null>(null)
@@ -104,6 +110,7 @@ export function MapViewProvider({ children }: { children: React.ReactNode }) {
   const [layers, setLayers] = useState<Record<MapLayerKey, boolean>>(DEFAULT_LAYERS)
   const [colorBy, setColorByState] = useState<MapColorBy>('category')
   const [focusRequest, setFocusRequestState] = useState<MapFocusRequest | null>(null)
+  const [focusClearToken, setFocusClearToken] = useState(0)
 
   useEffect(() => {
     const p = loadPersisted()
@@ -133,11 +140,12 @@ export function MapViewProvider({ children }: { children: React.ReactNode }) {
 
   const setFocusRequest = useCallback((r: MapFocusRequest) => setFocusRequestState(r), [])
   const clearFocusRequest = useCallback(() => setFocusRequestState(null), [])
+  const requestClearFocus = useCallback(() => setFocusClearToken(t => t + 1), [])
 
   const value = useMemo<MapViewContextValue>(() => ({
     camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy,
-    focusRequest, setFocusRequest, clearFocusRequest,
-  }), [camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, setFocusRequest, clearFocusRequest])
+    focusRequest, setFocusRequest, clearFocusRequest, focusClearToken, requestClearFocus,
+  }), [camera, setCamera, layers, toggleLayer, setLayer, colorBy, setColorBy, focusRequest, setFocusRequest, clearFocusRequest, focusClearToken, requestClearFocus])
 
   return <MapViewContext.Provider value={value}>{children}</MapViewContext.Provider>
 }
