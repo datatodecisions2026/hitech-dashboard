@@ -131,6 +131,7 @@ date_from, date_to           — inclusive date range on date_of_activity
 ch_from, ch_to                — inclusive chainage range on start_chainage_val (only applied if both are valid numbers with ch_to > ch_from)
 search                        — matches reporter_name/project_name/section_name/activity_type/comment_activity
 machine, employee, engineer, supervisor — resolved in-memory against the HR join tables, not real columns on hitech_report_hitechreport
+planned                       — "true" | "false". true = report's globalid matches a real hitech_construction_entities row (admin pre-planned it); false = it doesn't ("Newly Planned" — unplanned/ad-hoc field work). Requires scripts/sql/add_dashboard_planned_filter.sql to be applied — see the 2026-10-01 changelog for the pre-migration fallback behavior
 ```
 
 **Response (200):**
@@ -142,7 +143,9 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
     "activeProjects": 5,
     "totalPhotos": 812,
     "uniqueReporters": 14,
-    "completionRate": 74
+    "completionRate": 74,
+    "plannedCount": 2865,
+    "newlyPlannedCount": 6890
   },
   "byCategory": [{ "name": "Earthworks", "count": 120 }],
   "byProject": [{ "name": "Ring Road Phase 2", "count": 85 }],
@@ -196,7 +199,8 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
   "activeFilters": {
     "filterCategory": "", "filterProject": "", "filterSection": "", "filterDateFrom": "", "filterDateTo": "",
     "filterChFrom": "", "filterChTo": "", "filterSearch": "",
-    "filterWeather": "", "filterStatus": "", "filterMachine": "", "filterEmployee": "", "filterEngineer": "", "filterSupervisor": ""
+    "filterWeather": "", "filterStatus": "", "filterMachine": "", "filterEmployee": "", "filterEngineer": "", "filterSupervisor": "",
+    "filterPlanned": ""
   }
 }
 ```
@@ -206,6 +210,8 @@ machine, employee, engineer, supervisor — resolved in-memory against the HR jo
 The `by*` person/weather series have the literal `"Unknown"` entry (blank raw value) **stripped out** in the route (`applyUnknownHandling` in `src/app/api/dashboard/_lib.ts`) so charts rank/percent over named entities only; the removed counts come back as a separate `unattributed: { byEngineer: 4499, byWeather: 3676, … }` map (non-zero keys only) which the pages surface as a muted "N not shown in ranking" caption. Blank `employee_name` additionally falls back to `employee_missing_name` inside `dashboard_core`. See the 2026-09-08 (3)/(4) changelog entries. `byEngineerParty`/`bySupervisorParty` are also run through `normalizePartySeries` to merge dirty label variants (`HITECH employees`, `Sub-contactor` typo) down to the two real parties.
 
 `machineActivityByDay` (last-30-days machine mention counts, same `generate_series` shape as `byDay`) and `driverMachineCross` back `/machines`' "Machine Activity Trend" and "Driver × Machine" cards — added by `scripts/sql/add_dashboard_machine_trends.sql`, see the 2026-09-25 (5) changelog entry. Both are optional on the response until that SQL is applied (purely additive — no new RPC parameter, so no signature-mismatch risk the way `p_status` had). `driverMachineCross`'s own shape changed again the same day, from a flat top-12 `(driver, machine)` pairs list to the nested `{driver, total, machines: [{machine, count}]}[]` shown above (top 10 drivers by total activity, each capped at their own top-5-machines-plus-"Other") — see `scripts/sql/add_dashboard_driver_machine_stacked.sql` and the 2026-09-25 (6) changelog entry for why (the flat version was dominated by whichever one driver logs the most activity).
+
+`summary.plannedCount`/`summary.newlyPlannedCount` back `/dashboard`'s "Planning Status" card — a report counts as **planned** when its `globalid` matches a real row in `hitech_construction_entities` (the admin schedule), the exact same join `/api/planning-implementation`'s "Implemented" flag already uses, just read from the report's side. **Newly planned** = everything else (no matching entity, or no `globalid` at all) — genuinely unplanned/ad-hoc field work, confirmed live to be the dominant case (70.4% of all 9,780 reports), not a 50/50 split. Added by `scripts/sql/add_dashboard_planned_filter.sql`, see the 2026-10-01 changelog entry — both fields are optional on the response (default to `0` on the frontend) until that SQL is applied.
 
 ---
 
@@ -683,6 +689,44 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-10-01 — `/dashboard`: new "Planning Status" card — Planned vs Newly Planned reports, click-to-filter
+
+**Files changed:** `scripts/sql/add_dashboard_planned_filter.sql` (new), `src/app/api/dashboard/_lib.ts`, `src/app/dashboard/page.tsx`
+
+**What the user asked:** "the reports is first planned by the admin, then filled by the field worker, or it's newly planned. How do I feature this into the dashboard page, a section for planned and newly planned."
+
+**Investigated the real data before building anything, not assumed**: a report is "planned" when its `globalid` matches a real row in `hitech_construction_entities` (the admin-authored planning table) — the exact same join `/api/planning-implementation`'s "Implemented" flag already uses (see the 2026-08-04 changelog entry), just read from the report's side instead of the entity's. Queried the live DB directly (paginating past the usual 1000-row PostgREST cap): of all 9,780 reports, only **2,865 (29.3%)** match a planned entity; **6,890 (70.4%)** match no entity at all; 25 have no `globalid`. Also checked whether `planned_date` itself (not just entity existence) could distinguish the two — it can't right now, since every one of the 579,703 entity rows currently has a non-null `planned_date`.
+
+Given that real, lopsided split (not a 50/50 as the phrasing might imply), confirmed two things with the user via `AskUserQuestion` before building: (1) "Newly Planned" = unplanned/ad-hoc field work with no corresponding admin plan, not some other status; (2) the section should be two clickable KPI-style cards wired into the existing click-to-filter system, same as every other dashboard chart dimension — not a passive donut, not a full standalone panel.
+
+**SQL** (`add_dashboard_planned_filter.sql`, the new consolidated, authoritative definition of all three `dashboard_*` functions — supersedes `add_dashboard_status_filter.sql` for these bodies): adds `p_planned boolean default null` as a 20th parameter. `hitech_construction_entities` is 580k rows — per this project's own established rule this can never be queried per-row against the raw table, so the predicate collapses it to its ~4,046-row distinct `global_id` set via a `materialized` CTE (the identical strategy `progress_section_breakdown` already uses, proven at this exact scale) and `LEFT JOIN`s against that small set rather than `EXISTS`-ing against the raw table per report row. `dashboard_core` gained two new `summary` fields, `plannedCount`/`newlyPlannedCount`, computed from `rep` (the already-filtered set) the same way every other `by*` breakdown is — so if `p_planned` itself is the active filter, these correctly read 100%/0% or 0%/100%, consistent with how e.g. `byStatus` already behaves when `p_status` is active.
+
+**Signature-change safety**: same `rpcWithRetry`/`OPTIONAL_ARGS` safeguard the `p_status` migration established (2026-09-25 (4) entry) — `_lib.ts`'s retry logic strips `p_planned` and retries once on a "no matching function" error, so the dashboard keeps working on the OLD 19-arg signature until this migration is applied; the new card just reads 0/0 and the filter silently doesn't narrow anything until it is. **Could not apply the migration directly this session** (no DDL-execution path available, same constraint as every other SQL-migration entry in this file) — apply it in the Supabase SQL Editor to activate real counts.
+
+**Frontend**: new `PlannedStat` component — two clickable stat tiles (not a donut, per the confirmed scope), styled with the same `TYPE_SCALE.microLabel`/`heroKpi` tokens every other KPI number on this page already uses, semantic-colored (`D.green` for Planned, `D.amber` for Newly Planned, matching this project's "semantic color only where it means something" rule). Wired into `handleFilter('planned', 'true'|'false')` with toggle-off-on-second-click, same convention as every other click-to-filter chart; `filterPlanned` threaded through `activeFiltersFrom`, `hasFilters`/`hasAnyFilter`'s "any filter active" checks, and the `__clear__` key list.
+
+**Verified live, end-to-end, including the pre-migration degrade path**: direct `curl` against `/api/dashboard` confirmed a clean `200` (not `503`) with `plannedCount`/`newlyPlannedCount` simply absent from the response, exactly as designed, since the SQL hasn't been applied yet in this environment. A scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed the new card renders correctly (0/0, no errors) alongside the rest of the dashboard, and confirmed the click-to-filter wiring itself works (`?planned=true`, toggles off cleanly, `?planned=false`) — one false start during this check, not an app bug: an early locator ambiguously matched a *different*, pre-existing "Planned" value (one of the 5 real `activity_status` values already shown in the Activity Status donut's own legend), caught and fixed by scoping the click precisely to the new card's own DOM structure. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct ask, but the literal phrasing ("planned... or newly planned") didn't map cleanly onto the schema without checking first — `planned_date` turned out not to be a usable signal (100% of current entity rows have one), and the real split (70/30, not even) was worth confirming the user expected before shipping a feature built around it. Reused `/api/planning-implementation`'s already-proven entity-join strategy and this page's own already-established `TYPE_SCALE`/click-to-filter/signature-safeguard conventions throughout, rather than inventing new patterns for what is, underneath, the same "is this report linked to a planning entity" question already answered elsewhere in this codebase.
+
+### 2026-09-29 — Typography overhaul: a formal "Hitech Type" spec, a new display face, and a shared `TYPE_SCALE` rolled out to all 6 pages
+
+**Files changed:** `src/lib/theme-constants.ts`, `src/app/layout.tsx`, `src/app/globals.css`, `src/app/dashboard/page.tsx`, `src/app/machines/page.tsx`, `src/app/personnel/page.tsx`, `src/app/progress/page.tsx`, `src/app/planning-implementation/page.tsx`, `src/app/road-assets-coverage/page.tsx`
+
+**What the user asked, across several follow-ups in one session:** "I'd like to improve the typography" → a generated formal typography specification (published as a "Hitech Type" Design System artifact — principles, font-stack justification, a 13-role semantic scale, CSS tokens, a Tailwind config extension, component rules, WCAG guardrails) → "use the generated typography specification... to redesign the dashboard" → direct feedback with a screenshot that the display face wasn't visibly distinct ("There is no visible difference in the fonts") → confirmed via `document.fonts`/computed styles that Space Grotesk genuinely was loading correctly, not a bug — its numerals just read as near-identical to the body/mono faces in a KPI-heavy, digit-dominated view → swapped the display role to **Bricolage Grotesque** → further feedback ("even the title of each KPI") to extend the new face to KPI micro-labels, previously mono → "apply this to other pages" → "commit and push the changes."
+
+**New shared `TYPE_SCALE` constant** (`theme-constants.ts`) — the 13 semantic tokens from the spec (`heroKpi`, `pageTitle`, `sectionHeader`, `statNumber`, `body`/`bodyDense`/`bodyEmphasis`/`caption`, `tableHeader`, `microLabel`, `dataCode`, `tooltip`, `axisLabel`), same "promote once it needs to be shared" precedent as `VIVID`. `microLabel` was reclassified from the mono family to the display family after the "even the title of each KPI" feedback — a KPI's own label now reads as part of the same display moment as its number, while filter-panel field labels (a genuinely different role — form captions, not KPI titles) deliberately stayed on mono on every page.
+
+**Font swap**: `layout.tsx`/`globals.css`'s `--font-display` (and the `--font-loader` alias) now load **Bricolage Grotesque** instead of Space Grotesk — confirmed via `document.fonts` and `getComputedStyle` that it actually loads and applies, and via a cropped/zoomed screenshot comparison that its digit shapes are now visibly distinct from Fira Sans/JetBrains Mono at KPI-number sizes, which Space Grotesk's were not. Fira Sans (body) and JetBrains Mono (data/mono) were untouched throughout.
+
+**Rolled out identically to `/machines`, `/personnel`, `/progress`, `/planning-implementation`, `/road-assets-coverage`**: card titles → `sectionHeader`, KPI numbers → `heroKpi` (34px, up from each page's own prior ad-hoc ~24–27px), KPI titles → `microLabel`, chart axis labels bumped to the spec's stated 9px floor (a real, pre-existing guardrail violation the spec itself surfaced — several charts were at 7–8px), chart tooltips bumped to 11px with widened boxes. Two donuts deliberately enlarged in an earlier session (`/machines`' Ownership Breakdown, `/personnel`'s Party donut — both fixing a real measured height-mismatch bug, see the 2026-09-24 (9) entry) kept their *proportionally*-scaled center-text size rather than the literal spec value, so that earlier fix doesn't regress.
+
+**Verified live on every page** via isolated `next build`/`next start` instances with real data — `tsc`/`next build` clean across all 6 pages, zero console errors. One real false alarm during verification, investigated rather than assumed broken: `/road-assets-coverage` initially looked unrendered (blank white cards) under a `networkidle` wait — not a regression, this page's own documented slow Kebbi/Calabar query genuinely takes several seconds; waiting for actual content (not just network idle) confirmed it renders correctly.
+
+**Committed and pushed** (`a8c8f75`) — 9 files, the `.claude/launch.json` local tooling file deliberately left untracked since it isn't part of this work.
+
+**Why:** Direct, iterative ask across a full session — each follow-up was investigated against real evidence before acting on it (computed styles before concluding "not a bug," a cropped-screenshot comparison before claiming the new face reads as distinct) rather than taken at face value, consistent with this project's established "measure, don't assume" discipline extended here to a design/perception question, not just a performance or correctness one.
 
 ### 2026-09-28 (3) — `/personnel`: removed the Personnel History card's explanatory note
 

@@ -42,7 +42,16 @@ interface MediaItem { file: string; media_type: string; project_name: string }
 interface MapPoint { lat: number; lng: number; lat2: number | null; lng2: number | null; project: string; category: string; status: string }
 interface CalDay { date: string; count: number; projects: string[] }
 interface DashData {
-  summary: { totalReports: number; reportsThisMonth: number; activeProjects: number; totalPhotos: number; uniqueReporters: number; completionRate: number }
+  summary: {
+    totalReports: number; reportsThisMonth: number; activeProjects: number; totalPhotos: number; uniqueReporters: number; completionRate: number
+    // A report is "planned" when its globalid matches a real entity in
+    // hitech_construction_entities (the admin schedule); "newly planned" is
+    // everything else — unplanned/ad-hoc field work with no corresponding
+    // plan. Optional: absent until add_dashboard_planned_filter.sql is
+    // applied, same degrade-safely convention as every other pending-
+    // migration field on this page.
+    plannedCount?: number; newlyPlannedCount?: number
+  }
   byCategory:   Array<{ name: string; count: number }>
   byProject:    Array<{ name: string; count: number }>
   byDay:        Array<{ date: string; count: number }>
@@ -68,6 +77,7 @@ interface DashData {
   activeFilters: {
     filterCategory: string; filterProject: string; filterSection: string; filterDateFrom: string; filterDateTo: string; filterChFrom: string; filterChTo: string; filterSearch: string
     filterWeather: string; filterStatus: string; filterMachine: string; filterEmployee: string; filterEngineer: string; filterSupervisor: string
+    filterPlanned: string
   }
 }
 
@@ -388,13 +398,43 @@ function WeatherBars({ data, activeName, onBarClick }: { data: Array<{ name: str
   )
 }
 
+/* ── planning status (Planned vs Newly Planned) ───────────────
+   A report is "Planned" when its globalid matches a real entity in
+   hitech_construction_entities (the admin schedule) — the field worker
+   filled in something that was already on the plan. "Newly Planned" is
+   everything else: the globalid matches no entity at all, so this is
+   unplanned/ad-hoc field work being reported as it happens, with no prior
+   admin plan behind it. Confirmed with the user (AskUserQuestion) before
+   building — see add_dashboard_planned_filter.sql for the real-data
+   investigation (70% of reports are currently unplanned, not a 50/50 split)
+   that grounded this definition. Two clickable stat tiles, not a donut —
+   the confirmed scope was explicitly "two KPI counts ... as cards". */
+function PlannedStat({ label, value, total, color, active, onClick }: {
+  label: string; value: number; total: number; color: string; active: boolean; onClick: () => void
+}) {
+  const { colors: D } = useTheme()
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0
+  return (
+    <div onClick={onClick} style={{
+      flex: 1, cursor: 'pointer', padding: '14px 16px', borderRadius: 10,
+      background: active ? `${color}14` : D.panel2, border: `1px solid ${active ? color : D.border}`,
+      transition: `background 0.15s ${EASE}, border-color 0.15s ${EASE}`,
+    }}>
+      <div style={{ ...TYPE_SCALE.microLabel, color: D.muted }}>{label}</div>
+      <div style={{ ...TYPE_SCALE.heroKpi, color, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>{value.toLocaleString()}</div>
+      <div style={{ fontSize: 11, color: D.sub, fontFamily: 'var(--font-mono)', marginTop: 4 }}>{pct}% of reports</div>
+    </div>
+  )
+}
+
 /* ── media gallery ────────────────────────────────────────── */
 function MediaGallery({ items, activeFilters }: { items: MediaItem[]; activeFilters: DashData['activeFilters'] }) {
   const hasAnyFilter = !!(
     activeFilters.filterProject || activeFilters.filterCategory || activeFilters.filterSection ||
     activeFilters.filterWeather || activeFilters.filterStatus || activeFilters.filterDateFrom || activeFilters.filterDateTo ||
     activeFilters.filterChFrom || activeFilters.filterChTo || activeFilters.filterSearch ||
-    activeFilters.filterMachine || activeFilters.filterEmployee || activeFilters.filterEngineer || activeFilters.filterSupervisor
+    activeFilters.filterMachine || activeFilters.filterEmployee || activeFilters.filterEngineer || activeFilters.filterSupervisor ||
+    activeFilters.filterPlanned
   )
   const filterKey = JSON.stringify(activeFilters)
   const images = items.filter(m => m.media_type !== 'video')
@@ -640,7 +680,7 @@ const FIconFunnel = ({ color }: { color: string }) => <svg width={14} height={14
 function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (key: string, val: string) => void; onClose: () => void }) {
   const { colors: D, shadows: SH } = useTheme()
   const active = data.activeFilters
-  const hasFilters = !!(active.filterCategory || active.filterProject || active.filterSection || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterStatus || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor)
+  const hasFilters = !!(active.filterCategory || active.filterProject || active.filterSection || active.filterDateFrom || active.filterDateTo || active.filterChFrom || active.filterChTo || active.filterSearch || active.filterWeather || active.filterStatus || active.filterMachine || active.filterEmployee || active.filterEngineer || active.filterSupervisor || active.filterPlanned)
   const [chFrom, setChFrom] = useState(active.filterChFrom || '')
   const [chTo, setChTo] = useState(active.filterChTo || '')
   const [search, setSearch] = useState(active.filterSearch || '')
@@ -860,7 +900,7 @@ function DashboardPageInner() {
   function handleFilter(key: string, val: string) {
     const p = new URLSearchParams(searchParams.toString())
     if (key === '__clear__') {
-      ['category', 'project', 'section', 'date_from', 'date_to', 'ch_from', 'ch_to', 'search', 'weather', 'status', 'machine', 'employee', 'engineer', 'supervisor'].forEach(k => p.delete(k))
+      ['category', 'project', 'section', 'date_from', 'date_to', 'ch_from', 'ch_to', 'search', 'weather', 'status', 'machine', 'employee', 'engineer', 'supervisor', 'planned'].forEach(k => p.delete(k))
     } else if (key === '__ch_range__') {
       const [from, to] = val.split(',')
       p.set('ch_from', from); p.set('ch_to', to)
@@ -996,6 +1036,25 @@ function DashboardPageInner() {
                 <Card title="Weather Conditions" sub={data.unattributed?.byWeather ? `No weather recorded: ${data.unattributed.byWeather.toLocaleString()} not shown in ranking` : undefined}><WeatherBars data={data.byWeather} activeName={data.activeFilters.filterWeather} onBarClick={name => handleFilter('weather', name)} /></Card>
                 <Card title="Activity Status"><DonutChart data={data.byStatus} colorFor={(name) => statusColor(name, D)} emptyLabel="No status data" activeName={data.activeFilters.filterStatus} onSliceClick={name => handleFilter('status', name)} /></Card>
               </div>
+            </Reveal>
+
+            <Reveal delay={80} style={{ marginBottom: 16 }}>
+              <Card title="Planning Status" sub="Field-confirmed against the admin schedule, vs. unplanned field work">
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <PlannedStat
+                    label="Planned" color={D.green}
+                    value={data.summary.plannedCount ?? 0} total={data.summary.totalReports}
+                    active={data.activeFilters.filterPlanned === 'true'}
+                    onClick={() => handleFilter('planned', data.activeFilters.filterPlanned === 'true' ? '' : 'true')}
+                  />
+                  <PlannedStat
+                    label="Newly Planned" color={D.amber}
+                    value={data.summary.newlyPlannedCount ?? 0} total={data.summary.totalReports}
+                    active={data.activeFilters.filterPlanned === 'false'}
+                    onClick={() => handleFilter('planned', data.activeFilters.filterPlanned === 'false' ? '' : 'false')}
+                  />
+                </div>
+              </Card>
             </Reveal>
 
             {data.activityCalendar.length > 0 && (

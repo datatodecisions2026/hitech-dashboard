@@ -19,6 +19,8 @@ export function dashboardRpcArgs(sp: URLSearchParams) {
   )
   // strip chars that used to break the PostgREST .or() syntax; kept for parity
   const search = (sp.get('search') || '').replace(/[,()%*]/g, '').trim() || null
+  const plannedRaw = (sp.get('planned') || '').trim()
+  const planned = plannedRaw === 'true' ? true : plannedRaw === 'false' ? false : null
   return {
     p_category:         s('category'),
     p_project:          s('project'),
@@ -39,6 +41,10 @@ export function dashboardRpcArgs(sp: URLSearchParams) {
     p_employee_role:    s('employee_role'),
     p_engineer_party:   s('engineer_party'),
     p_supervisor_party: s('supervisor_party'),
+    // true = report's globalid matches a real hitech_construction_entities
+    // row (admin pre-planned it); false = it doesn't (unplanned/ad-hoc field
+    // work — "Newly Planned"). See add_dashboard_planned_filter.sql.
+    p_planned:          planned,
   }
 }
 
@@ -167,6 +173,7 @@ export function activeFiltersFrom(sp: URLSearchParams) {
     filterOwnership: g('ownership'), filterDriver: g('driver'),
     filterEmployeeRole: g('employee_role'), filterEngineerParty: g('engineer_party'),
     filterSupervisorParty: g('supervisor_party'),
+    filterPlanned: g('planned'),
   }
 }
 
@@ -183,12 +190,12 @@ function isMissingFunctionError(error: unknown): boolean {
 // retry-once on a hard RPC error (a canceled/timed-out query sets .error) —
 // mirrors /api/progress's rpcWithRetry. Additionally: if the failure looks like
 // a missing-function error and the args carry a param this route added after
-// the RPC itself was last deployed (currently just p_status — see the
-// 2026-09-25 "Activity Status filter" changelog entry), drop that one param and
+// the RPC itself was last deployed (p_status, 2026-09-25; p_planned,
+// 2026-10-01 — see add_dashboard_planned_filter.sql), drop that one param and
 // retry once with the older signature, so the whole dashboard doesn't 503 for
 // every user just because one SQL migration hasn't been applied yet — it only
 // means that one new filter silently doesn't narrow anything until it is.
-const OPTIONAL_ARGS = ['p_status'] as const
+const OPTIONAL_ARGS = ['p_status', 'p_planned'] as const
 
 export async function rpcWithRetry(fn: string, args: Record<string, unknown>) {
   let lastErr: unknown = null
