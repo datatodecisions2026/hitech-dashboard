@@ -692,7 +692,7 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
-### 2026-10-01 (4) — `/dashboard`: Side (LHS/RHS/Median) added to the report table and map popup — `scripts/sql/add_dashboard_side_field.sql` not yet confirmed applied
+### 2026-10-01 (4) — `/dashboard`: Side (LHS/RHS/Median) added to the report table and map popup — `scripts/sql/add_dashboard_side_field.sql` confirmed applied and live
 
 **Files changed:** `scripts/sql/add_dashboard_side_field.sql` (new), `src/app/api/map/route.ts`, `src/components/UnifiedMap.tsx`, `src/lib/map-view.tsx`, `src/app/dashboard/page.tsx`
 
@@ -706,9 +706,11 @@ Full documentation of every portal route, its request/response shape, and the un
 
 **Frontend**: `DashData['recentReports']` and `ActivityReport` (`UnifiedMap.tsx`) both gained an optional `side`, degrading to `'—'`/no row when absent (same convention as every other pending-migration field on this page). `ReportFeed` gained a "Side" column between Section and Category. `MapFocusRequest.popup` (`map-view.tsx`) gained `side`, threaded through `handleSelectReport` → the focus-request effect's `setSelReport(...)` → a new conditional `<InfoRow label="Side" .../>` in the popup, right after Section — covers both ways a report can end up in the popup (a table-row click via `focusRequest`, and a direct marker/line click on the map, which already gets `side` for free since it reads straight off the already-normalized `reports` state).
 
-**Could not apply the SQL migration directly this session** (no DDL-execution path available, same constraint as every other SQL-migration entry in this file) — needs to be run in the Supabase SQL Editor. Until then, `recentReports` rows simply have no `side` key and the table shows `—`; the map's own marker-click popups already show real Side values regardless, since that path never needed the migration.
+**Could not apply the SQL migration directly this session** (no DDL-execution path available, same constraint as every other SQL-migration entry in this file) — the user applied it in the Supabase SQL Editor shortly after this shipped.
 
-**Verified live**: direct `curl` against `/api/map` (pre-migration, no SQL dependency) confirmed real normalized values (`RHS`/`LHS`/`Median`, 2 nulls) matching the hand-computed distribution above. A scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed the "SIDE" column header renders, the cell correctly shows `—` pre-migration (not a crash), and clicking a row still opens the map popup with zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+**Verified live, in two passes.** Pre-migration: direct `curl` against `/api/map` confirmed real normalized values (`RHS`/`LHS`/`Median`, 2 nulls) matching the hand-computed distribution above (no SQL dependency, that path never needed the migration); a scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed the "SIDE" column header renders and the cell correctly showed `—` with `recentReports` not yet carrying the key (not a crash), with zero console errors.
+
+**Re-verified after the user applied the migration**: a direct `dashboard_extra()` RPC call now returns real `side` values on every `recentReports` row (`LHS`/`Median`/null for the one genuinely blank row) — confirmed `dashboard_core()` still resolves correctly too (unrelated function, sanity-checked nothing else broke). A fresh Playwright pass against the live `/dashboard` confirmed the table's SIDE column shows real values (11 of 12 rows `LHS`/`Median`, the one genuinely blank row showing `—`) and clicking a row opens the map popup with a real `Side: LHS` row between Section and Date, exactly as designed. Zero console errors in either pass. `tsc --noEmit` and `next build` both clean (25 routes).
 
 **Why:** Direct user ask. Investigated the real column and its actual dirty-value distribution before writing any code — the same "measure, don't assume" discipline this project has repeatedly needed for every previously-undocumented column found mid-session (`road_assets`, `road_corridors`, etc.) — rather than assuming a clean three-value `side` column the way every other table in this codebase happens to have one.
 
