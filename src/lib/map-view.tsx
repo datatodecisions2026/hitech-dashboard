@@ -39,6 +39,7 @@ export interface MapFocusRequest {
     activity_category?: string
     activity_type?: string
     activity_status?: string
+    side?: string | null
     reporter_name?: string
     section_name?: string
     date_of_activity?: string

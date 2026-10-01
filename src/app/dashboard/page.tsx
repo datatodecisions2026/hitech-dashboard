@@ -69,6 +69,11 @@ interface DashData {
   recentReports: Array<{
     id: number; date_of_activity: string; reporter_name: string; project_name: string; section_name: string
     activity_category: string; activity_type: string; activity_status: string; comment_activity: string; weather?: string
+    // LHS / RHS / Median, normalized server-side from the real but dirty raw
+    // `side` column — see add_dashboard_side_field.sql. Optional/absent until
+    // that migration is applied (degrades to "—"), same convention as every
+    // other pending-migration field on this page.
+    side?: string | null
     start_chainage?: number | null; end_chainage?: number | null
     start_chainage_lat?: string | null; start_chainage_long?: string | null
     end_chainage_lat?: string | null;   end_chainage_long?: string | null
@@ -569,7 +574,7 @@ function ReportFeed({ reports, onSelect, activeId }: { reports: DashData['recent
       )}
       <div style={{ width: '100%', overflowX: 'auto', border: `1px solid ${D.border}`, borderRadius: 10 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
-          <thead><tr>{['Date', 'Project', 'Section', 'Category', 'Type', 'Reporter', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Date', 'Project', 'Section', 'Side', 'Category', 'Type', 'Reporter', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {pageItems.map((r, i) => {
               const dt = r.date_of_activity ? new Date(r.date_of_activity).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
@@ -585,6 +590,7 @@ function ReportFeed({ reports, onSelect, activeId }: { reports: DashData['recent
                   <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)' }}>{dt}</td>
                   <td style={{ ...td, color: D.text, fontWeight: 600, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.project_name || '—'}</td>
                   <td style={{ ...td, color: D.muted, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.section_name || '—'}</td>
+                  <td style={{ ...td, color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>{r.side || '—'}</td>
                   <td style={td}>{r.activity_category ? <Pill kind="mut">{r.activity_category}</Pill> : <span style={{ color: D.sub }}>—</span>}</td>
                   <td style={{ ...td, color: D.muted, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.activity_type || '—'}</td>
                   <td style={{ ...td, color: D.text }}>{r.reporter_name || '—'}</td>
@@ -956,7 +962,7 @@ function DashboardPageInner() {
       startChainage: enableLayer === 'reports' ? (r.start_chainage ?? null) : null,
       popup: {
         activity_category: r.activity_category, activity_type: r.activity_type,
-        activity_status: r.activity_status, reporter_name: r.reporter_name,
+        activity_status: r.activity_status, side: r.side, reporter_name: r.reporter_name,
         section_name: r.section_name, date_of_activity: r.date_of_activity,
         start_chainage: r.start_chainage, end_chainage: r.end_chainage,
       },

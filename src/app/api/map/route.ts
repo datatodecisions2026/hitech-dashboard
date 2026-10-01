@@ -49,6 +49,23 @@ const supabase = createClient(
 // specifically so a future change doesn't re-reach for BATCH=4 by the same
 // (reasonable-looking, but empirically wrong here) analogy.
 //
+// hitech_report_hitechreport.side is a real column, but with dirty raw
+// variants (confirmed live before touching this route, same investigation
+// behind add_dashboard_side_field.sql's SQL-side _normalize_side()): RHS/LHS
+// are the common forms, plus Median/MEDIAN and a handful of Left/Right.
+// Collapsed here the same way, so the map popup never has to branch on
+// which raw spelling a report happens to carry.
+function normalizeSide(s: string | null | undefined): string | null {
+  if (!s) return null
+  const t = s.trim()
+  if (!t) return null
+  const u = t.toUpperCase()
+  if (u === 'LHS' || u === 'LEFT' || u === 'L') return 'LHS'
+  if (u === 'RHS' || u === 'RIGHT' || u === 'R') return 'RHS'
+  if (u.startsWith('MED')) return 'Median'
+  return t
+}
+
 // Takes a query FACTORY (not a single builder instance) because Supabase's
 // query builder is mutable — calling .range() again on the same object
 // before the previous call's request has actually gone out would silently
@@ -154,7 +171,7 @@ export async function GET(req: NextRequest) {
 
   const REPORT_COLS =
     'id, start_chainage, end_chainage, start_chainage_val, end_chainage_val, ' +
-    'activity_category, activity_type, activity_status, ' +
+    'activity_category, activity_type, activity_status, side, ' +
     'reporter_name, date_of_activity, project_name, section_name, ' +
     'start_chainage_lat, start_chainage_long, end_chainage_lat, end_chainage_long'
 
@@ -224,7 +241,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     stations:  (lineRes.data ?? []).map((s: any) => ({ ...s, label: Number(s.label), project_id: projectId })),
-    reports,
+    reports: reports.map((r: any) => ({ ...r, side: normalizeSide(r.side) })),
     projectId,
     project,
     category,

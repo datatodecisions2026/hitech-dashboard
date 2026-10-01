@@ -186,6 +186,7 @@ planned                       — "true" | "false". true = report's globalid mat
       "activity_status": "Completed",
       "comment_activity": "Completed 50m of cut",
       "weather": "Sunny",
+      "side": "LHS",
       "start_chainage": 1500, "end_chainage": 1550,
       "start_chainage_lat": "5.603", "start_chainage_long": "-0.187",
       "end_chainage_lat": "5.605", "end_chainage_long": "-0.185"
@@ -282,7 +283,7 @@ all                              — "1" → return reports across EVERY project
     {
       "id": 99, "start_chainage": "1+500", "end_chainage": "1+550",
       "start_chainage_val": 1500, "end_chainage_val": 1550,
-      "activity_category": "Earthworks", "activity_type": "Excavation", "activity_status": "Completed",
+      "activity_category": "Earthworks", "activity_type": "Excavation", "activity_status": "Completed", "side": "LHS",
       "reporter_name": "Kofi Mensah", "date_of_activity": "2026-05-14",
       "project_name": "Ring Road Phase 2", "section_name": "Section A",
       "start_chainage_lat": "5.603", "start_chainage_long": "-0.187",
@@ -294,7 +295,7 @@ all                              — "1" → return reports across EVERY project
 }
 ```
 
-Reads `hitech_report_chainage` (station markers) and `hitech_report_hitechreport` (report chainage points), filtered by project via `.ilike()` on the first word of the project name.
+Reads `hitech_report_chainage` (station markers) and `hitech_report_hitechreport` (report chainage points), filtered by project via `.ilike()` on the first word of the project name. `side` is normalized server-side (`normalizeSide()` in the route file) from the real but dirty raw column — see `hitech_report_hitechreport`'s table entry below.
 
 ---
 
@@ -531,6 +532,7 @@ Activity reports submitted by field workers.
 | `start_chainage` / `end_chainage` | text | Display chainage, e.g. `"1+500"` |
 | `start_chainage_val` / `end_chainage_val` | numeric | Chainage in metres — used for range filtering (`ch_from`/`ch_to`) in `/api/dashboard`, `/api/progress`, `/api/map` |
 | `globalid` | text | Cross-referenced against `hitech_construction_entities.global_id` to link a report to a progress entity |
+| `side` | text | Real column, previously undocumented here — confirmed live 2026-10-01. Dirty raw values (`RHS`/`LHS`/`Median`/`MEDIAN`/`Left`/`Right`, 2 blank of 9,780) — normalized to `LHS`/`RHS`/`Median` server-side (`/api/map`'s `normalizeSide()`, SQL `_normalize_side()` in `add_dashboard_side_field.sql`) before reaching the frontend. Surfaced on `/dashboard`'s "Recent Activity Reports" table and the map's report popup |
 
 ### `hitech_report_hitechphoto`
 Media attached to reports.
@@ -689,6 +691,26 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-10-01 (4) — `/dashboard`: Side (LHS/RHS/Median) added to the report table and map popup — `scripts/sql/add_dashboard_side_field.sql` not yet confirmed applied
+
+**Files changed:** `scripts/sql/add_dashboard_side_field.sql` (new), `src/app/api/map/route.ts`, `src/components/UnifiedMap.tsx`, `src/lib/map-view.tsx`, `src/app/dashboard/page.tsx`
+
+**What the user asked:** "I think the table and the pop-up should add the side of the activity whether left, right, or median."
+
+**Investigated before building, not assumed**: `hitech_report_hitechreport` turned out to have a real, previously-undocumented `side` column — confirmed live by sampling the table directly, not guessed from the field name alone. Checked the real distribution before writing anything: 9,780 reports, 0 null, 2 blank, and the raw values are genuinely dirty — `RHS` 3,495 / `LHS` 5,063 / `Median` 188 / `MEDIAN` 1,010 / `Left` 19 / `Right` 3. Normalizing this to the canonical `LHS`/`RHS`/`Median` labels this project already uses elsewhere (`road_assets`, `hitech_construction_entities`) collapses cleanly to 5,082 / 3,498 / 1,198 / 2 blank — same total, confirmed by direct arithmetic before shipping.
+
+**Two independent code paths needed the same normalization, since one is a plain table query and the other is an RPC**:
+- `GET /api/map` (`src/app/api/map/route.ts`) queries `hitech_report_hitechreport` directly — added `side` to `REPORT_COLS` and a new `normalizeSide()` TS helper applied to every returned report, so the map's own marker-click popup (built straight from `reports` state, not via a table-row click) gets a real, clean value immediately, with **no SQL migration needed** — this path works the moment the code deploys.
+- `/dashboard`'s "Recent Activity Reports" table is backed by `dashboard_extra`'s `recentReports`, computed entirely in Postgres. Added a new `public._normalize_side(text)` SQL function (same immutable-helper convention as `_titlecase()`) and added `public._normalize_side(side) as side` to `recentReports`' select list, via `add_dashboard_side_field.sql` — a `CREATE OR REPLACE FUNCTION` recreation of `dashboard_extra` with the identical parameter list (purely additive new output key, same category as `machineActivityByDay`'s addition — no signature change, so no `rpcWithRetry`/`OPTIONAL_ARGS` safeguard needed, and no risk of this breaking an existing call before it's applied).
+
+**Frontend**: `DashData['recentReports']` and `ActivityReport` (`UnifiedMap.tsx`) both gained an optional `side`, degrading to `'—'`/no row when absent (same convention as every other pending-migration field on this page). `ReportFeed` gained a "Side" column between Section and Category. `MapFocusRequest.popup` (`map-view.tsx`) gained `side`, threaded through `handleSelectReport` → the focus-request effect's `setSelReport(...)` → a new conditional `<InfoRow label="Side" .../>` in the popup, right after Section — covers both ways a report can end up in the popup (a table-row click via `focusRequest`, and a direct marker/line click on the map, which already gets `side` for free since it reads straight off the already-normalized `reports` state).
+
+**Could not apply the SQL migration directly this session** (no DDL-execution path available, same constraint as every other SQL-migration entry in this file) — needs to be run in the Supabase SQL Editor. Until then, `recentReports` rows simply have no `side` key and the table shows `—`; the map's own marker-click popups already show real Side values regardless, since that path never needed the migration.
+
+**Verified live**: direct `curl` against `/api/map` (pre-migration, no SQL dependency) confirmed real normalized values (`RHS`/`LHS`/`Median`, 2 nulls) matching the hand-computed distribution above. A scripted Playwright pass against an isolated `next build`/`next start -p 3001` instance confirmed the "SIDE" column header renders, the cell correctly shows `—` pre-migration (not a crash), and clicking a row still opens the map popup with zero console errors. `tsc --noEmit` and `next build` both clean (25 routes).
+
+**Why:** Direct user ask. Investigated the real column and its actual dirty-value distribution before writing any code — the same "measure, don't assume" discipline this project has repeatedly needed for every previously-undocumented column found mid-session (`road_assets`, `road_corridors`, etc.) — rather than assuming a clean three-value `side` column the way every other table in this codebase happens to have one.
 
 ### 2026-10-01 (3) — `/dashboard`: clicking a "Recent Activity Reports" row again now un-focuses it on the map
 

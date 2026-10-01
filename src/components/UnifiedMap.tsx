@@ -144,6 +144,7 @@ interface ActivityReport {
   activity_category:    string
   activity_type:        string
   activity_status:      string
+  side?:                string | null
   reporter_name:        string
   date_of_activity:     string
   project_name:         string
@@ -1396,6 +1397,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
         activity_category: focusRequest.popup.activity_category || '',
         activity_type: focusRequest.popup.activity_type || '',
         activity_status: focusRequest.popup.activity_status || '',
+        side: focusRequest.popup.side || null,
         reporter_name: focusRequest.popup.reporter_name || '',
         section_name: focusRequest.popup.section_name || '',
         project_name: '',
@@ -1571,6 +1573,7 @@ export default function UnifiedMap({ chFrom, chTo, category, project, weather, d
               <InfoRow label="Status" value={selReport.activity_status} color={statusColor(selReport.activity_status)} />
               <InfoRow label="Reporter" value={selReport.reporter_name} />
               <InfoRow label="Section" value={selReport.section_name} />
+              {selReport.side && <InfoRow label="Side" value={selReport.side} />}
               <InfoRow label="Date" value={selReport.date_of_activity} />
               {selReport.start_chainage != null && <InfoRow label="Chainage" value={`${selReport.start_chainage} → ${selReport.end_chainage}`} />}
             </div>
