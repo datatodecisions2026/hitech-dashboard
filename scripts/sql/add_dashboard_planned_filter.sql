@@ -8,15 +8,29 @@
 -- matches a real entity in hitech_construction_entities (the admin-authored
 -- planning table) — the EXACT same join progress_section_breakdown already
 -- uses for its own "implemented" flag (see add_planning_implementation_rpc.sql),
--- just read from the report's side instead of the entity's side. A report
--- whose globalid matches no entity at all (or has no globalid) is genuinely
--- unplanned/ad-hoc field work — confirmed live: of all 9,780 reports, only
--- 2,865 (29.3%) match a planned entity; 6,890 (70.4%) don't match any entity;
--- 25 have a blank globalid. Confirmed with the user via AskUserQuestion
--- before building: "newly planned" = unplanned/ad-hoc work (not e.g. a plan
--- the admin just created), and this should be two clickable KPI counts wired
--- into the existing click-to-filter system, same as every other dashboard
--- chart dimension.
+-- just read from the report's side instead of the entity's side. Confirmed
+-- with the user via AskUserQuestion before building: "newly planned" =
+-- unplanned/ad-hoc work (not e.g. a plan the admin just created), and this
+-- should be two clickable KPI counts wired into the existing click-to-filter
+-- system, same as every other dashboard chart dimension.
+--
+-- CORRECTION (same day, after applying this migration): the pre-build
+-- investigation's real numbers were WRONG — it used an ad-hoc Node script
+-- doing `.in('global_id', chunk)` REST calls against hitech_construction_entities
+-- in chunks of 200 report globalids, which silently hit PostgREST's 1000-row
+-- response cap (this table averages ~143 rows per distinct global_id, so a
+-- 200-id chunk's true matching row count is usually far north of 1000) —
+-- exactly the "never query this table per-row over REST, always aggregate in
+-- real SQL" trap this project's own CLAUDE.md already warns about for this
+-- exact table. Proven wrong by a hard mathematical contradiction found while
+-- verifying the applied migration: that script claimed 2,865 distinct
+-- matching global_ids, but a proper full-table pagination scan found the
+-- *entire* entities table only has 2,064 distinct global_id values —
+-- matching more distinct values than exist is impossible. The deployed SQL
+-- below (plain Postgres SQL, no REST cap) is correct and was spot-verified
+-- directly against several individual reports the broken script had
+-- misclassified. **The real split is 4,046 planned (41.4%) / 5,734 newly
+-- planned (58.6%) of all 9,780 reports** — not the ~29%/71% first reported.
 --
 -- hitech_construction_entities is 580k rows — per this project's own
 -- established rule (see CLAUDE.md), this can never be queried per-row
@@ -321,7 +335,7 @@ grant execute on function public.dashboard_extra          to service_role;
 
 -- ── verification queries (run manually after applying) ─────────────────────
 -- select (public.dashboard_core())->'summary'->'plannedCount', (public.dashboard_core())->'summary'->'newlyPlannedCount';
--- -- expect roughly 2865 / 6890 on the real unfiltered data (checked live 2026-10-01)
+-- -- expect 4046 / 5734 on the real unfiltered data (verified live 2026-10-01, see the CORRECTION note above)
 -- select (public.dashboard_core(p_planned := true))->'summary'->'totalReports';   -- should equal plannedCount above
 -- select (public.dashboard_core(p_planned := false))->'summary'->'totalReports';  -- should equal newlyPlannedCount above
 -- explain analyze select * from public.dashboard_filtered_ids(p_planned := true); -- confirm the planned_ids CTE keeps this cheap, not a 580k-row scan per call

@@ -144,8 +144,8 @@ planned                       — "true" | "false". true = report's globalid mat
     "totalPhotos": 812,
     "uniqueReporters": 14,
     "completionRate": 74,
-    "plannedCount": 2865,
-    "newlyPlannedCount": 6890
+    "plannedCount": 4046,
+    "newlyPlannedCount": 5734
   },
   "byCategory": [{ "name": "Earthworks", "count": 120 }],
   "byProject": [{ "name": "Ring Road Phase 2", "count": 85 }],
@@ -211,7 +211,7 @@ The `by*` person/weather series have the literal `"Unknown"` entry (blank raw va
 
 `machineActivityByDay` (last-30-days machine mention counts, same `generate_series` shape as `byDay`) and `driverMachineCross` back `/machines`' "Machine Activity Trend" and "Driver × Machine" cards — added by `scripts/sql/add_dashboard_machine_trends.sql`, see the 2026-09-25 (5) changelog entry. Both are optional on the response until that SQL is applied (purely additive — no new RPC parameter, so no signature-mismatch risk the way `p_status` had). `driverMachineCross`'s own shape changed again the same day, from a flat top-12 `(driver, machine)` pairs list to the nested `{driver, total, machines: [{machine, count}]}[]` shown above (top 10 drivers by total activity, each capped at their own top-5-machines-plus-"Other") — see `scripts/sql/add_dashboard_driver_machine_stacked.sql` and the 2026-09-25 (6) changelog entry for why (the flat version was dominated by whichever one driver logs the most activity).
 
-`summary.plannedCount`/`summary.newlyPlannedCount` back `/dashboard`'s "Planning Status" card — a report counts as **planned** when its `globalid` matches a real row in `hitech_construction_entities` (the admin schedule), the exact same join `/api/planning-implementation`'s "Implemented" flag already uses, just read from the report's side. **Newly planned** = everything else (no matching entity, or no `globalid` at all) — genuinely unplanned/ad-hoc field work, confirmed live to be the dominant case (70.4% of all 9,780 reports), not a 50/50 split. Added by `scripts/sql/add_dashboard_planned_filter.sql`, see the 2026-10-01 changelog entry — both fields are optional on the response (default to `0` on the frontend) until that SQL is applied.
+`summary.plannedCount`/`summary.newlyPlannedCount` back `/dashboard`'s "Planning Status" card — a report counts as **planned** when its `globalid` matches a real row in `hitech_construction_entities` (the admin schedule), the exact same join `/api/planning-implementation`'s "Implemented" flag already uses, just read from the report's side. **Newly planned** = everything else (no matching entity, or no `globalid` at all). Verified live against the applied migration: **4,046 planned (41.4%) / 5,734 newly planned (58.6%)** of all 9,780 reports — see the 2026-10-01 (2) changelog entry for how a flawed pre-build investigation (an ad-hoc REST `.in()` query that silently hit the PostgREST 1000-row cap against this many-rows-per-key table) first reported a very different, wrong split, and how the deployed SQL was proven correct instead. Added by `scripts/sql/add_dashboard_planned_filter.sql` — both fields are optional on the response (default to `0` on the frontend) until that SQL is applied.
 
 ---
 
@@ -689,6 +689,20 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-10-01 (2) — Correction: the Planning Status feature's real numbers were wrong at ship time — a flawed investigation, not a flawed feature
+
+**Files changed:** `scripts/sql/add_dashboard_planned_filter.sql`, `CLAUDE.md`
+
+**What happened:** the (1) entry below shipped citing "2,865 planned (29.3%) / 6,890 newly planned (70.4%)" as the real split, sourced from a pre-build investigation script. After the user applied the migration, re-querying the live, deployed `dashboard_core()` RPC returned a **materially different** result: `plannedCount: 4046, newlyPlannedCount: 5734`. Rather than assume the freshly-applied SQL was buggy, investigated which number was actually wrong.
+
+**Root cause, proven by a hard mathematical contradiction, not just re-running the old script and trusting a different answer**: the original investigation queried `hitech_construction_entities` via `.in('global_id', chunk)` REST calls, 200 report-globalids per chunk. This table averages **~143 rows per distinct `global_id`** (579,703 rows / ~4,046 distinct values) — so a 200-id chunk's true matching row count is routinely in the tens of thousands, and PostgREST's hard 1,000-row response cap (the same limit this project has hit and documented repeatedly elsewhere — `/api/map`, `road_assets`, `road_corridors`) silently truncated each chunk's response to an arbitrary, non-representative 1,000 rows. This is exactly the "never query a many-rows-per-key table per-row over REST, always aggregate in real SQL" trap CLAUDE.md's own `hitech_construction_entities`/`road_assets` entries already warn about — the investigation script broke its own project's established rule.
+
+**Proof, not just a plausible theory**: a fresh full-table pagination scan (plain `.range()` paging, no `.in()`, no cap risk) found `hitech_construction_entities` has only **2,064** distinct `global_id` values, total. The original script's claimed "2,865 distinct matching global_ids" is mathematically impossible — you cannot match more distinct values than exist in the target set. Spot-checked 5 of the specific reports the old script had misclassified as "not planned" directly via `.eq('global_id', ...)` (no chunking, no cap risk) — every one of them genuinely had 21–161 matching entity rows. The deployed SQL function (plain Postgres `SELECT DISTINCT` + `LEFT JOIN`, no REST row cap anywhere in the execution path) was correct from the moment it was applied; the number shipped in chat and in this file was not.
+
+**Fixed**: corrected the real numbers everywhere they were written down — this file's `GET /api/dashboard` response example and prose, and `add_dashboard_planned_filter.sql`'s header comment and verification-query comment. The feature's code itself (the SQL migration, `_lib.ts`, `dashboard/page.tsx`) needed **no changes** — it was never wrong.
+
+**Why:** Direct consequence of actually verifying a migration against live data after applying it, rather than treating "the feature shipped" as the end of the job. The investigation that initially grounded this feature was itself unverified against the live SQL path — re-checking after the real thing existed is what caught it, consistent with this project's repeated "measure, don't assume — and re-measure after each real change" discipline. Correcting the record here matters specifically because the wrong 29%/71% split was stated confidently, with specific numbers, as the justification for building the feature in the first place.
 
 ### 2026-10-01 — `/dashboard`: new "Planning Status" card — Planned vs Newly Planned reports, click-to-filter
 
