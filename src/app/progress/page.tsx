@@ -1,8 +1,10 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, GLASS } from '@/lib/theme'
 import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
@@ -53,24 +55,18 @@ function useCountUp(target: number, duration = 1100, trigger = true) {
 
 /* ── primitives ───────────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [vis, setVis] = useState(false)
-  useEffect(() => {
-    const el = ref.current; if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVis(true); obs.disconnect() } }, { threshold: 0.05 })
-    obs.observe(el); return () => obs.disconnect()
-  }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
+    <motion.div style={st} initial={{ opacity: 0, y: 18, scale: 0.985 }} whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.05 }} transition={{ duration: 0.55, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }}>
       {children}
-    </div>
+    </motion.div>
   )
 }
 
 function Card({ children, title, sub, action, style: st }: { children: React.ReactNode; title: string; sub?: string; action?: React.ReactNode; style?: React.CSSProperties }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
+    <motion.div whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
       <div style={{ padding: '14px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div>
           <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
@@ -79,7 +75,7 @@ function Card({ children, title, sub, action, style: st }: { children: React.Rea
         {action}
       </div>
       <div style={{ padding: '4px 16px 16px' }}>{children}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -102,13 +98,13 @@ function KPICard({ label, value, color, icon, suffix = '', delay = 0 }: { label:
   const displayed = useCountUp(vis ? value : 0, 1200, vis)
   const numColor = color ?? D.text
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={vis ? { opacity: 1, y: 0 } : undefined} transition={{ duration: 0.5, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }} whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted }}>{icon}</div>
       </div>
       <div style={{ ...TYPE_SCALE.heroKpi, color: numColor, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
       <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -164,7 +160,7 @@ function ProgressCurve({ data }: { data: Array<{ date: string; pct: number }> })
           const tx = Math.min(x - 55, W - padR - 120), ty = Math.max(padT + 4, y - 50)
           return <g>
             <line x1={x} y1={y} x2={x} y2={padT + chartH} stroke={`${D.amber}44`} strokeWidth={1} strokeDasharray="3 3" />
-            <rect x={tx} y={ty} width={120} height={38} rx={5} fill={D.panel} stroke={D.border} strokeWidth={1} />
+            <rect x={tx} y={ty} width={120} height={38} rx={5} fill="#1c1c20" stroke={D.border} strokeWidth={1} />
             <text x={tx + 10} y={ty + 15} fill={D.amber} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text>
             <text x={tx + 10} y={ty + 30} fill={D.text} fontSize="11" fontFamily="var(--font-mono)" fontWeight="600">{d.pct.toFixed(1)}% complete</text>
           </g>
@@ -258,7 +254,7 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
             const entityTotal = validTotals.length > 0 ? validTotals.reduce((s, v) => s + v, 0) / validTotals.length : null
             return (
               <>
-                <tr key={`${entityName}-h`} onClick={() => toggle(entityName)} className="tbl-row-header" style={{ cursor: 'pointer', borderBottom: `1px solid ${D.border}`, background: `${D.panel2}66` }}>
+                <tr key={`${entityName}-h`} onClick={() => toggle(entityName)} className="tbl-row-header" style={{ cursor: 'pointer', borderBottom: `1px solid ${D.border}`, background: `rgba(255,255,255,0.035)` }}>
                   <td style={{ padding: '10px 14px', color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 9, color: D.amber, display: 'inline-block', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
@@ -273,7 +269,7 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
                   const sc = SIDE_COLOR[row.side] || D.muted
                   return (
                     <>
-                      <tr key={`${entityName}-${row.side}-l`} style={{ borderBottom: `1px solid ${D.border}`, background: `${D.panel2}33` }}>
+                      <tr key={`${entityName}-${row.side}-l`} style={{ borderBottom: `1px solid ${D.border}`, background: `rgba(255,255,255,0.02)` }}>
                         <td style={{ padding: '7px 14px 3px 30px', color: sc, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 5, height: 5, borderRadius: '50%', background: sc }} />{row.side}</div>
                         </td>
@@ -384,7 +380,7 @@ function Pager({ page, total, pageSize, onPage }: { page: number; total: number;
   const { colors: D } = useTheme()
   if (total <= pageSize) return null
   const last = Math.ceil(total / pageSize) - 1
-  const btn: React.CSSProperties = { background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
+  const btn: React.CSSProperties = { background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
       <button onClick={() => onPage(Math.max(0, page - 1))} disabled={page === 0} style={{ ...btn, opacity: page === 0 ? 0.4 : 1 }}>‹ Prev</button>
@@ -552,7 +548,7 @@ function ActivityReportsPanel({ reportsByType, recentReports }: { reportsByType:
 function Skeleton({ h }: { h: number }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ height: h, borderRadius: 10, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
+    <div style={{ height: h, borderRadius: 10, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
       <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, ${D.panel2} 50%, transparent 100%)`, animation: 'shimmer 1.6s ease-in-out infinite' }} />
     </div>
   )
@@ -634,9 +630,9 @@ function ProgressPageInner() {
   const activeFilterCount = [applied.entity, applied.side, applied.month, applied.chFrom && applied.chTo].filter(Boolean).length
 
   return (
-    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
       {/* sub-header */}
-      <div className="sub-header-bar" style={{ position: 'sticky', top: '3.5rem', zIndex: 50, background: D.bg, borderBottom: `1px solid ${D.border}`, padding: '0 24px', display: 'flex', alignItems: 'center', gap: 18, height: 46, overflowX: 'auto' }}>
+      <div className="sub-header-bar" style={{ position: 'sticky', top: '3.5rem', zIndex: 50, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, borderBottom: `1px solid ${D.border}`, padding: '0 24px', display: 'flex', alignItems: 'center', gap: 18, height: 46, overflowX: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
           <span style={{ fontWeight: 600, fontSize: 14, letterSpacing: '-0.01em', color: D.text }}>Progress</span>
           <span className="sub-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.06em', color: D.sub, textTransform: 'uppercase' }}>Coastal Road · 1b&amp;c</span>
@@ -687,7 +683,7 @@ function ProgressPageInner() {
                   <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
                   <aside className="filter-rail" style={{
                     position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
-                    width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
+                    width: 300, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
                     display: 'flex', flexDirection: 'column', overflow: 'hidden',
                     maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
                   }}>
@@ -699,7 +695,7 @@ function ProgressPageInner() {
                           <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
                         )}
                       </div>
-                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.muted, cursor: 'pointer' }}>
                         <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
                       </button>
                     </div>
@@ -784,7 +780,7 @@ function ProgressPageInner() {
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity: 0.3; }
         .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: ${D.panel2}66; }
+        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         .tbl-row-header:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1024px) {
@@ -806,7 +802,7 @@ function ProgressPageInner() {
 export default function ProgressPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg }} />}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'transparent' }} />}>
       <ProgressPageInner />
     </Suspense>
   )

@@ -1,8 +1,10 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, GLASS } from '@/lib/theme'
 import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 import { HeroBanner } from '@/components/HeroBanner'
 
@@ -58,24 +60,18 @@ function useCountUp(target: number, duration = 1100, delay = 0) {
 
 /* ── primitives ───────────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [vis, setVis] = useState(false)
-  useEffect(() => {
-    const el = ref.current; if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVis(true); obs.disconnect() } }, { threshold: 0.05 })
-    obs.observe(el); return () => obs.disconnect()
-  }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
+    <motion.div style={st} initial={{ opacity: 0, y: 18, scale: 0.985 }} whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.05 }} transition={{ duration: 0.55, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }}>
       {children}
-    </div>
+    </motion.div>
   )
 }
 
 function Card({ children, title, note }: { children: React.ReactNode; title: string; note?: React.ReactNode }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
+    <motion.div whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '14px 16px 8px' }}>
         <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
       </div>
@@ -88,7 +84,7 @@ function Card({ children, title, note }: { children: React.ReactNode; title: str
          reasoning this reuses. */}
       <div style={{ padding: '4px 16px 16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>{children}</div>
       {note && <div style={{ padding: '0 16px 12px', marginTop: -4, fontSize: 11, lineHeight: 1.4, color: D.muted, fontFamily: 'var(--font-mono)', letterSpacing: '0.02em' }}>{note}</div>}
-    </div>
+    </motion.div>
   )
 }
 
@@ -106,11 +102,11 @@ function KPICard({ label, value, icon, delay = 0, color }: { label: string; valu
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
   const displayed = useCountUp(vis ? value : 0, 1200, 0)
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={vis ? { opacity: 1, y: 0 } : undefined} transition={{ duration: 0.5, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }} whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, padding: '14px 16px' }}>
       <div style={{ width: 26, height: 26, borderRadius: 7, background: color ? `${color}1c` : D.panel2, border: `1px solid ${color ? color + '38' : D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: color ?? D.muted, marginBottom: 10 }}>{icon}</div>
       <div style={{ ...TYPE_SCALE.heroKpi, color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}</div>
       <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -158,7 +154,7 @@ function PersonnelTrendChart({ data }: { data: Array<{ date: string; employees: 
             const x = xFor(hov)
             return <g>
               <line x1={x} y1={padT} x2={x} y2={padT + chartH} stroke={D.border} strokeWidth={1} strokeDasharray="2 2" />
-              {series.map(s => <circle key={s.key} cx={x} cy={yFor(data[hov][s.key])} r={2.8} fill={s.color} stroke={D.panel} strokeWidth={1} />)}
+              {series.map(s => <circle key={s.key} cx={x} cy={yFor(data[hov][s.key])} r={2.8} fill={s.color} stroke="#1c1c20" strokeWidth={1} />)}
             </g>
           })()}
           {data.filter((_, i) => i % 5 === 0 || i === data.length - 1).map(d => { const i = data.indexOf(d); return <text key={d.date} x={xFor(i)} y={H - 4} textAnchor="middle" fill={D.sub} fontSize="9" fontFamily="var(--font-mono)">{fmtD(d.date)}</text> })}
@@ -448,7 +444,7 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
 
   return (
     <aside className="filter-rail" style={{
-      width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14,
+      width: 300, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 14,
       boxShadow: SH.cardLg, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
     }}>
@@ -460,7 +456,7 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
             <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
           )}
         </div>
-        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.muted, cursor: 'pointer' }}>
           <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
         </button>
       </div>
@@ -560,7 +556,7 @@ function PersonnelHistoryModal({ employee, events, onClose }: { employee: Roster
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, animation: `fadeIn 0.15s ${EASE}` }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-        background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.cardLg,
+        background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.cardLg,
         animation: `fadeIn 0.2s ${EASE}`,
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '16px 18px 14px', borderBottom: `1px solid ${D.border}`, flexShrink: 0 }}>
@@ -699,7 +695,7 @@ function PersonnelHistory() {
 function Skel({ h }: { h: number }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ height: h, borderRadius: 10, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
+    <div style={{ height: h, borderRadius: 10, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
       <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, ${D.panel2} 50%, transparent 100%)`, animation: 'shimmer 1.6s ease-in-out infinite' }} />
     </div>
   )
@@ -805,7 +801,7 @@ function PersonnelPageInner() {
   const latestWeather = data?.recentReports.find(r => r.weather)?.weather
 
   return (
-    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
       <div style={{ padding: '28px 36px', width: '100%' }}>
         <HeroBanner
           D={D}
@@ -931,7 +927,7 @@ function PersonnelPageInner() {
 export default function PersonnelPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '28px 36px' }}><PageSkeleton /></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'transparent', padding: '28px 36px' }}><PageSkeleton /></div>}>
       <PersonnelPageInner />
     </Suspense>
   )

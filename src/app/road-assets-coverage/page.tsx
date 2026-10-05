@@ -1,8 +1,10 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, GLASS } from '@/lib/theme'
 import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 
 const EASE = 'cubic-bezier(0.16,1,0.3,1)'
@@ -120,29 +122,23 @@ function useCountUp(target: number, duration = 1100, trigger = true) {
 
 /* ── primitives ───────────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [vis, setVis] = useState(false)
-  useEffect(() => {
-    const el = ref.current; if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVis(true); obs.disconnect() } }, { threshold: 0.05 })
-    obs.observe(el); return () => obs.disconnect()
-  }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
+    <motion.div style={st} initial={{ opacity: 0, y: 18, scale: 0.985 }} whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.05 }} transition={{ duration: 0.55, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }}>
       {children}
-    </div>
+    </motion.div>
   )
 }
 
 function Panel({ children, title, style: st }: { children: React.ReactNode; title: string; style?: React.CSSProperties }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
+    <motion.div whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, display: 'flex', flexDirection: 'column', ...st }}>
       <div style={{ padding: '14px 16px 8px' }}>
         <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
       </div>
       <div style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>{children}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -152,11 +148,11 @@ function KPICard({ label, value, color, icon, suffix = '', delay = 0 }: { label:
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 100); return () => clearTimeout(t) }, [delay])
   const displayed = useCountUp(vis ? value : 0, 1300, vis)
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={vis ? { opacity: 1, y: 0 } : undefined} transition={{ duration: 0.5, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }} whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, padding: '14px 16px' }}>
       <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}>{icon}</div>
       <div style={{ ...TYPE_SCALE.heroKpi, color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix}</div>
       <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -165,14 +161,14 @@ function StatCard({ label, value, color, icon, delay = 0, tag }: { label: string
   const [vis, setVis] = useState(false)
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 100); return () => clearTimeout(t) }, [delay])
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={vis ? { opacity: 1, y: 0 } : undefined} transition={{ duration: 0.5, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }} whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, padding: '14px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted }}>{icon}</div>
         {tag && <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: D.sub, background: D.panel2, border: `1px solid ${D.border}`, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{tag}</span>}
       </div>
       <div style={{ ...TYPE_SCALE.statNumber, fontSize: 19, color: color, lineHeight: 1.1 }}>{value}</div>
       <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -506,7 +502,7 @@ function TimelineChart({ points, granularity }: { points: TimelinePoint[]; granu
           const gap = Math.round(((p.actualPct ?? 0) - p.plannedPct) * 10) / 10
           const tx = Math.min(Math.max(padL, x - 62), W - padR - 132), ty = Math.max(padT + 4, y - 60)
           return <g>
-            <rect x={tx} y={ty} width={132} height={52} rx={6} fill={D.panel} stroke={D.border} strokeWidth={1} />
+            <rect x={tx} y={ty} width={132} height={52} rx={6} fill="#1c1c20" stroke={D.border} strokeWidth={1} />
             <text x={tx + 10} y={ty + 15} fill={D.muted} fontSize="9" fontFamily="var(--font-mono)">{fmtTimelineDate(p.date, granularity)}</text>
             <text x={tx + 10} y={ty + 29} fill={D.amber} fontSize="10" fontFamily="var(--font-mono)">Actual {(p.actualPct ?? 0).toFixed(1)}%</text>
             <text x={tx + 10} y={ty + 43} fill={D.sub} fontSize="10" fontFamily="var(--font-mono)">Plan {p.plannedPct.toFixed(1)}% ({gap >= 0 ? '+' : ''}{gap}pp)</text>
@@ -634,7 +630,7 @@ function ChainageLogTable({ entries, totalCount, page, onPage }: { entries: Chai
   const pageData = entries.slice(page * PAGE, page * PAGE + PAGE)
   const th: React.CSSProperties = { padding: '9px 14px', textAlign: 'left', color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600, background: D.panel2, borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap' }
   const td: React.CSSProperties = { padding: '9px 14px', borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap' }
-  const pbtn: React.CSSProperties = { background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
+  const pbtn: React.CSSProperties = { background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
   const last = Math.ceil(entries.length / PAGE) - 1
   if (!entries.length) return <div style={{ color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '30px 0', textAlign: 'center' }}>No completions match these filters</div>
   return (
@@ -762,7 +758,7 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
             <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
             <aside className="filter-rail" style={{
               position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
-              width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
+              width: 300, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
               maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
             }}>
@@ -774,7 +770,7 @@ function ByChainageTab({ section, entities }: { section: string; entities: Entit
                     <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
                   )}
                 </div>
-                <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+                <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.muted, cursor: 'pointer' }}>
                   <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
                 </button>
               </div>
@@ -870,9 +866,9 @@ function Skeleton() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-        {[0, 1, 2, 3].map(i => <div key={i} style={{ height: 100, background: D.panel, borderRadius: 10, border: `1px solid ${D.border}` }} />)}
+        {[0, 1, 2, 3].map(i => <div key={i} style={{ height: 100, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, borderRadius: 10, border: `1px solid ${D.border}` }} />)}
       </div>
-      <div style={{ height: 400, background: D.panel, borderRadius: 10, border: `1px solid ${D.border}` }} />
+      <div style={{ height: 400, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, borderRadius: 10, border: `1px solid ${D.border}` }} />
     </div>
   )
 }
@@ -926,7 +922,7 @@ export default function RoadAssetsPage() {
   }, [section])
 
   return (
-    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
       <div style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
           <div>
@@ -1008,7 +1004,7 @@ export default function RoadAssetsPage() {
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
         .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: ${D.panel2}66; }
+        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 900px) { .ra-2col { grid-template-columns: 1fr !important; } }
         @media (max-width: 640px) {

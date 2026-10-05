@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
-import { useSidebar } from '@/lib/sidebar'
-import ThemeToggle from './ThemeToggle'
+import { useTheme, GLASS } from '@/lib/theme'
+import { motion } from 'framer-motion'
 
 interface SessionUser {
   first_name: string
@@ -13,7 +12,6 @@ interface SessionUser {
   role?: string
 }
 
-const IconPanelLeft = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>
 const IconSearch = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
 const IconChevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
 const IconSignOut = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /></svg>
@@ -28,10 +26,8 @@ export default function DashHeader() {
   const router = useRouter()
   const pathname = usePathname()
   const { colors: D, shadows: SH } = useTheme()
-  const { toggle } = useSidebar()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [hovToggle, setHovToggle] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,46 +53,35 @@ export default function DashHeader() {
     router.replace('/login')
   }
 
-  const iconBtn: React.CSSProperties = {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: 32, height: 32, flexShrink: 0, color: D.muted, background: 'transparent',
-    border: '1px solid transparent', borderRadius: 8, cursor: 'pointer',
-    transition: 'background 0.15s ease, color 0.15s ease',
-  }
-
   return (
-    <header style={{
-      position: 'sticky', top: 0, zIndex: 90,
-      height: '3.5rem', flexShrink: 0,
-      display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px',
-      background: `${D.panel}f2`, backdropFilter: 'saturate(180%) blur(8px)',
-      borderBottom: `1px solid ${D.border}`, boxShadow: SH.card,
-    }}>
-      <button aria-label="Toggle sidebar" title="Toggle sidebar (⌘/Ctrl + B)" onClick={toggle}
-        onMouseEnter={() => setHovToggle(true)} onMouseLeave={() => setHovToggle(false)}
-        style={{ ...iconBtn, background: hovToggle ? D.panel2 : 'transparent', color: hovToggle ? D.text : D.muted }}>
-        <IconPanelLeft />
-      </button>
-
-      <span style={{ width: 1, height: 20, background: D.border, margin: '0 4px', flexShrink: 0 }} />
-
+    <motion.header
+      initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        position: 'sticky', top: 12, zIndex: 90, margin: '12px 24px 0',
+        height: '3.25rem', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px 0 10px',
+        background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS,
+        border: `1px solid ${D.border}`, borderRadius: 999, boxShadow: SH.card,
+      }}>
       <div className="dh-search" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <span style={{ position: 'absolute', left: 9, display: 'flex', color: D.sub, pointerEvents: 'none' }}><IconSearch /></span>
         <input type="search" placeholder="Search…" aria-label="Global search" style={{
           font: 'inherit', height: 32, width: '15rem', padding: '0 10px 0 28px',
-          color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 8, outline: 'none',
+          color: D.text, background: D.panel2, border: `1px solid ${D.border}`, borderRadius: 999, outline: 'none',
         }} />
       </div>
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-        <ThemeToggle />
+        <span className="dh-date" style={{ fontSize: 12.5, color: D.muted, whiteSpace: 'nowrap', padding: '0 8px' }}>
+          {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+        </span>
 
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
             style={{
               display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '4px 6px 4px 4px',
               background: menuOpen ? D.panel2 : 'transparent', border: '1px solid transparent',
-              borderRadius: 8, cursor: 'pointer', color: D.text,
+              borderRadius: 999, cursor: 'pointer', color: D.text,
               transition: 'background 0.15s ease',
             }}>
             <span style={{
@@ -111,7 +96,7 @@ export default function DashHeader() {
           {menuOpen && user && (
             <div role="menu" style={{
               position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 100, width: 244, padding: 6,
-              background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.cardLg,
+              background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 8px 10px' }}>
                 <span style={{ fontSize: 12.5, color: D.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
@@ -139,10 +124,10 @@ export default function DashHeader() {
       <style>{`
         .dh-menu-item:hover { background: ${D.panel2}; }
         @media (max-width: 640px) {
-          .dh-search { display: none !important; }
+          .dh-search, .dh-date { display: none !important; }
           .dh-username { display: none !important; }
         }
       `}</style>
-    </header>
+    </motion.header>
   )
 }

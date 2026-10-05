@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { ColorTokens } from '@/lib/theme'
+import { GLASS, type ColorTokens } from '@/lib/theme'
 
 /* ── hero banner (navy cover-page style, real site photos) ──
    Built for /dashboard 2026-09-19 (see that page's changelog history),
@@ -47,17 +47,18 @@ export function HeroBanner({ D, title, greeting, firstName, photos, stat, weathe
   const idx = useCrossfade(photos.length, 7000)
   return (
     <div className="hero-banner" style={{
-      position: 'relative', borderRadius: 16, overflow: 'hidden', marginBottom: 20,
-      minHeight: 220, display: 'flex', background: D.blue, boxShadow: '0 14px 44px rgba(0,0,0,0.28)',
+      position: 'relative', borderRadius: 24, overflow: 'hidden', marginBottom: 20,
+      minHeight: 220, display: 'flex', background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS,
+      border: `1px solid ${D.border}`, boxShadow: 'inset 0 1px 0 rgba(255,255,255,.12), 0 18px 48px -12px rgba(0,0,0,.55)',
     }}>
       {photos.map((src, i) => (
         <img key={src} src={src} alt="" style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
           opacity: i === idx ? 1 : 0, transition: 'opacity 1.4s ease',
-          filter: 'brightness(0.5) saturate(1.05)',
+          filter: 'brightness(0.78) saturate(1.05)',
         }} />
       ))}
-      <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(100deg, ${D.blue}f0 0%, ${D.blue}c8 40%, ${D.blue}70 72%, transparent 100%)` }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(16,16,20,.88) 0%, rgba(16,16,20,.6) 42%, rgba(16,16,20,.15) 78%, transparent 100%)' }} />
 
       <div style={{ position: 'relative', zIndex: 1, padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', flex: 1, color: '#fff', minWidth: 0 }}>
         <div>
@@ -66,7 +67,7 @@ export function HeroBanner({ D, title, greeting, firstName, photos, stat, weathe
           <p style={{ margin: '6px 0 0', fontSize: 13.5, color: 'rgba(255,255,255,0.78)', maxWidth: 420 }}>{stat}</p>
         </div>
         {weather && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 8, padding: '6px 12px', alignSelf: 'flex-start', backdropFilter: 'blur(4px)' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 999, padding: '6px 14px', alignSelf: 'flex-start', backdropFilter: GLASS, WebkitBackdropFilter: GLASS }}>
             <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>{WEATHER_ICON[weather] || '🌡'}</span>
             <div>
               <div style={{ fontSize: 12, fontWeight: 600 }}>{weather}</div>
@@ -79,7 +80,7 @@ export function HeroBanner({ D, title, greeting, firstName, photos, stat, weathe
       <div className="hero-nav" style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 13, padding: '28px 28px', borderLeft: '1px solid rgba(255,255,255,0.16)', minWidth: 150, flexShrink: 0 }}>
         {HERO_NAV.map(b => (
           <a key={b.label} href={b.href} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: '#fff' }}>
-            <span style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(224,182,74,0.18)', border: '1px solid rgba(224,182,74,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{b.icon}</span>
+            <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: GLASS, WebkitBackdropFilter: GLASS, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{b.icon}</span>
             <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{b.label}</span>
           </a>
         ))}

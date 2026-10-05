@@ -1,7 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  /* Real photo: drop it at /public/bg.jpg and set this to url('/bg.jpg'). Until then
+     the gradient below stands in (warm, dim interior tones like the reference). */
+  --app-bg-image: none;
+}
+
+/* Fixed full-bleed background behind every glass surface. The dark scrim
+   keeps text legible over a bright photo (HIG: ~35% dimming layer). */
+.app-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(8,8,10,.38) 0%, rgba(8,8,10,.55) 100%),
+    var(--app-bg-image) center / cover no-repeat,
+    radial-gradient(1200px 700px at 18% 12%, #6b4a2e 0%, transparent 60%),
+    radial-gradient(900px 600px at 85% 30%, #3d4a52 0%, transparent 60%),
+    radial-gradient(1000px 800px at 60% 100%, #4a3a2c 0%, transparent 65%),
+    #17140f;
+}
+
+/* Reduce-transparency users get solid surfaces instead of blur. */
+@media (prefers-reduced-transparency: reduce) {
+  * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 }
 
 html, body {
@@ -38,8 +59,8 @@ body {
   --font-dm-sans: var(--font-fira-sans), ui-sans-serif, system-ui, sans-serif;
   --font-dm-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
-  background: #f6f6f4;
-  color: #13253d;
+  background: #17140f;
+  color: #f5f5f7;
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.6;
@@ -53,18 +74,6 @@ body {
 h1, h2, h3, h4, h5 {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
-}
-
-/* The no-FOUC script always resolves data-theme to an explicit value, so
-   [data-theme] is the source of truth; @media is the no-JS fallback. */
-:root[data-theme='dark'] { color-scheme: dark; }
-:root[data-theme='dark'] body { background: #070d16; color: #edf2f7; }
-:root[data-theme='light'] { color-scheme: light; }
-:root[data-theme='light'] body { background: #f6f6f4; color: #13253d; }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) { color-scheme: dark; }
-  :root:not([data-theme='light']) body { background: #070d16; color: #edf2f7; }
 }
 
 * {
@@ -84,20 +93,16 @@ pre, code {
 }
 
 :focus-visible {
-  outline: 2px solid #b8872e;
+  outline: 2px solid #f0a23b;
   outline-offset: 2px;
   border-radius: 4px;
-}
-:root[data-theme='dark'] :focus-visible { outline-color: #e0b64a; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) :focus-visible { outline-color: #e0b64a; }
 }
 
 /* thin neutral scrollbars (was amber) */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(102,117,131,0.35); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(102,117,131,0.55); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.32); }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }

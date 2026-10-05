@@ -1,11 +1,13 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 import dynamic from 'next/dynamic'
 const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false })
 
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTheme, type ColorTokens } from '@/lib/theme'
+import { useTheme, type ColorTokens, GLASS } from '@/lib/theme'
 import { useMapView } from '@/lib/map-view'
 import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 import { HeroBanner, WEATHER_ICON } from '@/components/HeroBanner'
@@ -107,7 +109,7 @@ function useCountUp(target: number, duration = 1100, delay = 0) {
 /* ── primitives ───────────────────────────────────────────── */
 function useAccentRGB() {
   const { theme } = useTheme()
-  return theme === 'light' ? '3,105,161' : '56,189,248'
+  void theme; return '240,162,59'
 }
 
 function EmptyState({ label }: { label: string }) {
@@ -123,24 +125,18 @@ function EmptyState({ label }: { label: string }) {
 }
 
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [vis, setVis] = useState(false)
-  useEffect(() => {
-    const el = ref.current; if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVis(true); obs.disconnect() } }, { threshold: 0.05 })
-    obs.observe(el); return () => obs.disconnect()
-  }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
+    <motion.div style={st} initial={{ opacity: 0, y: 18, scale: 0.985 }} whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.05 }} transition={{ duration: 0.55, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }}>
       {children}
-    </div>
+    </motion.div>
   )
 }
 
 function Card({ children, title, sub, action, style: st, bodyPad = true }: { children: React.ReactNode; title?: string; sub?: string; action?: React.ReactNode; style?: React.CSSProperties; bodyPad?: boolean }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
-    <div className="ui-card" style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.card, display: 'flex', flexDirection: 'column', transition: `box-shadow 0.18s ${EASE}, border-color 0.18s ${EASE}, transform 0.18s ${EASE}`, ...st }}>
+    <motion.div whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} className="ui-card" style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, display: 'flex', flexDirection: 'column', transition: `box-shadow 0.18s ${EASE}, border-color 0.18s ${EASE}, transform 0.18s ${EASE}`, ...st }}>
       {title && (
         <div style={{ padding: '14px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div>
@@ -151,7 +147,7 @@ function Card({ children, title, sub, action, style: st, bodyPad = true }: { chi
         </div>
       )}
       <div style={{ padding: bodyPad ? (title ? '4px 16px 16px' : 16) : 0 }}>{children}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -318,7 +314,7 @@ function TimelineChart({ data }: { data: Array<{ date: string; count: number }> 
                 const tx = Math.min(Math.max(x - 26, padL), W - padR - 82)
                 const ty = Math.max(padT + 2, y - 27)
                 return <g>
-                  <rect x={tx} y={ty} width={82} height={20} rx={4} fill={D.panel} stroke={D.border} strokeWidth={1} />
+                  <rect x={tx} y={ty} width={82} height={20} rx={4} fill="#1c1c20" stroke={D.border} strokeWidth={1} />
                   <text x={tx + 41} y={ty + 13.5} textAnchor="middle" fill={D.text} fontSize="11" fontFamily="var(--font-mono)">{fmtD(d.date)}: {d.count}</text>
                 </g>
               })()}
@@ -476,7 +472,7 @@ function MediaBox({ label, items, filterKey }: { label: string; items: MediaItem
   useEffect(() => { setPage(0); setLightbox(null) }, [filterKey])
 
   const pagerBtn: React.CSSProperties = {
-    background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8,
+    background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8,
     padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer', transition: 'background 0.15s',
   }
   return (
@@ -491,7 +487,7 @@ function MediaBox({ label, items, filterKey }: { label: string; items: MediaItem
             const isVideo = item.media_type === 'video'
             return (
               <div key={`${filterKey}-${page}-${i}`} onClick={() => setLightbox(item)}
-                style={{ aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', position: 'relative', background: D.panel, border: `1px solid ${D.border}`, transition: 'box-shadow 0.15s' }}
+                style={{ aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', position: 'relative', background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, transition: 'box-shadow 0.15s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 0 2px ${D.amber}` }}
                 onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}>
                 {isVideo
@@ -564,7 +560,7 @@ function ReportFeed({ reports, onSelect, activeId }: { reports: DashData['recent
   const th: React.CSSProperties = { padding: '8px 12px', textAlign: 'left', color: D.muted, fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, background: D.panel2, whiteSpace: 'nowrap', borderBottom: `1px solid ${D.border}` }
   const td: React.CSSProperties = { padding: '9px 12px', borderBottom: `1px solid ${D.border}`, whiteSpace: 'nowrap' }
   const statusKind = (s: string): 'ok' | 'accent' | 'mut' => /complete/i.test(s) ? 'ok' : /progress|ongoing/i.test(s) ? 'accent' : 'mut'
-  const pagerBtn: React.CSSProperties = { background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
+  const pagerBtn: React.CSSProperties = { background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
   return (
     <div>
       {reports.length > PAGE_SIZE && (
@@ -663,7 +659,7 @@ function ActivityCalendar({ data }: { data: CalDay[] }) {
         <span style={{ fontSize: 9, color: D.sub, fontFamily: 'var(--font-mono)' }}>More</span>
         <span style={{ marginLeft: 'auto', fontSize: 9, color: D.sub, fontFamily: 'var(--font-mono)' }}>{data.length} active days · {data.reduce((s, d) => s + d.count, 0)} reports</span>
       </div>
-      {hovDay && <div style={{ position: 'fixed', left: hovDay.x - 85, top: hovDay.y - 84, width: 175, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 8, padding: '8px 12px', pointerEvents: 'none', zIndex: 9100, boxShadow: '0 8px 28px rgba(0,0,0,0.18)' }}>
+      {hovDay && <div style={{ position: 'fixed', left: hovDay.x - 85, top: hovDay.y - 84, width: 175, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 8, padding: '8px 12px', pointerEvents: 'none', zIndex: 9100, boxShadow: '0 8px 28px rgba(0,0,0,0.18)' }}>
         <div style={{ fontSize: 10.5, color: D.amber, fontFamily: 'var(--font-mono)', marginBottom: 4 }}>{new Date(hovDay.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
         <div style={{ fontSize: 13, color: D.text, fontFamily: 'var(--font-mono)', fontWeight: 700, marginBottom: 4 }}>{hovDay.count} {hovDay.count === 1 ? 'report' : 'reports'}</div>
         {hovDay.projects.length > 0 && <div style={{ fontSize: 10, color: D.muted, fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{hovDay.projects.slice(0, 3).join(' · ')}{hovDay.projects.length > 3 ? ` +${hovDay.projects.length - 3} more` : ''}</div>}
@@ -724,7 +720,7 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
 
   return (
     <aside className="filter-rail" style={{
-      width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14,
+      width: 300, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 14,
       boxShadow: SH.cardLg, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
     }}>
@@ -736,7 +732,7 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
             <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
           )}
         </div>
-        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+        <button onClick={onClose} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.muted, cursor: 'pointer' }}>
           <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
         </button>
       </div>
@@ -793,7 +789,7 @@ function FilterRail({ data, onFilter, onClose }: { data: DashData; onFilter: (ke
 function Skel({ h, style: st }: { h: number; style?: React.CSSProperties }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ height: h, borderRadius: 10, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}`, ...st }}>
+    <div style={{ height: h, borderRadius: 10, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}`, ...st }}>
       <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, ${D.panel2} 50%, transparent 100%)`, animation: 'shimmer 1.6s ease-in-out infinite' }} />
     </div>
   )
@@ -989,7 +985,7 @@ function DashboardPageInner() {
       : { pct: Math.round(((data.summary.reportsThisMonth - lastMonthCount) / lastMonthCount) * 100) }
 
   return (
-    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
       <div className="dash-content" style={{ padding: '28px 36px', width: '100%' }}>
 
         <HeroBanner
@@ -1151,9 +1147,9 @@ function DashboardPageInner() {
         select:focus, input:focus { border-color: ${D.amber} !important; box-shadow: 0 0 0 3px ${D.amber}22 !important; }
         select option { background: ${D.panel}; color: ${D.text}; }
         input[type='date']::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
-        .ui-card:hover { box-shadow: ${SH.cardLg}; border-color: ${D.amber}44; transform: translateY(-1px); }
+        .ui-card:hover { box-shadow: ${SH.cardLg}; border-color: rgba(255,255,255,0.22); }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: ${D.panel2}66; }
+        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1200px) {
           .dash-content { padding: 24px 24px !important; }
@@ -1178,7 +1174,7 @@ function DashboardPageInner() {
 export default function DashboardPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '28px 36px' }}><DashSkeleton /></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'transparent', padding: '28px 36px' }}><DashSkeleton /></div>}>
       <DashboardPageInner />
     </Suspense>
   )

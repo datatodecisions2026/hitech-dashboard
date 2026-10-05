@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, GLASS } from '@/lib/theme'
 
 export default function LoginPage() {
   const { theme, colors: D } = useTheme()
@@ -53,7 +53,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: D.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', padding: '24px 16px' }}>
+    <main style={{ minHeight: '100vh', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', padding: '24px 16px' }}>
       {/* Ambient glow */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden',
@@ -97,7 +97,7 @@ export default function LoginPage() {
 
         {/* Card */}
         <div style={{
-          background: `linear-gradient(160deg, ${D.panel} 0%, ${D.bg} 100%)`,
+          background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS,
           border: `1px solid ${D.border}`,
           borderRadius: 20, padding: '28px 24px',
           boxShadow: `0 24px 80px rgba(0,0,0,${isLight ? 0.1 : 0.6})`,

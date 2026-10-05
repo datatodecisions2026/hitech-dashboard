@@ -1,11 +1,13 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 import dynamic from 'next/dynamic'
 const RoadCorridorMap = dynamic(() => import('@/components/RoadCorridorMap'), { ssr: false })
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTheme } from '@/lib/theme'
+import { useTheme, GLASS } from '@/lib/theme'
 
 const EE_APP_URL = 'https://academic-matter-367309.projects.earthengine.app/view/roadcorridors'
 
@@ -40,12 +42,12 @@ function KPICard({ label, value, suffix = '', color }: { label: string; value: n
   const { colors: D, shadows: SH } = useTheme()
   const n = useCountUp(value)
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.card, padding: 16 }}>
+    <motion.div whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, padding: 16 }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: D.muted, marginBottom: 8 }}>{label}</div>
       <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.01em', color: color || D.text, fontVariantNumeric: 'tabular-nums' }}>
         {n.toLocaleString()}{suffix}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -81,7 +83,7 @@ export default function RoadCorridorsPage() {
   const activeSummary = region === 'all' ? null : byRegion(region)
 
   return (
-    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
       <div style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
           <div>
@@ -142,7 +144,7 @@ export default function RoadCorridorsPage() {
         </div>
 
         {/* Map */}
-        <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.card, overflow: 'hidden', height: 'calc(100vh - 340px)', minHeight: 460 }}>
+        <div style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 12, boxShadow: SH.card, overflow: 'hidden', height: 'calc(100vh - 340px)', minHeight: 460 }}>
           <RoadCorridorMap region={region} onLoadStats={setLoadStats} />
         </div>
 

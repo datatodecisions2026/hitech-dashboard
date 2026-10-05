@@ -5,35 +5,29 @@ import DashHeader from './DashHeader'
 import SideNav from './SideNav'
 import { useSidebar } from '@/lib/sidebar'
 import { useTheme } from '@/lib/theme'
-import { SIDEBAR_WIDTH, SIDEBAR_WIDTH_COLLAPSED } from '@/lib/theme-constants'
 
 /**
- * The app frame: a genuinely fixed rail on the left (out of the scroll
- * flow entirely — it never moves with the page) and a content column that
- * simply reserves the rail's width as a left margin. On mobile the rail
- * becomes an overlay drawer, so the content column reclaims the full width.
+ * The app frame: a fixed full-bleed background photo (`.app-bg`, see
+ * globals.css — drop the real image at /public/bg.jpg), the floating glass
+ * nav pill, and a content column that clears the pill (left on desktop,
+ * bottom on mobile). Glass surfaces blur whatever sits under them here.
  */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { collapsed, isMobile } = useSidebar()
+  const { isMobile } = useSidebar()
   const { colors: D } = useTheme()
-
   const bare = pathname === '/login'
-  const railWidth = bare || isMobile ? '0px' : collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH
 
   return (
-    <div style={{ minHeight: '100vh', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100vh', color: D.text }}>
+      <div className="app-bg" aria-hidden />
       <SideNav />
-      <div
-        style={{
-          marginLeft: railWidth,
-          minWidth: 0,
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'margin-left 0.18s ease',
-        }}
-      >
+      <div style={{
+        position: 'relative', zIndex: 1,
+        marginLeft: bare || isMobile ? 0 : 88,
+        paddingBottom: !bare && isMobile ? 84 : 0,
+        minWidth: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      }}>
         <DashHeader />
         {children}
       </div>

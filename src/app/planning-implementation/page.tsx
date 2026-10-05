@@ -1,9 +1,11 @@
 'use client'
 
+import { motion } from 'framer-motion'
+
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { useTheme } from '@/lib/theme'
+import { useTheme, GLASS } from '@/lib/theme'
 import { VIVID, TYPE_SCALE } from '@/lib/theme-constants'
 
 const UnifiedMap = dynamic(() => import('@/components/UnifiedMap'), { ssr: false })
@@ -98,29 +100,23 @@ function useCountUp(target: number, duration = 1100, delay = 0) {
 
 /* ── primitives ───────────────────────────────────────────── */
 function Reveal({ children, delay = 0, style: st }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [vis, setVis] = useState(false)
-  useEffect(() => {
-    const el = ref.current; if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVis(true); obs.disconnect() } }, { threshold: 0.05 })
-    obs.observe(el); return () => obs.disconnect()
-  }, [])
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(14px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms`, ...st }}>
+    <motion.div style={st} initial={{ opacity: 0, y: 18, scale: 0.985 }} whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.05 }} transition={{ duration: 0.55, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }}>
       {children}
-    </div>
+    </motion.div>
   )
 }
 
 function Card({ children, title }: { children: React.ReactNode; title: string }) {
   const { colors: D, shadows: SH } = useTheme()
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
+    <motion.div whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '14px 16px 8px' }}>
         <h3 style={{ margin: 0, ...TYPE_SCALE.sectionHeader, color: D.text }}>{title}</h3>
       </div>
       <div style={{ padding: '4px 16px 16px' }}>{children}</div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -130,12 +126,12 @@ function KPICard({ label, value, suffix, sub, icon, delay = 0, color }: { label:
   useEffect(() => { const t = setTimeout(() => setVis(true), delay + 80); return () => clearTimeout(t) }, [delay])
   const displayed = useCountUp(vis ? value : 0, 1200, 0)
   return (
-    <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 10, boxShadow: SH.card, padding: '14px 16px', opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(10px)', transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ${EASE} ${delay}ms` }}>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={vis ? { opacity: 1, y: 0 } : undefined} transition={{ duration: 0.5, delay: delay / 1000, ease: [0.16, 1, 0.3, 1] }} whileHover={{ y: -4, transition: { type: 'spring', stiffness: 400, damping: 28 } }} style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 20, boxShadow: SH.card, padding: '14px 16px' }}>
       <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}>{icon}</div>
       <div style={{ ...TYPE_SCALE.heroKpi, color: color ?? D.text, fontVariantNumeric: 'tabular-nums' }}>{displayed.toLocaleString()}{suffix ?? ''}</div>
       <div style={{ ...TYPE_SCALE.microLabel, color: D.muted, marginTop: 8 }}>{label}</div>
       {sub && <div style={{ fontSize: 10, color: D.sub, fontFamily: 'var(--font-mono)', marginTop: 4, lineHeight: 1.5 }}>{sub}</div>}
-    </div>
+    </motion.div>
   )
 }
 
@@ -236,7 +232,7 @@ const FIconFunnel = ({ color }: { color: string }) => <svg width={14} height={14
 function Skel({ h }: { h: number }) {
   const { colors: D } = useTheme()
   return (
-    <div style={{ height: h, borderRadius: 10, background: D.panel, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
+    <div style={{ height: h, borderRadius: 10, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, position: 'relative', overflow: 'hidden', border: `1px solid ${D.border}` }}>
       <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 0%, ${D.panel2} 50%, transparent 100%)`, animation: 'shimmer 1.6s ease-in-out infinite' }} />
     </div>
   )
@@ -271,7 +267,7 @@ function SectionTable({ sections, activeSection, onSelectSection }: { sections: 
   const pageData = sections.slice(page * PAGE, page * PAGE + PAGE)
   const td: React.CSSProperties = { padding: '9px 14px', borderBottom: `1px solid ${D.border}` }
   const last = Math.ceil(total / PAGE) - 1
-  const pbtn: React.CSSProperties = { background: D.panel, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
+  const pbtn: React.CSSProperties = { background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.text, border: `1px solid ${D.border}`, borderRadius: 8, padding: '6px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer' }
   return (
     <div>
       <div style={{ overflowX: 'auto', border: `1px solid ${D.border}`, borderRadius: 10 }}>
@@ -443,7 +439,7 @@ function PlanningImplementationPageInner() {
   const activeFilterCount = [activeProjectKey, activeSection].filter(Boolean).length
 
   return (
-    <div style={{ minHeight: '100%', background: D.bg, color: D.text }}>
+    <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
       <div style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Planning &amp; Implementation</h2>
@@ -476,7 +472,7 @@ function PlanningImplementationPageInner() {
                   <div onClick={() => setFiltersOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
                   <aside className="filter-rail" style={{
                     position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 50,
-                    width: 300, background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
+                    width: 300, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, border: `1px solid ${D.border}`, borderRadius: 14, boxShadow: SH.cardLg,
                     display: 'flex', flexDirection: 'column', overflow: 'hidden',
                     maxHeight: 'calc(100vh - 120px)', animation: `fadeIn 0.15s ${EASE}`,
                   }}>
@@ -488,7 +484,7 @@ function PlanningImplementationPageInner() {
                           <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: D.amber, color: '#1a1408', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' }}>{activeFilterCount}</span>
                         )}
                       </div>
-                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, color: D.muted, cursor: 'pointer' }}>
+                      <button onClick={() => setFiltersOpen(false)} aria-label="Close filters" style={{ flexShrink: 0, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: `1px solid ${D.border}`, background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, color: D.muted, cursor: 'pointer' }}>
                         <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round"><line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" /></svg>
                       </button>
                     </div>
@@ -551,7 +547,7 @@ function PlanningImplementationPageInner() {
               <KPICard label="Road Assets (est.)" value={roadAssetsTotal} icon={<IconLayers />} delay={0} />
               <KPICard label="Road Assets Geolocated" value={roadAssetsGeolocated} icon={<IconMap />} delay={60} />
               <KPICard label="Road Asset Field Reports" value={roadAssetsReportCount} icon={<IconClipboard />} delay={120} />
-              <div style={{ background: D.panel, borderRadius: 10, padding: '14px 16px', border: `1px solid ${D.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS, borderRadius: 10, padding: '14px 16px', border: `1px solid ${D.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <div style={{ width: 26, height: 26, borderRadius: 7, background: D.panel2, border: `1px solid ${D.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: D.muted, marginBottom: 10 }}><IconClock /></div>
                 {loadStats ? (
                   <>
@@ -643,7 +639,7 @@ function PlanningImplementationPageInner() {
         select option { background:${D.panel}; color:${D.text}; }
         .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: ${D.panel2}66; }
+        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(2,1fr) !important; } }
         @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(1,1fr) !important; } .pi-grid { grid-template-columns: 1fr !important; } .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; } }
@@ -655,7 +651,7 @@ function PlanningImplementationPageInner() {
 export default function PlanningImplementationPage() {
   const { colors: D } = useTheme()
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: D.bg, padding: '28px 36px' }}><PageSkeleton /></div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'transparent', padding: '28px 36px' }}><PageSkeleton /></div>}>
       <PlanningImplementationPageInner />
     </Suspense>
   )

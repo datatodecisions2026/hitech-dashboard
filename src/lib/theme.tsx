@@ -38,71 +38,49 @@ export interface ShadowTokens {
   glowAmber: string; glowGreen: string; glowRed: string; borderGlow: string
 }
 
-const LIGHT_COLORS: ColorTokens = {
-  bg:     '#f6f6f4',   // --ground (warm off-white, matches the reference's page background)
-  panel:  '#ffffff',   // --surface (white cards)
-  panel2: '#eef1f4',   // --surface-2
-  border: '#e1e5ea',   // --line
-  text:   '#13253d',   // --ink (deep navy — headers, KPI numbers, body text)
-  muted:  '#5b6b7d',   // --muted (navy-tinted gray)
-  sub:    '#93a0ac',   // faintest text / disabled
-  amber:  '#b8872e',   // --accent (warm gold — the single wayfinding colour)
-  amberL: '#d1a24a',   // accent, bright / hover
-  amberD: '#93691f',   // accent, deep
-  red:    '#c62a2f',   // --crit
-  green:  '#15803d',   // --ok
-  blue:   '#1c3f66',   // navy secondary (headers/hero backgrounds, not the accent)
-  purple: '#5b6b7d',   // neutralised
-  gold:   'linear-gradient(135deg, #d4af37 0%, #f0d078 100%)',
-}
-
-const DARK_COLORS: ColorTokens = {
-  bg:     '#070d16',
-  panel:  '#0e1c2e',
-  panel2: '#132842',
-  border: '#1f3855',
-  text:   '#edf2f7',
-  muted:  '#93a4b8',
-  sub:    '#5b7086',
-  amber:  '#e0b64a',   // --accent (dark) — brighter gold for contrast on navy
-  amberL: '#f2cd75',
-  amberD: '#c99a2e',
-  red:    '#f2696d',
+/**
+ * 2026-10-05: dark "liquid glass" only (confirmed with the user — reference:
+ * a smart-home glass dashboard video). Surfaces are translucent and blurred
+ * over a fixed full-bleed background photo (see AppShell). `panel`/`panel2`/
+ * `border` are rgba on purpose — never hex-alpha-suffix them (`${D.panel}66`
+ * would be invalid CSS). Every other token stays plain hex so the existing
+ * `${D.amber}20`-style call sites keep working.
+ */
+const GLASS_COLORS: ColorTokens = {
+  bg:     '#0b0b0d',                    // fallback behind the photo
+  panel:  'rgba(30,30,34,0.52)',        // glass card (regular variant)
+  panel2: 'rgba(255,255,255,0.07)',     // inner wells, inputs, chips
+  border: 'rgba(255,255,255,0.13)',     // hairline light edge
+  text:   '#f5f5f7',
+  muted:  '#b4b4bb',                    // ≥4.5:1 on the dimmed glass
+  sub:    '#7c7c84',
+  amber:  '#f0a23b',                    // warm orange accent, as in the reference
+  amberL: '#ffb95c',
+  amberD: '#c97f1f',
+  red:    '#ff6b6b',
   green:  '#4ade80',
-  blue:   '#5b8fc9',   // navy secondary, lightened for legibility on dark bg
-  purple: '#93a4b8',
-  gold:   'linear-gradient(135deg, #e0b64a 0%, #f2cd75 100%)',
+  blue:   '#7aa7e0',
+  purple: '#b4b4bb',
+  gold:   'linear-gradient(135deg, #f0a23b 0%, #ffcf80 100%)',
 }
 
-const LIGHT_SHADOWS: ShadowTokens = {
-  card:       '0 1px 2px rgba(14,21,28,.05), 0 2px 6px -2px rgba(14,21,28,.07)',
-  cardLg:     '0 2px 4px -1px rgba(14,21,28,.07), 0 14px 44px -12px rgba(14,21,28,.16)',
-  panel:      '0 1px 2px rgba(14,21,28,.05), 0 2px 6px -2px rgba(14,21,28,.07)',
-  panelLg:    '0 2px 4px -1px rgba(14,21,28,.07), 0 14px 44px -12px rgba(14,21,28,.16)',
-  well:       'inset 0 1px 2px rgba(14,21,28,.06)',
-  raised:     '0 1px 2px rgba(14,21,28,.05), 0 2px 6px -2px rgba(14,21,28,.07)',
-  raisedLg:   '0 2px 4px -1px rgba(14,21,28,.07), 0 14px 44px -12px rgba(14,21,28,.16)',
-  inset:      'inset 0 1px 2px rgba(14,21,28,.06)',
+const GLASS_SHADOWS: ShadowTokens = {
+  card:       'inset 0 1px 0 rgba(255,255,255,.10), 0 8px 32px -8px rgba(0,0,0,.45)',
+  cardLg:     'inset 0 1px 0 rgba(255,255,255,.14), 0 18px 48px -12px rgba(0,0,0,.6)',
+  panel:      'inset 0 1px 0 rgba(255,255,255,.10), 0 8px 32px -8px rgba(0,0,0,.45)',
+  panelLg:    'inset 0 1px 0 rgba(255,255,255,.14), 0 18px 48px -12px rgba(0,0,0,.6)',
+  well:       'inset 0 1px 2px rgba(0,0,0,.35)',
+  raised:     'inset 0 1px 0 rgba(255,255,255,.10), 0 4px 16px -6px rgba(0,0,0,.45)',
+  raisedLg:   'inset 0 1px 0 rgba(255,255,255,.14), 0 18px 48px -12px rgba(0,0,0,.6)',
+  inset:      'inset 0 1px 2px rgba(0,0,0,.35)',
   glowAmber:  'none',
   glowGreen:  'none',
   glowRed:    'none',
-  borderGlow: '1px solid rgba(184,135,46,.30)',
+  borderGlow: '1px solid rgba(240,162,59,.35)',
 }
 
-const DARK_SHADOWS: ShadowTokens = {
-  card:       '0 1px 2px rgba(0,0,0,.5), 0 2px 8px -2px rgba(0,0,0,.4)',
-  cardLg:     '0 2px 4px -1px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.62)',
-  panel:      '0 1px 2px rgba(0,0,0,.5), 0 2px 8px -2px rgba(0,0,0,.4)',
-  panelLg:    '0 2px 4px -1px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.62)',
-  well:       'inset 0 1px 2px rgba(0,0,0,.4)',
-  raised:     '0 1px 2px rgba(0,0,0,.5), 0 2px 8px -2px rgba(0,0,0,.4)',
-  raisedLg:   '0 2px 4px -1px rgba(0,0,0,.5), 0 20px 50px -14px rgba(0,0,0,.62)',
-  inset:      'inset 0 1px 2px rgba(0,0,0,.4)',
-  glowAmber:  'none',
-  glowGreen:  'none',
-  glowRed:    'none',
-  borderGlow: '1px solid rgba(224,182,74,.30)',
-}
+/** backdrop-filter for every glass surface (HIG regular variant: 20–40px blur, 1.2–1.5x saturation). */
+export const GLASS = 'blur(28px) saturate(150%)'
 
 interface ThemeContextValue {
   /** Resolved theme actually in effect — always 'light' | 'dark'. */
@@ -143,7 +121,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => mql.removeEventListener('change', onChange)
   }, [])
 
-  const theme: ThemeName = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
+  // Glass design is dark-only; mode is kept so old consumers still compile.
+  void systemDark
+  const theme: ThemeName = 'dark'
 
   useEffect(() => {
     // The no-FOUC script always resolves data-theme to 'light' | 'dark'
@@ -163,8 +143,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setMode,
     cycleMode,
     toggleTheme: cycleMode,
-    colors: theme === 'light' ? LIGHT_COLORS : DARK_COLORS,
-    shadows: theme === 'light' ? LIGHT_SHADOWS : DARK_SHADOWS,
+    colors: GLASS_COLORS,
+    shadows: GLASS_SHADOWS,
   }
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

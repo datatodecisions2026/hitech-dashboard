@@ -692,6 +692,18 @@ Full documentation of every portal route, its request/response shape, and the un
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
 
+### 2026-10-05 — Site-wide dark "liquid glass" redesign with framer-motion
+
+**Files changed:** `src/lib/theme.tsx`, `src/app/globals.css`, `src/components/AppShell.tsx`, `src/components/SideNav.tsx` (rewritten), `src/components/DashHeader.tsx`, `src/components/HeroBanner.tsx`, all 7 page files + `login/page.tsx`, **deleted** `src/components/ThemeToggle.tsx`, `package.json` (+`framer-motion`)
+
+**What the user asked:** redesign the whole UI to match the first example ("Dashboard 1 / Smart Home") in a reference video, using framer-motion and Apple HIG glass. Confirmed via `AskUserQuestion`: every page at once, dark glass only, floating icon pill + tooltips, page scrolls with glass cards.
+
+- **Theme**: one dark glass palette (`GLASS_COLORS`), theme forced to `'dark'` (the `mode`/`setMode` API is kept so consumers still compile). `panel`/`panel2`/`border` are now **rgba** — never hex-alpha-suffix them (`${D.panel}66` is invalid CSS; the 7 existing sites were rewritten). Accent `amber` is now warm orange `#f0a23b`, as in the reference. New `GLASS` export (`blur(28px) saturate(150%)`, HIG regular variant) is applied as `backdropFilter` next to every `background: D.panel` surface.
+- **Background**: a fixed `.app-bg` layer (`globals.css`) under everything: a 35–55% dark scrim (HIG dimming layer) + `--app-bg-image` + a warm gradient placeholder. **To add the real photo:** put it at `/public/bg.jpg` and set `--app-bg-image: url('/bg.jpg')`. Page wrappers are `background: transparent` so the photo shows through. `prefers-reduced-transparency` turns off all blur.
+- **Shell**: `SideNav` is now a floating glass pill — vertical and centred on the left on desktop, a bottom tab pill under 768px. A shared-`layoutId` white active disc slides between items, and tooltips (label + old group name) animate in on hover/focus. `AppShell` reserves 88px on the left (desktop) / 84px at the bottom (mobile). `DashHeader` is a floating glass capsule (search, date, account menu). The sidebar toggle and theme toggle are removed; `useSidebar()` is still used for `isMobile`.
+- **Motion**: every page's `Reveal` is now framer `whileInView`. Every `Card`/`KPICard`/`Panel`/`StatCard` root is a `motion.div` with a spring `whileHover={{ y: -4 }}`; the KPI entrances moved from CSS transitions to framer `initial`/`animate`, so the two transforms don't fight. Card radius is now 20.
+- **Verified:** `tsc` + `next build` clean. Supabase was unreachable from this machine (DNS timeout) during the session, so `/dashboard` was checked with Playwright against mocked `/api/dashboard*` responses at 1600px and 390px, with zero page errors. Not yet checked against live data.
+
 ### 2026-10-01 (4) — `/dashboard`: Side (LHS/RHS/Median) added to the report table and map popup — `scripts/sql/add_dashboard_side_field.sql` confirmed applied and live
 
 **Files changed:** `scripts/sql/add_dashboard_side_field.sql` (new), `src/app/api/map/route.ts`, `src/components/UnifiedMap.tsx`, `src/lib/map-view.tsx`, `src/app/dashboard/page.tsx`
