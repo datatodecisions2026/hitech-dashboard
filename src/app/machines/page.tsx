@@ -630,7 +630,7 @@ function MachinesPageInner() {
 
   return (
     <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
-      <div style={{ padding: '28px 36px', width: '100%' }}>
+      <div className="page-pad" style={{ padding: '28px 36px', width: '100%' }}>
         <HeroBanner
           D={D}
           greeting={greeting}

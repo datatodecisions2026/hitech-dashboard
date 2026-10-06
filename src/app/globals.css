@@ -184,3 +184,7 @@ pre, code {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+@media (max-width: 640px) {
+  .page-pad { padding: 16px 12px 24px !important; }
+}

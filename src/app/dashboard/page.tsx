@@ -986,7 +986,7 @@ function DashboardPageInner() {
 
   return (
     <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
-      <div className="dash-content" style={{ padding: '28px 36px', width: '100%' }}>
+      <div className="dash-content page-pad" style={{ padding: '28px 36px', width: '100%' }}>
 
         <HeroBanner
           D={D}

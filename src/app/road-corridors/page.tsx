@@ -84,7 +84,7 @@ export default function RoadCorridorsPage() {
 
   return (
     <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
-      <div style={{ padding: '28px 36px', width: '100%' }}>
+      <div className="page-pad" style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Road Corridors</h2>

@@ -653,7 +653,7 @@ function ProgressPageInner() {
         </span>
       </div>
 
-      <div className="dash-content" style={{ padding: '28px 36px', width: '100%' }}>
+      <div className="dash-content page-pad" style={{ padding: '28px 36px', width: '100%' }}>
         {error && <div style={{ background: `${D.red}12`, border: `1px solid ${D.red}3a`, borderRadius: 10, padding: '12px 16px', color: D.red, fontFamily: 'var(--font-mono)', fontSize: 13, marginBottom: 20 }}>{error}</div>}
 
         {loading ? (

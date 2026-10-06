@@ -23,8 +23,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div style={{ minHeight: '100vh', color: D.text }}>
       <div className="app-bg" aria-hidden>
         <Waves lineColor={theme === 'dark' ? 'rgba(255,255,255,0.13)' : 'rgba(20,24,40,0.14)'}
-          waveSpeedX={0.02} waveSpeedY={0.01} waveAmpX={40} waveAmpY={20}
-          friction={0.9} tension={0.01} maxCursorMove={120} xGap={12} yGap={36} />
+          waveSpeedX={0.02} waveSpeedY={0.01} waveAmpX={isMobile ? 24 : 40} waveAmpY={isMobile ? 12 : 20}
+          friction={0.9} tension={0.01} maxCursorMove={isMobile ? 70 : 120} xGap={isMobile ? 16 : 12} yGap={isMobile ? 44 : 36} />
       </div>
       <SideNav />
       <div style={{

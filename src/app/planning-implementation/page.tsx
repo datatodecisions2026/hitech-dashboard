@@ -440,7 +440,7 @@ function PlanningImplementationPageInner() {
 
   return (
     <div style={{ minHeight: '100%', background: 'transparent', color: D.text }}>
-      <div style={{ padding: '28px 36px', width: '100%' }}>
+      <div className="page-pad" style={{ padding: '28px 36px', width: '100%' }}>
         <div style={{ marginBottom: 18 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>Planning &amp; Implementation</h2>
           <p style={{ margin: 0, marginTop: 3, fontSize: 13, color: D.muted }}>Planned / field-confirmed activities and surveyed road-design assets, combined — filter by project or section to cross-filter every panel.</p>

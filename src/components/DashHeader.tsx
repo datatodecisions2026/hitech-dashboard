@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useTheme, GLASS } from '@/lib/theme'
 import { motion } from 'framer-motion'
+import { useSidebar } from '@/lib/sidebar'
 import ThemeToggle from './ThemeToggle'
 
 interface SessionUser {
@@ -27,6 +28,7 @@ export default function DashHeader() {
   const router = useRouter()
   const pathname = usePathname()
   const { colors: D, shadows: SH } = useTheme()
+  const { isMobile } = useSidebar()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -58,7 +60,7 @@ export default function DashHeader() {
     <motion.header
       initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
       style={{
-        position: 'sticky', top: 12, zIndex: 90, margin: '12px 24px 0',
+        position: 'sticky', top: isMobile ? 8 : 12, zIndex: 90, margin: isMobile ? '8px 12px 0' : '12px 24px 0',
         height: '3.25rem', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px 0 10px',
         background: D.panel, backdropFilter: GLASS, WebkitBackdropFilter: GLASS,
