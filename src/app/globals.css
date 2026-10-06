@@ -20,6 +20,21 @@
     #17140f;
 }
 
+/* Light mode: same layers, light palette. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='light'] .app-bg {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.35) 0%, rgba(255,255,255,.1) 100%),
+    var(--app-bg-image) center / cover no-repeat,
+    radial-gradient(1200px 700px at 18% 12%, #ffe9cf 0%, transparent 60%),
+    radial-gradient(900px 600px at 85% 30%, #d4e2f2 0%, transparent 60%),
+    radial-gradient(1000px 800px at 60% 100%, #f1e4d3 0%, transparent 65%),
+    #eceff4;
+}
+:root[data-theme='light'] body { background: #eceff4; color: #14161c; }
+:root[data-theme='light'] ::-webkit-scrollbar-thumb { background: rgba(20,24,40,0.22); }
+:root[data-theme='light'] ::-webkit-scrollbar-thumb:hover { background: rgba(20,24,40,0.38); }
+
 /* Reduce-transparency users get solid surfaces instead of blur. */
 @media (prefers-reduced-transparency: reduce) {
   * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }

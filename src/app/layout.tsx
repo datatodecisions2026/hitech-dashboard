@@ -11,7 +11,7 @@ import { THEME_STORAGE_KEY } from '@/lib/theme-constants'
 // Runs before hydration so there is no flash of the wrong theme. Resolves
 // the stored MODE ('light' | 'dark' | 'system', default 'system') down to
 // an explicit data-theme of 'light' | 'dark' — CSS only keys on [data-theme].
-const THEME_INIT_SCRIPT = `try{var m=localStorage.getItem('${THEME_STORAGE_KEY}')||'system';var d=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';}catch(e){document.documentElement.dataset.theme='light';}`
+const THEME_INIT_SCRIPT = `try{var m=localStorage.getItem('${THEME_STORAGE_KEY}')||'dark';var d=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';}catch(e){document.documentElement.dataset.theme='dark';}`
 
 const fontDisplay = Bricolage_Grotesque({ variable: '--font-bricolage-grotesque', subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], display: 'swap' })
 const fontBody = Fira_Sans({ variable: '--font-fira-sans', subsets: ['latin'], weight: ['300', '400', '500', '600', '700'], display: 'swap' })

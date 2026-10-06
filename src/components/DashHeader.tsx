@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useTheme, GLASS } from '@/lib/theme'
 import { motion } from 'framer-motion'
+import ThemeToggle from './ThemeToggle'
 
 interface SessionUser {
   first_name: string
@@ -75,6 +76,8 @@ export default function DashHeader() {
         <span className="dh-date" style={{ fontSize: 12.5, color: D.muted, whiteSpace: 'nowrap', padding: '0 8px' }}>
           {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
         </span>
+
+        <ThemeToggle />
 
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}

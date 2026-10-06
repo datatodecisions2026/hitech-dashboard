@@ -1147,9 +1147,9 @@ function DashboardPageInner() {
         select:focus, input:focus { border-color: ${D.amber} !important; box-shadow: 0 0 0 3px ${D.amber}22 !important; }
         select option { background: ${D.panel}; color: ${D.text}; }
         input[type='date']::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
-        .ui-card:hover { box-shadow: ${SH.cardLg}; border-color: rgba(255,255,255,0.22); }
+        .ui-card:hover { box-shadow: ${SH.cardLg}; border-color: ${D.amber}66; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
+        .tbl-row:nth-child(even) { background: ${D.panel2}; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1200px) {
           .dash-content { padding: 24px 24px !important; }

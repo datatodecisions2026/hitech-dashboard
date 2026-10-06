@@ -1,8 +1,34 @@
 # Hitech Analytics Dashboard — Claude Code Context
 
-Standalone analytics dashboard for Hitech Construction Ltd. Built with Next.js 16.2.6 (App Router, Turbopack), Supabase, and iron-session auth.
+Standalone analytics dashboard for Hitech Construction Ltd. Built with Next.js 16.2.6 (App Router, Turbopack), `supabase-js` against a **self-hosted Postgres + PostgREST on our own VPS** (no longer Supabase cloud — see *Infrastructure* below), and iron-session auth.
 
 > **Next.js version note:** This uses Next.js 16.2.6 which may have APIs that differ from your training data. Read `node_modules/next/dist/docs/` before writing any Next.js-specific code. Heed deprecation notices.
+
+---
+
+## Infrastructure (as of 2026-10-06)
+
+The database **moved off Supabase cloud to our own Hostinger VPS** (`srv1723841`, KVM 2: 2 vCPU / 8 GB / 100 GB, Paris, Ubuntu 24.04). Both this dashboard and the activity-report portal (`hitech-portal`) now read/write the same self-hosted database. Full story in the 2026-10-06 changelog entry.
+
+| Piece | Where / what |
+|---|---|
+| Database | Native **Postgres 16** on the VPS, database `hitech` (owner role `hitech_owner`). Extensions: PostGIS 3.6, `pg_trgm`, `pgcrypto` + `uuid-ossp` (in an `extensions` schema). A stub `auth` schema provides `auth.jwt()/uid()/role()/email()` so RLS policies copied from Supabase still compile. **`pg_cron` is NOT installed** (enabling it needs a Postgres restart) — the nightly `road_assets_refresh_summary_cache()` runs from `/etc/cron.d/hitech-refresh` at 03:00 instead. |
+| API | **PostgREST v14.6** in Docker (`hitech-postgrest`, `127.0.0.1:3471`) behind nginx at **`https://db.datatodecisions.org/rest/v1/`** (nginx strips the `/rest/v1/` prefix so `supabase-js` works unchanged). Connects as `hitech_authenticator` (NOINHERIT, member of `anon`/`authenticated`/`service_role`). Only table/RPC access exists — **no Supabase Auth, Storage, Realtime or edge functions.** |
+| Keys | `anon` and `service_role` are self-signed HS256 JWTs (signed with `HITECH_JWT_SECRET`). Secrets live in `/root/.hitech-db.env` on the VPS (root-only) — never in git. |
+| Admin UI | **pgAdmin 4** at `https://pgadmin.datatodecisions.org` (Docker, `127.0.0.1:5058`, 450 MB cap) — SQL editor, table/schema editing, ERD tool. Login details are in the local, git-ignored `hitech-db-backup/pgadmin-login.txt`. Stop it with `docker stop pgadmin` when idle (~226 MB). |
+| Backups | **Weekly `pg_dump`, Sundays 02:15** (`/usr/local/bin/hitech-backup.sh`, cron `/etc/cron.d/hitech-backup`; was nightly, changed to weekly at the user's request on 2026-10-06): custom-format dump of `hitech` (~680 MB, ~3 min) into `/var/backups/hitech/daily/` (folder name is historical), the **newest 6 are kept** (~6 weeks), plus `globals_latest.sql` (roles), `LAST_STATUS` / `backup.log`. **Data written between two backups is not recoverable** (up to 7 days). Verified readable after each run; aborts if < 10 GB free. **Same server only — no off-site copy yet.** Restore drill: `/usr/local/bin/hitech-restore-drill.sh`. See *Restoring a backup* below. |
+| Network | **Port 5432 is closed to the internet** (ufw rule deleted 2026-10-06). Only 22/80/443 (+8088) are open; Postgres is reached from apps via `127.0.0.1`. |
+| Photos/videos | Not in the database host: `hitech_report_hitechphoto.file` URLs point at Google Drive and Cloudflare R2, so they were unaffected by the move. |
+
+**Variable names did not change.** `NEXT_PUBLIC_SUPABASE_URL` is now `https://db.datatodecisions.org`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` hold the self-issued keys — the "SUPABASE" in the names is leftover naming for the `supabase-js` client, not a connection to Supabase. On Vercel, `NEXT_PUBLIC_*` values are baked in at build time, so changing them needs a redeploy; set the two public ones as type **Config**, and keep only the service-role key **Secret**.
+
+**Restoring a backup (tested 2026-10-06 — 0 errors, identical row counts, all 40 policies and grants back, ~4.5 min):** the dumps include extensions, the stub `auth` schema, ownership, grants and policies, so restore into an **empty** database **as the `postgres` superuser** — do *not* pre-create extensions/schemas (that only produces clashes). Roles must already exist (they do on this server; on a fresh one run `globals_latest.sql` first) and `postgresql-16-postgis-3` must be installed. `createdb`-style: `sudo -u postgres psql -c "create database NEWDB owner hitech_owner"`, then `cat /var/backups/hitech/daily/<file>.dump | sudo -u postgres pg_restore -d NEWDB --no-owner` (pipe it in because the backup folder is root-only; an exit code of 141 from the `cat` side is a harmless SIGPIPE). To go live, rename databases while `hitech-postgrest` is stopped (see the cutover procedure in the 2026-10-06 entry) or repoint PostgREST's `PGRST_DB_URI`. Dumps from the *old* Supabase (PG17) need the PG17 `pg_restore` (Docker `postgres:17`) instead.
+
+**Applying SQL migrations now:** run `scripts/sql/*.sql` through pgAdmin's Query Tool or `psql` as `hitech_owner` — **not** the Supabase SQL editor/MCP. Default privileges (set 2026-10-06) give new tables/sequences/functions created by `hitech_owner` to `service_role` only (not `anon`/`authenticated`, unlike Supabase's defaults) — grant those explicitly if a table is meant for the mobile app. After adding/changing functions or columns, reload PostgREST's schema cache with `docker restart hitech-postgrest` (or `NOTIFY pgrst, 'reload schema'`). When creating a function whose parameter list changes, `DROP` the old signature first (see the 2026-09-17 (4) entry).
+
+**Still on Supabase cloud (cwqfyhapaycabynqwczx), deliberately:** only the **mobile app** (it logs in through the `mobile-login` edge function and Supabase Auth, then talks to the DB with anon key + RLS). Its Supabase project is now **stale for all `hitech_*` data** — anything the mobile app writes there does not reach the portal or this dashboard until the app is migrated (needs its code + a replacement login endpoint). The mobile app looked nearly idle at cutover (last sign-in 12 Aug 2026). Keep that Supabase project alive until it is moved.
+
+**Known follow-ups:** RLS/grants were copied as-is from Supabase (`anon`/`authenticated` hold grants on ~119 tables, ~20 functions callable by anon) — tightening is planned (security phase). Postgres is on default tuning (`shared_buffers` 128 MB), too small for the 4.6 GB DB; changing it needs a restart. Backups are local to the VPS only (no off-site copy yet). Rollback copy `hitech_old` (database) plus dumps in `/root/hitech-restore` remain on the VPS, and a local backup is in `C:\Users\MELHEM-CRW\hitech-db-backup\` — see the changelog.
 
 ---
 
@@ -46,7 +72,7 @@ src/
     session.ts              # iron-session config (cookie: hitech-dashboard-session)
     map-view.tsx            # MapViewProvider / useMapView() — shared state for UnifiedMap (mounted in layout.tsx). Layer toggles + colour-by + last camera; layers/colour persisted to localStorage['hitech-map-view'], camera too (the app navigates with plain <a href>, not SPA, so context alone resets every page change). See 2026-09-09 changelog
 scripts/                    # Node maintenance/verification scripts (run manually, not part of the app) — backfill-chainage.mjs, check-ranges.mjs, click-filter-check.mjs, mint-session.mjs, verify-hr-filters.mjs, visual-check.mjs, road-assets-migration.sql (one-off SQL for /road-assets-coverage — see 2026-08-01 changelog)
-scripts/sql/                # One-off Postgres migration SQL not tracked by any Supabase CLI setup in this repo — apply manually via the Supabase SQL editor or MCP. add_planning_implementation_rpc.sql adds progress_section_breakdown(); add_road_assets_infra.sql adds the road_assets clustering/cache infrastructure. See 2026-08-04 changelog
+scripts/sql/                # One-off Postgres migration SQL not tracked by any Supabase CLI setup in this repo — apply manually via pgAdmin or `psql` as `hitech_owner` (since 2026-10-06 — no longer the Supabase SQL editor/MCP, see *Infrastructure*). add_planning_implementation_rpc.sql adds progress_section_breakdown(); add_road_assets_infra.sql adds the road_assets clustering/cache infrastructure. See 2026-08-04 changelog
 sync_to_supabase.py         # Pulls Main_Survey_Data/photos/employees/supervisors/engineers/machines from Google Drive Excel, upserts into hitech_report_* tables (dedupes on globalid)
 sync_progress.py            # Uploads construction progress data (blocks/entities/BOQ) into hitech_construction_* tables from local CSV/XLSX
 sync_ogun.py                # Append-only sync of "Ogun - Total entities.xlsx" into hitech_ogun_entities (checks row count, inserts only new rows)
@@ -665,7 +691,7 @@ Fonts available via CSS variables:
 
 ## Full Platform API Reference
 
-The main portal (`https://hitech-portal.vercel.app`) has 20+ additional API routes covering reports, employees, equipment, history, projects, and sections. Since this dashboard has the same `SUPABASE_SERVICE_ROLE_KEY`, the preferred approach is to **add new `src/app/api/` routes that query Supabase directly** rather than proxying to the portal.
+The main portal (`https://hitech.datatodecisions.org`, hosted on the same VPS under PM2 — not Vercel) has 20+ additional API routes covering reports, employees, equipment, history, projects, and sections. Since this dashboard has the same `SUPABASE_SERVICE_ROLE_KEY`, the preferred approach is to **add new `src/app/api/` routes that query Supabase directly** rather than proxying to the portal.
 
 Full documentation of every portal route, its request/response shape, and the underlying Supabase table is in:
 
@@ -677,9 +703,9 @@ Full documentation of every portal route, its request/response shape, and the un
 
 | Variable | Used by |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Client + server |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server only (API routes) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Client + server. **Now `https://db.datatodecisions.org`** (our own PostgREST, not Supabase cloud). |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client. Self-issued `anon` JWT for the VPS PostgREST. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only (API routes). Self-issued `service_role` JWT for the VPS PostgREST — bypasses RLS. |
 | `SESSION_SECRET` | Server only (iron-session) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Client (`HitechMap`) — without it, the map on `/dashboard` renders an inline "Google Maps API key not set" error instead of failing silently. Must have the Maps JavaScript API enabled and be restricted (HTTP referrer) to this app's actual domain(s) in the Google Cloud Console |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | **Unused as of 2026-07-22** — `HitechMap` no longer reads this (switched to Google Maps). Left in `.env.local` harmlessly; safe to remove once confirmed nothing else references it |
@@ -691,6 +717,37 @@ Full documentation of every portal route, its request/response shape, and the un
 ## Changelog
 
 > Keep this section up to date. Every time a feature, fix, or endpoint is added/changed, log it here so the next person (or Claude) knows what's been done and why.
+
+### 2026-10-06 (2) — Scheduled database backups on the VPS (weekly), with a real restore drill
+
+**Files:** none in the repos — server-side only: `/usr/local/bin/hitech-backup.sh`, `/etc/cron.d/hitech-backup`, `/usr/local/bin/hitech-restore-drill.sh`, `/var/backups/hitech/`.
+
+**What:** the migration left only one-off dumps, so a scheduled job now runs (set up as nightly, then changed to **weekly, Sundays 02:15**, the same day at the user's request — the 03:00 `road_assets` cache refresh is separate and still nightly): `pg_dump -Fc -Z 6` of `hitech` as the `postgres` OS user, written atomically (`.partial` → rename), then `pg_restore --list` to prove the archive is readable, `pg_dumpall --globals-only` for the roles, and pruning to the **newest 6 dumps** (count-based on purpose: the first, age-based rule — daily > 7 days — would have deleted last week's only backup once the schedule became weekly). It aborts if less than 10 GB is free, runs at `nice 19` / `ionice` idle so it doesn't starve the other apps, and records `LAST_STATUS` + `backup.log`. First run: 678 MB in ~3 min.
+
+**Proven, not assumed:** two restores of that first dump into scratch databases (dropped afterwards). (1) into a pre-built database — passed, but showed the dumps now *contain* extensions + the `auth` stub (they live in `hitech` itself), so pre-creating them just clashes; (2) the correct drill — empty database, restored **as `postgres`** — **0 errors**, `reports` 9,780 / `road_assets` 7,271,513 / `entities` 579,703 identical to live, `service_role` can read, all 40 policies back, ~4.5 min. Gotchas hit and fixed: the backup folder is root-only so `postgres` can't open the file (pipe it with `cat`, which makes the pipeline exit 141 — harmless); a PG16 archive restores with the server's own `pg_restore`, unlike the old PG17 Supabase dumps.
+
+**Still missing:** an off-site copy — everything is on the one VPS disk (Hostinger's weekly snapshot is a separate, same-provider safety net). Candidates: rclone to Backblaze B2 / another bucket, or a pull to the PC. Also no alert on failure yet (check `/var/backups/hitech/LAST_STATUS`).
+
+### 2026-10-06 — Database moved from Supabase cloud to our own VPS (Postgres 16 + PostgREST); portal and dashboard cut over
+
+**Why:** Supabase billing (unpaid invoice → project paused, then restored on the free tier). The user wanted to stop depending on it, own the database on the VPS already running the portal, and get a proper admin/schema UI.
+
+**What changed (no application code changed — only env vars):**
+- **Phase 0 (inventory + dump):** the paused project could not be restored over MCP (`PaymentRequired`); the user paid and restored it, then the MCP connector returned auth errors, so the dump was taken with `pg_dump` (run via the `postgres:17` Docker image) over the session pooler using a reset DB password. Inventory of the live DB: 4.8 GB; `public` holds the Hitech tables **and other apps' tables** (`clr_*`, `village_*`, `Manga*`, `posts`, `portfolio`, `profiles`…) — all copied for now, pruning is a later decision. 97 functions, 1 cron job (`road_assets_refresh_summary_cache`), 115 PKs / 93 FKs / 34 uniques / 22 checks, only `Hi-tech-from-true` lacks a PK. RLS was already on for most tables (28 tables / 40 policies, mostly the portal's `mobile:*` policies); off for the big/new tables (`road_assets`, `road_corridors`, `hitech_construction_*`, `hitech_ogun_entities`, `django_*`…). The bigger exposure is grants: `anon`/`authenticated` had grants on 119 tables and `anon` could execute ~20 functions.
+- **VPS findings (read-only first):** the VPS already hosted 14 PM2 apps, nginx (~25 sites), n8n, Coolify, a Coolify-deployed Supabase stack, and a native Postgres 16 (5 small DBs for other apps) — and **port 5432 was open to the whole internet**. Memory was tight (8 GB, swap full). So instead of another Docker Supabase (~4 GB) the new DB reuses the native Postgres 16 and adds one 35 MB PostgREST container.
+- **Build:** installed `postgresql-16-postgis-3` (no restart); created database `hitech` + roles `hitech_owner` and `hitech_authenticator`, reusing the cluster's existing `anon`/`authenticated`/`service_role` roles (the existing `authenticator` belongs to another app's PostgREST and was left alone); extensions + stub `auth` schema; restored the dump with the Postgres **17** `pg_restore` in Docker (PG16's `pg_restore` cannot read a PG17 archive). Restore errors were all expected/harmless: `transaction_timeout` (PG17-only setting), `spatial_ref_sys` (PostGIS already populated it), `CREATE SCHEMA public`, and three FKs to `auth.users` on other apps' tables. 11 policies initially failed (`permission denied for schema auth` for the table owner) and were re-applied after `GRANT USAGE ON SCHEMA auth TO hitech_owner`. `pg_dump --no-privileges` drops all GRANTs, so the exact `anon`/`authenticated`/`service_role` grants were regenerated from the source (`aclexplode`) with PG17's `MAINTAIN` privilege stripped for PG16. **Row counts on 14 key tables matched Supabase exactly**, and `dashboard_core()` returned the same numbers (9,780 reports; 4,046 planned / 5,734 newly planned).
+- **Network/HTTPS:** DNS A records `db.datatodecisions.org` and `pgadmin.datatodecisions.org` → `2.24.14.14` (Hostinger DNS zone for `datatodecisions.org`; the zone's nameservers are `dns-parking.com`, so the record must be added in that zone), nginx server blocks, Let's Encrypt via certbot (auto-renew). **Closed port 5432 in ufw** (note: `pg_hba.conf` still allows `powerbi_user` on database `iconicrealm` from `0.0.0.0/0`; the firewall rule is what now blocks it — check whether Power BI used it). PostgREST first failed to bind on 3010 (taken by another app) — it runs on **3471**.
+- **Cutover:** dashboard — local `.env.local` repointed first (old one saved as git-ignored `.env.local.supabase-cloud.bak`) and all 13 API routes re-tested against the new DB; **Vercel** env vars were then updated by the user and redeployed. Portal — new build prepared in a separate folder (`next build` needs the new `NEXT_PUBLIC_*` values baked in; Turbopack rejects a symlinked `node_modules`, a hard-linked copy works), then a scripted ~5.5-minute window: stop PM2 app → final `pg_dump` from Supabase → restore into `hitech_next` → verify counts vs Supabase → rename DBs (`hitech` → `hitech_old`, `hitech_next` → `hitech`) → swap `.next` + `.env.local` → restart. The script auto-rolled-back to the old portal on any failure before the swap. Portal logged in successfully afterwards.
+- **pgAdmin 4** installed (Docker, `127.0.0.1:5058`, nginx + HTTPS at `pgadmin.datatodecisions.org`), with the `hitech` server pre-registered.
+- **Default privileges** for `hitech_owner` set so new objects are granted to `service_role` only (Supabase auto-granted to all three roles; deliberately not replicated for `anon`/`authenticated`).
+
+**Performance (warm, home PC → Paris VPS, dev server):** `/api/progress` ~4.5 s, `/api/map?all=1` ~5.8 s, `/api/road-assets-coverage?section=Kebbi` ~14.6 s (cold first requests 10–16 s). Comparable to Supabase micro; Postgres is untuned (`shared_buffers` 128 MB), so there is headroom.
+
+**Memory trim:** the Coolify-deployed Supabase stack (14 containers, ~1.1 GB) was verified idle — last request 29 Sep, only local `zuruny_products` reads; Zuruny itself now runs on native Postgres `127.0.0.1:5432/zuruny`, and the concierge backend uses a different cloud project — then **stopped** (not removed) after a backup (`/root/backups/coolify-supabase-public-2026-10-06.dump`). Restart with `xargs -a /root/backups/coolify-supabase-containers.txt docker start`. Freed ~1 GB RAM and ~1 GB swap; dependent sites re-checked (200). An earlier assumption in this session that the stack served Zuruny and the concierge backend was wrong — checking logs and env files showed otherwise.
+
+**Not done / open:** mobile app (still on Supabase cloud, see *Infrastructure*); security phase (RLS/grants tightening, rotating the Supabase DB password and VPS root password — both were shared in chat); Postgres tuning; an off-site copy of the (weekly, local) backups; deleting `hitech_old` + `/root/hitech-restore` + `/root/portal-build` after ~2 weeks of stable running; the portal's `scripts/setup-components.js` still has a hardcoded old Supabase URL + service-role key (rotate; never run as-is).
+
+**Why recorded in this much detail:** a future session should not have to re-derive that the DB is no longer Supabase, why the variable names still say SUPABASE, why `pg_cron` and Supabase Auth are absent, or why migrations are applied differently now.
 
 ### 2026-10-05 — Site-wide dark "liquid glass" redesign with framer-motion
 

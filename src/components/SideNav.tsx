@@ -41,7 +41,8 @@ const SPRING = { type: 'spring', stiffness: 420, damping: 32 } as const
  */
 export default function SideNav() {
   const pathname = usePathname()
-  const { colors: D, shadows: SH } = useTheme()
+  const { colors: D, shadows: SH, theme } = useTheme()
+  const dark = theme === 'dark'
   const { isMobile } = useSidebar()
   const reduce = useReducedMotion()
   const [hov, setHov] = useState<string | null>(null)
@@ -77,14 +78,14 @@ export default function SideNav() {
             style={{ position: 'relative', display: 'flex', width: 44, height: 44, borderRadius: '50%', textDecoration: 'none' }}>
             {active && (
               <motion.span layoutId="nav-active" transition={SPRING}
-                style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#f5f5f7', boxShadow: '0 4px 14px rgba(0,0,0,.35)' }} />
+                style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: D.text, boxShadow: '0 4px 14px rgba(0,0,0,.35)' }} />
             )}
             <motion.span
               whileHover={reduce ? undefined : { scale: 1.1 }} whileTap={reduce ? undefined : { scale: 0.92 }} transition={SPRING}
               style={{
                 position: 'relative', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%',
-                color: active ? '#111114' : D.text,
-                background: !active && hov === item.href ? 'rgba(255,255,255,0.12)' : 'transparent',
+                color: active ? (dark ? '#111114' : '#fff') : D.text,
+                background: !active && hov === item.href ? D.panel2 : 'transparent',
                 transition: 'background .15s ease, color .15s ease',
               }}>
               <Icon />
@@ -97,7 +98,7 @@ export default function SideNav() {
                   style={{
                     position: 'absolute', left: 'calc(100% + 14px)', top: '50%', translateY: '-50%', pointerEvents: 'none',
                     whiteSpace: 'nowrap', padding: '6px 11px', borderRadius: 10,
-                    background: 'rgba(24,24,28,0.82)', backdropFilter: GLASS, WebkitBackdropFilter: GLASS,
+                    background: dark ? 'rgba(24,24,28,0.82)' : 'rgba(255,255,255,0.9)', backdropFilter: GLASS, WebkitBackdropFilter: GLASS,
                     border: `1px solid ${D.border}`, boxShadow: SH.card, color: D.text,
                     display: 'flex', flexDirection: 'column', lineHeight: 1.25,
                   }}>

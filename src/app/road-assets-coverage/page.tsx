@@ -1004,7 +1004,7 @@ export default function RoadAssetsPage() {
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity:0.3; }
         .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
+        .tbl-row:nth-child(even) { background: ${D.panel2}; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 900px) { .ra-2col { grid-template-columns: 1fr !important; } }
         @media (max-width: 640px) {

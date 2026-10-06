@@ -79,6 +79,40 @@ const GLASS_SHADOWS: ShadowTokens = {
   borderGlow: '1px solid rgba(240,162,59,.35)',
 }
 
+
+const LIGHT_COLORS: ColorTokens = {
+  bg:     '#eceff4',
+  panel:  'rgba(255,255,255,0.58)',
+  panel2: 'rgba(20,24,40,0.06)',
+  border: 'rgba(20,24,40,0.12)',
+  text:   '#14161c',
+  muted:  '#4b5060',
+  sub:    '#7b8190',
+  amber:  '#c9760a',
+  amberL: '#e08a14',
+  amberD: '#a55f06',
+  red:    '#d92d3f',
+  green:  '#15803d',
+  blue:   '#2f5fa8',
+  purple: '#4b5060',
+  gold:   'linear-gradient(135deg, #c9760a 0%, #f0a23b 100%)',
+}
+
+const LIGHT_SHADOWS: ShadowTokens = {
+  card:       'inset 0 1px 0 rgba(255,255,255,.8), 0 8px 32px -10px rgba(30,40,70,.18)',
+  cardLg:     'inset 0 1px 0 rgba(255,255,255,.9), 0 18px 48px -14px rgba(30,40,70,.28)',
+  panel:      'inset 0 1px 0 rgba(255,255,255,.8), 0 8px 32px -10px rgba(30,40,70,.18)',
+  panelLg:    'inset 0 1px 0 rgba(255,255,255,.9), 0 18px 48px -14px rgba(30,40,70,.28)',
+  well:       'inset 0 1px 2px rgba(30,40,70,.15)',
+  raised:     'inset 0 1px 0 rgba(255,255,255,.8), 0 4px 16px -6px rgba(30,40,70,.2)',
+  raisedLg:   'inset 0 1px 0 rgba(255,255,255,.9), 0 18px 48px -14px rgba(30,40,70,.28)',
+  inset:      'inset 0 1px 2px rgba(30,40,70,.15)',
+  glowAmber:  'none',
+  glowGreen:  'none',
+  glowRed:    'none',
+  borderGlow: '1px solid rgba(201,118,10,.4)',
+}
+
 /** backdrop-filter for every glass surface (HIG regular variant: 20–40px blur, 1.2–1.5x saturation). */
 export const GLASS = 'blur(28px) saturate(150%)'
 
@@ -103,11 +137,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // defaults, so they agree. The real stored mode and the live OS
   // preference are read in the effect below, which only runs after
   // hydration — one extra re-render, never a server/client mismatch.
-  const [mode, setModeState] = useState<ThemeMode>('system')
+  const [mode, setModeState] = useState<ThemeMode>('dark')
   const [systemDark, setSystemDark] = useState(false)
 
   useEffect(() => {
-    let stored: ThemeMode = 'system'
+    let stored: ThemeMode = 'dark'
     try {
       const t = localStorage.getItem(THEME_STORAGE_KEY)
       if (t === 'light' || t === 'dark' || t === 'system') stored = t
@@ -121,9 +155,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => mql.removeEventListener('change', onChange)
   }, [])
 
-  // Glass design is dark-only; mode is kept so old consumers still compile.
-  void systemDark
-  const theme: ThemeName = 'dark'
+  const theme: ThemeName = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
 
   useEffect(() => {
     // The no-FOUC script always resolves data-theme to 'light' | 'dark'
@@ -143,8 +175,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setMode,
     cycleMode,
     toggleTheme: cycleMode,
-    colors: GLASS_COLORS,
-    shadows: GLASS_SHADOWS,
+    colors: theme === 'dark' ? GLASS_COLORS : LIGHT_COLORS,
+    shadows: theme === 'dark' ? GLASS_SHADOWS : LIGHT_SHADOWS,
   }
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

@@ -639,7 +639,7 @@ function PlanningImplementationPageInner() {
         select option { background:${D.panel}; color:${D.text}; }
         .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
+        .tbl-row:nth-child(even) { background: ${D.panel2}; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(3,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(2,1fr) !important; } }
         @media (max-width: 640px)  { .kpi-grid { grid-template-columns: repeat(2,1fr) !important; } .kpi-grid2 { grid-template-columns: repeat(1,1fr) !important; } .pi-grid { grid-template-columns: 1fr !important; } .filter-rail { width: calc(100vw - 32px) !important; max-width: 340px; } }

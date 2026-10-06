@@ -269,7 +269,7 @@ function MonthlyProgressTable({ data, months }: { data: ProgressData['monthlyPro
                   const sc = SIDE_COLOR[row.side] || D.muted
                   return (
                     <>
-                      <tr key={`${entityName}-${row.side}-l`} style={{ borderBottom: `1px solid ${D.border}`, background: `rgba(255,255,255,0.02)` }}>
+                      <tr key={`${entityName}-${row.side}-l`} style={{ borderBottom: `1px solid ${D.border}`, background: D.panel2 }}>
                         <td style={{ padding: '7px 14px 3px 30px', color: sc, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 5, height: 5, borderRadius: '50%', background: sc }} />{row.side}</div>
                         </td>
@@ -780,7 +780,7 @@ function ProgressPageInner() {
         input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { opacity: 0.3; }
         .filter-toggle-btn:hover { border-color: ${D.amber}66 !important; }
         .tbl-row { transition: background 0.12s ease; }
-        .tbl-row:nth-child(even) { background: rgba(255,255,255,0.035); }
+        .tbl-row:nth-child(even) { background: ${D.panel2}; }
         .tbl-row:hover { background: ${D.amber}12 !important; }
         .tbl-row-header:hover { background: ${D.amber}12 !important; }
         @media (max-width: 1024px) {

@@ -5,6 +5,7 @@ import DashHeader from './DashHeader'
 import SideNav from './SideNav'
 import { useSidebar } from '@/lib/sidebar'
 import { useTheme } from '@/lib/theme'
+import Waves from './Waves'
 
 /**
  * The app frame: a fixed full-bleed background photo (`.app-bg`, see
@@ -15,12 +16,16 @@ import { useTheme } from '@/lib/theme'
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { isMobile } = useSidebar()
-  const { colors: D } = useTheme()
+  const { colors: D, theme } = useTheme()
   const bare = pathname === '/login'
 
   return (
     <div style={{ minHeight: '100vh', color: D.text }}>
-      <div className="app-bg" aria-hidden />
+      <div className="app-bg" aria-hidden>
+        <Waves lineColor={theme === 'dark' ? 'rgba(255,255,255,0.13)' : 'rgba(20,24,40,0.14)'}
+          waveSpeedX={0.02} waveSpeedY={0.01} waveAmpX={40} waveAmpY={20}
+          friction={0.9} tension={0.01} maxCursorMove={120} xGap={12} yGap={36} />
+      </div>
       <SideNav />
       <div style={{
         position: 'relative', zIndex: 1,
